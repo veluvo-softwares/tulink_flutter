@@ -1,0 +1,278 @@
+import 'package:flutter/foundation.dart';
+
+import '../../../../core/errors/failure.dart';
+import '../../domain/entities/user_entity.dart';
+import '../../domain/repositories/auth_repository.dart';
+
+/// Authentication state management using ChangeNotifier
+class AuthProvider extends ChangeNotifier {
+  AuthProvider(this._authRepository);
+
+  final AuthRepository _authRepository;
+
+  // State variables
+  UserEntity? _user;
+  bool _isLoading = false;
+  Failure? _failure;
+  bool _isSignedIn = false;
+
+  // Getters
+  UserEntity? get user => _user;
+  bool get isLoading => _isLoading;
+  Failure? get failure => _failure;
+  bool get isSignedIn => _isSignedIn;
+  String get errorMessage => _failure?.message ?? '';
+  bool get hasError => _failure != null;
+
+  /// Initialize auth state
+  Future<void> initialize() async {
+    _setLoading(true);
+    
+    try {
+      _isSignedIn = await _authRepository.isSignedIn();
+      
+      if (_isSignedIn) {
+        final result = await _authRepository.getCurrentUser();
+        if (result.failure == null) {
+          _user = result.user;
+        } else {
+          _isSignedIn = false;
+          _setFailure(result.failure);
+        }
+      }
+    } catch (e) {
+      _isSignedIn = false;
+      _setFailure(const ServerFailure(message: 'Initialization failed'));
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Sign in with email and password
+  Future<bool> signIn({
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.signIn(
+        email: email,
+        password: password,
+      );
+
+      if (result.failure == null) {
+        _user = result.user;
+        _isSignedIn = true;
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Sign in failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Sign up with email, password and name
+  Future<bool> signUp({
+    required String email,
+    required String password,
+    required String name,
+  }) async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.signUp(
+        email: email,
+        password: password,
+        name: name,
+      );
+
+      if (result.failure == null) {
+        _user = result.user;
+        _isSignedIn = true;
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Sign up failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Sign out current user
+  Future<bool> signOut() async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.signOut();
+
+      if (result.success) {
+        _user = null;
+        _isSignedIn = false;
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Sign out failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Refresh authentication token
+  Future<bool> refreshToken() async {
+    try {
+      final result = await _authRepository.refreshToken();
+      
+      if (result.failure != null) {
+        _setFailure(result.failure);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Token refresh failed'));
+      return false;
+    }
+  }
+
+  /// Update user profile
+  Future<bool> updateProfile({
+    String? name,
+    String? profilePicture,
+  }) async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.updateProfile(
+        name: name,
+        profilePicture: profilePicture,
+      );
+
+      if (result.failure == null) {
+        _user = result.user;
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Profile update failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Reset password
+  Future<bool> resetPassword({required String email}) async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.resetPassword(email: email);
+
+      if (result.success) {
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Password reset failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Verify email
+  Future<bool> verifyEmail({required String token}) async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.verifyEmail(token: token);
+
+      if (result.success && _user != null) {
+        _user = _user!.copyWith(isEmailVerified: true);
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Email verification failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Delete user account
+  Future<bool> deleteAccount() async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.deleteAccount();
+
+      if (result.success) {
+        _user = null;
+        _isSignedIn = false;
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Account deletion failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // Helper methods
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+
+  void _setFailure(Failure? failure) {
+    _failure = failure;
+    notifyListeners();
+  }
+
+  void _clearFailure() {
+    _failure = null;
+    notifyListeners();
+  }
+
+  /// Clear all error messages
+  void clearError() {
+    _clearFailure();
+  }
+}
