@@ -7,24 +7,34 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
+import 'package:tulink_flutter/core/di/service_locator.dart';
+import 'package:tulink_flutter/features/auth/data/models/user_model.dart';
 import 'package:tulink_flutter/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('App Tests', () {
+    setUpAll(() async {
+      // Initialize test environment
+      await Hive.initFlutter();
+      Hive.registerAdapter(UserModelAdapter());
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    testWidgets('App should build without errors', (WidgetTester tester) async {
+      // Initialize service locator for testing
+      final serviceLocator = ServiceLocator();
+      await serviceLocator.init();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+      // Build our app and trigger a frame.
+      await tester.pumpWidget(MyApp(serviceLocator: serviceLocator));
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      // Wait for initialization to complete
+      await tester.pumpAndSettle();
+
+      // Verify that the app builds and shows the home page
+      expect(find.text('TuLink Flutter'), findsOneWidget);
+      expect(find.text('Clean Architecture Demo'), findsOneWidget);
+    });
   });
 }

@@ -1,0 +1,256 @@
+import '../../../../core/errors/failure.dart';
+import '../../../../core/network/dio_client.dart';
+import '../../domain/entities/user_entity.dart';
+import '../../domain/repositories/auth_repository.dart';
+import '../datasources/auth_local_data_source.dart';
+import '../datasources/auth_remote_data_source.dart';
+
+/// Implementation of AuthRepository
+/// Follows the Repository Pattern with Clean Architecture
+/// Demonstrates: Check cache -> If empty, fetch from API -> Save to cache
+class AuthRepositoryImpl implements AuthRepository {
+  const AuthRepositoryImpl({
+    required this.remoteDataSource,
+    required this.localDataSource,
+    required this.dioClient,
+  });
+
+  final AuthRemoteDataSource remoteDataSource;
+  final AuthLocalDataSource localDataSource;
+  final DioClient dioClient;
+
+  @override
+  Future<({UserEntity? user, String? token, Failure? failure})> signIn({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // Attempt remote sign in
+      final result = await remoteDataSource.signIn(
+        email: email,
+        password: password,
+      );
+
+      // Cache the user and token locally
+      await localDataSource.cacheUser(result.user);
+      await localDataSource.cacheToken(result.token);
+      await dioClient.saveAuthToken(result.token);
+
+      return (
+        user: result.user.toEntity(),
+        token: result.token,
+        failure: null,
+      );
+    } on Failure catch (failure) {
+      return (user: null, token: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        token: null,
+        failure: const ServerFailure(message: 'Sign in failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({UserEntity? user, String? token, Failure? failure})> signUp({
+    required String email,
+    required String password,
+    required String name,
+  }) async {
+    try {
+      // Attempt remote sign up
+      final result = await remoteDataSource.signUp(
+        email: email,
+        password: password,
+        name: name,
+      );
+
+      // Cache the user and token locally
+      await localDataSource.cacheUser(result.user);
+      await localDataSource.cacheToken(result.token);
+      await dioClient.saveAuthToken(result.token);
+
+      return (
+        user: result.user.toEntity(),
+        token: result.token,
+        failure: null,
+      );
+    } on Failure catch (failure) {
+      return (user: null, token: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        token: null,
+        failure: const ServerFailure(message: 'Sign up failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool success, Failure? failure})> signOut() async {
+    try {
+      // Attempt remote sign out (optional, can continue if fails)
+      try {
+        await remoteDataSource.signOut();
+      } catch (e) {
+        // Continue with local sign out even if remote fails
+      }
+
+      // Clear local cache and tokens
+      await localDataSource.clearCachedUser();
+      await localDataSource.clearCachedToken();
+      await dioClient.clearTokens();
+
+      return (success: true, failure: null);
+    } on Failure catch (failure) {
+      return (success: false, failure: failure);
+    } catch (e) {
+      return (
+        success: false,
+        failure: const ServerFailure(message: 'Sign out failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({UserEntity? user, Failure? failure})> getCurrentUser() async {
+    try {
+      // First, try to get user from cache
+      final cachedUser = await localDataSource.getCachedUser();
+      if (cachedUser != null) {
+        return (user: cachedUser.toEntity(), failure: null);
+      }
+
+      // If no cached user, try to get from remote
+      final user = await remoteDataSource.getCurrentUser();
+      
+      // Cache the user for future use
+      await localDataSource.cacheUser(user);
+
+      return (user: user.toEntity(), failure: null);
+    } on Failure catch (failure) {
+      return (user: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        failure: const ServerFailure(message: 'Failed to get current user'),
+      );
+    }
+  }
+
+  @override
+  Future<bool> isSignedIn() async {
+    try {
+      // Check if user is cached locally
+      final isUserCached = await localDataSource.isUserCached();
+      if (!isUserCached) return false;
+
+      // Check if token exists
+      final token = await dioClient.getAuthToken();
+      return token != null && token.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<({String? token, Failure? failure})> refreshToken() async {
+    try {
+      final newToken = await remoteDataSource.refreshToken();
+      
+      // Save the new token
+      await localDataSource.cacheToken(newToken);
+      await dioClient.saveAuthToken(newToken);
+
+      return (token: newToken, failure: null);
+    } on Failure catch (failure) {
+      return (token: null, failure: failure);
+    } catch (e) {
+      return (
+        token: null,
+        failure: const ServerFailure(message: 'Token refresh failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool success, Failure? failure})> resetPassword({
+    required String email,
+  }) async {
+    try {
+      await remoteDataSource.resetPassword(email: email);
+      return (success: true, failure: null);
+    } on Failure catch (failure) {
+      return (success: false, failure: failure);
+    } catch (e) {
+      return (
+        success: false,
+        failure: const ServerFailure(message: 'Password reset failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool success, Failure? failure})> verifyEmail({
+    required String token,
+  }) async {
+    try {
+      await remoteDataSource.verifyEmail(token: token);
+      return (success: true, failure: null);
+    } on Failure catch (failure) {
+      return (success: false, failure: failure);
+    } catch (e) {
+      return (
+        success: false,
+        failure: const ServerFailure(message: 'Email verification failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({UserEntity? user, Failure? failure})> updateProfile({
+    String? name,
+    String? profilePicture,
+  }) async {
+    try {
+      final updatedUser = await remoteDataSource.updateProfile(
+        name: name,
+        profilePicture: profilePicture,
+      );
+
+      // Update cached user
+      await localDataSource.cacheUser(updatedUser);
+
+      return (user: updatedUser.toEntity(), failure: null);
+    } on Failure catch (failure) {
+      return (user: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        failure: const ServerFailure(message: 'Profile update failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool success, Failure? failure})> deleteAccount() async {
+    try {
+      await remoteDataSource.deleteAccount();
+      
+      // Clear all local data
+      await localDataSource.clearCachedUser();
+      await localDataSource.clearCachedToken();
+      await dioClient.clearTokens();
+
+      return (success: true, failure: null);
+    } on Failure catch (failure) {
+      return (success: false, failure: failure);
+    } catch (e) {
+      return (
+        success: false,
+        failure: const ServerFailure(message: 'Account deletion failed'),
+      );
+    }
+  }
+}
