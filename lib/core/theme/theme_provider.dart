@@ -1,84 +1,50 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-import '../constants/app_constants.dart';
 
 /// Provider for managing theme state throughout the application
+/// Tu-Link is dark mode only, following motorsports design principles
 class ThemeProvider extends ChangeNotifier {
-  ThemeProvider() {
-    _loadThemeMode();
-  }
+  /// Constructor - Tu-Link is dark mode only
+  ThemeProvider();
 
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  // Tu-Link is always dark mode
+  static const ThemeMode _themeMode = ThemeMode.dark;
 
-  ThemeMode _themeMode = ThemeMode.system;
-
+  /// Get the current theme mode (always dark for Tu-Link)
   ThemeMode get themeMode => _themeMode;
 
-  bool get isDarkMode {
-    switch (_themeMode) {
-      case ThemeMode.dark:
-        return true;
-      case ThemeMode.light:
-        return false;
-      case ThemeMode.system:
-        return WidgetsBinding.instance.platformDispatcher.platformBrightness == 
-               Brightness.dark;
-    }
-  }
+  /// Tu-Link is always dark mode
+  bool get isDarkMode => true;
 
-  /// Load theme mode from storage
-  Future<void> _loadThemeMode() async {
-    try {
-      final savedTheme = await _storage.read(key: AppConstants.themeKey);
-      if (savedTheme != null) {
-        _themeMode = ThemeMode.values.firstWhere(
-          (mode) => mode.name == savedTheme,
-          orElse: () => ThemeMode.system,
-        );
-        notifyListeners();
-      }
-    } catch (e) {
-      // If there's an error loading, use system default
-      _themeMode = ThemeMode.system;
-    }
-  }
+  /// Tu-Link is dark mode only - these methods are kept for compatibility
+  /// but have no effect since the app is always in dark mode
 
-  /// Set theme mode and save to storage
+  /// No-op: Tu-Link is dark mode only
   Future<void> setThemeMode(ThemeMode mode) async {
-    if (_themeMode == mode) return;
-
-    _themeMode = mode;
-    notifyListeners();
-
-    try {
-      await _storage.write(key: AppConstants.themeKey, value: mode.name);
-    } catch (e) {
-      // Handle storage error gracefully
-      debugPrint('Failed to save theme preference: $e');
-    }
+    // Tu-Link is dark mode only - ignore theme changes
+    debugPrint('Tu-Link is dark mode only. Theme change ignored.');
   }
 
-  /// Toggle between light and dark theme
+  /// No-op: Tu-Link is dark mode only
   Future<void> toggleTheme() async {
-    final newMode = _themeMode == ThemeMode.light 
-        ? ThemeMode.dark 
-        : ThemeMode.light;
-    await setThemeMode(newMode);
+    // Tu-Link is dark mode only - no toggling available
+    debugPrint('Tu-Link is dark mode only. Theme toggle ignored.');
   }
 
-  /// Set to system theme
+  /// No-op: Tu-Link is dark mode only
   Future<void> setSystemTheme() async {
-    await setThemeMode(ThemeMode.system);
+    // Tu-Link is dark mode only
+    debugPrint('Tu-Link is dark mode only. System theme ignored.');
   }
 
-  /// Set to light theme
+  /// No-op: Tu-Link is dark mode only
   Future<void> setLightTheme() async {
-    await setThemeMode(ThemeMode.light);
+    // Tu-Link is dark mode only
+    debugPrint('Tu-Link is dark mode only. Light theme not supported.');
   }
 
-  /// Set to dark theme
+  /// No-op: Tu-Link is dark mode only (already the default)
   Future<void> setDarkTheme() async {
-    await setThemeMode(ThemeMode.dark);
+    // Already dark mode - no action needed
+    debugPrint('Tu-Link is already in dark mode.');
   }
 }
