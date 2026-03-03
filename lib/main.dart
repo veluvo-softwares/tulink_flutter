@@ -4,9 +4,14 @@ import 'package:provider/provider.dart';
 
 import 'core/di/service_locator.dart';
 import 'core/theme/app_theme.dart';
+import 'core/navigation/app_router.dart';
 import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
+<<<<<<< HEAD
 import 'features/auth/presentation/screens/auth_screen.dart';
+=======
+import 'features/auth/presentation/screens/sign_up_screen.dart';
+>>>>>>> 45fc50b (feat: implement centralized navigation router with onGenerateRoute)
 import 'core/theme/theme_provider.dart';
 
 void main() async {
@@ -53,13 +58,16 @@ class MyApp extends StatelessWidget {
             title: 'TuLink Flutter',
             debugShowCheckedModeBanner: false,
             
-            // Theme configuration
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: themeProvider.themeMode,
+            // Theme configuration - Tu-Link dark theme only
+            theme: AppTheme.tulinkTheme,
+            darkTheme: AppTheme.tulinkTheme,
+            themeMode: ThemeMode.dark, // Tu-Link is dark mode only
             
-            // Home page
-            home: const HomePage(),
+            // Centralized routing with onGenerateRoute
+            onGenerateRoute: AppRouter.generateRoute,
+            
+            // Initial route
+            initialRoute: HomePage.routeName,
           );
         },
       ),
@@ -68,6 +76,9 @@ class MyApp extends StatelessWidget {
 }
 
 class HomePage extends StatelessWidget {
+  /// Route name for navigation
+  static const String routeName = '/home';
+  
   const HomePage({super.key});
 
   @override
@@ -100,8 +111,8 @@ class HomePage extends StatelessWidget {
             );
           }
 
-          if (authProvider.isSignedIn) {
-            return _buildSignedInView(context, authProvider);
+          if (!authProvider.isSignedIn) {
+            return const SignUpScreen();
           } else {
             return _buildSignedOutView(context, authProvider);
           }
@@ -110,67 +121,6 @@ class HomePage extends StatelessWidget {
     );
   }
 
-  Widget _buildSignedInView(BuildContext context, AuthProvider authProvider) {
-    final user = authProvider.user;
-    
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome!',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text('Name: ${user?.name ?? 'Unknown'}'),
-                  Text('Email: ${user?.email ?? 'Unknown'}'),
-                  Text(
-                    'Verified: ${user?.isEmailVerified == true ? 'Yes' : 'No'}',
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Clean Architecture Features:',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text('✅ Repository Pattern implemented'),
-          const Text('✅ Dependency Injection with Provider'),
-          const Text('✅ DioClient with interceptors'),
-          const Text('✅ Hive caching for offline support'),
-          const Text('✅ Flutter Secure Storage for tokens'),
-          const Text('✅ Material 3 theme with dark mode'),
-          const Text('✅ Centralized error handling'),
-          const Text('✅ Feature-first directory structure'),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () async {
-                final success = await authProvider.signOut();
-                if (!success && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(authProvider.errorMessage)),
-                  );
-                }
-              },
-              child: const Text('Sign Out'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSignedOutView(BuildContext context, AuthProvider authProvider) {
     return Padding(
@@ -256,6 +206,16 @@ class HomePage extends StatelessWidget {
                 );
               },
               child: const Text('Sign In / Sign Up'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                Navigator.pushNamed(context, Routes.signUp);
+              },
+              child: const Text('Go to Sign-Up Screen'),
             ),
           ),
         ],
