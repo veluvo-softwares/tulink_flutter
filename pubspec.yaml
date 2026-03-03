@@ -34,6 +34,9 @@ dependencies:
   # Icons
   cupertino_icons: ^1.0.8
   
+  # Typography
+  google_fonts: ^6.2.1
+  
   # State Management & DI
   provider: ^6.1.2
   
@@ -74,6 +77,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  
+  # Tu-Link uses custom fonts from Google Fonts:
+  # - Rajdhani: Racing-inspired font for headings
+  # - Inter: Clean, readable font for body text
 
   # To add assets to your application, add an assets section, like this:
   # assets:
