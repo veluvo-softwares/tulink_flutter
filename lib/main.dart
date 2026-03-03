@@ -6,6 +6,7 @@ import 'core/di/service_locator.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/auth/presentation/screens/auth_screen.dart';
 import 'core/theme/theme_provider.dart';
 
 void main() async {
@@ -247,20 +248,14 @@ class HomePage extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () async {
-                // Demo sign in with mock credentials
-                final success = await authProvider.signIn(
-                  email: 'demo@example.com',
-                  password: 'password123',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const AuthScreen(),
+                  ),
                 );
-                
-                if (!success && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(authProvider.errorMessage)),
-                  );
-                }
               },
-              child: const Text('Demo Sign In'),
+              child: const Text('Sign In / Sign Up'),
             ),
           ),
         ],

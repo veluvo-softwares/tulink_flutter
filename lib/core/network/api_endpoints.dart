@@ -4,10 +4,6 @@
 class ApiEndpoints {
   ApiEndpoints._();
 
-  // Base URLs
-  static const String baseUrl = 'https://api.example.com';
-  static const String apiVersion = '/v1';
-
   // Authentication endpoints
   static const String signIn = '/auth/signin';
   static const String signUp = '/auth/signup';
@@ -58,10 +54,6 @@ class ApiEndpoints {
 
   // Helper methods for dynamic endpoint construction
   
-  /// Constructs a full URL with base URL and version
-  static String fullUrl(String endpoint) {
-    return '$baseUrl$apiVersion$endpoint';
-  }
 
   /// Constructs paginated endpoint with query parameters
   static String paginated(String baseEndpoint, {

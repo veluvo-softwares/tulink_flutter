@@ -1,11 +1,12 @@
 import 'package:dio/dio.dart';
 
-import 'package:tulink_flutter/core/network/api_endpoints.dart';
-import 'package:tulink_flutter/core/network/api_handler.dart';
+import '../../../../core/network/api_routes.dart';
+import '../../../../core/network/api_handler.dart';
+import '../../../../core/network/api_query_builder.dart';
 
 /// Authentication API service following Retrofit pattern
 /// Contains clean method signatures that delegate to ApiHandler
-/// All route definitions are centralized in ApiEndpoints
+/// All route definitions are centralized in ApiRoutes
 /// Zero hardcoded strings in this class
 class AuthApiService {
   AuthApiService(this._dio);
@@ -16,7 +17,7 @@ class AuthApiService {
   Future<Map<String, dynamic>> signIn(Map<String, dynamic> credentials) {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
       () => _dio.post<Map<String, dynamic>>(
-        ApiEndpoints.signIn,
+        ApiRoutes.signIn,
         data: credentials,
       ),
       (data) => data,
@@ -27,7 +28,7 @@ class AuthApiService {
   Future<Map<String, dynamic>> signUp(Map<String, dynamic> userDetails) {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
       () => _dio.post<Map<String, dynamic>>(
-        ApiEndpoints.signUp,
+        ApiRoutes.signUp,
         data: userDetails,
       ),
       (data) => data,
@@ -37,14 +38,14 @@ class AuthApiService {
   /// Sign out the current user
   Future<void> signOut() {
     return ApiHandler.performVoidApiCall(
-      () => _dio.post<void>(ApiEndpoints.signOut),
+      () => _dio.post<void>(ApiRoutes.signOut),
     );
   }
 
   /// Get currently signed in user
   Future<Map<String, dynamic>> getCurrentUser() {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
-      () => _dio.get<Map<String, dynamic>>(ApiEndpoints.currentUser),
+      () => _dio.get<Map<String, dynamic>>(ApiRoutes.currentUser),
       (data) => data,
     );
   }
@@ -52,7 +53,7 @@ class AuthApiService {
   /// Refresh authentication token
   Future<Map<String, dynamic>> refreshToken() {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
-      () => _dio.post<Map<String, dynamic>>(ApiEndpoints.refreshToken),
+      () => _dio.post<Map<String, dynamic>>(ApiRoutes.refreshToken),
       (data) => data,
     );
   }
@@ -61,7 +62,7 @@ class AuthApiService {
   Future<void> resetPassword(Map<String, dynamic> emailData) {
     return ApiHandler.performVoidApiCall(
       () => _dio.post<void>(
-        ApiEndpoints.resetPassword,
+        ApiRoutes.resetPassword,
         data: emailData,
       ),
     );
@@ -71,7 +72,7 @@ class AuthApiService {
   Future<void> verifyEmail(Map<String, dynamic> tokenData) {
     return ApiHandler.performVoidApiCall(
       () => _dio.post<void>(
-        ApiEndpoints.verifyEmail,
+        ApiRoutes.verifyEmail,
         data: tokenData,
       ),
     );
@@ -81,7 +82,7 @@ class AuthApiService {
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> profileData) {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
       () => _dio.patch<Map<String, dynamic>>(
-        ApiEndpoints.updateProfile,
+        ApiRoutes.updateProfile,
         data: profileData,
       ),
       (data) => data,
@@ -91,7 +92,7 @@ class AuthApiService {
   /// Delete user account
   Future<void> deleteAccount() {
     return ApiHandler.performVoidApiCall(
-      () => _dio.delete<void>(ApiEndpoints.deleteAccount),
+      () => _dio.delete<void>(ApiRoutes.deleteAccount),
     );
   }
 
@@ -101,7 +102,7 @@ class AuthApiService {
   Future<Map<String, dynamic>> getUserProfile(String userId) {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
       () => _dio.get<Map<String, dynamic>>(
-        ApiEndpoints.userById(userId),
+        ApiRoutes.userById(userId),
       ),
       (data) => data,
     );
@@ -113,8 +114,8 @@ class AuthApiService {
     int limit = 20,
     String? filter,
   }) {
-    final endpoint = ApiEndpoints.paginated(
-      ApiEndpoints.notifications,
+    final endpoint = ApiQueryBuilder.paginated(
+      ApiRoutes.notifications,
       page: page,
       limit: limit,
     );
@@ -137,8 +138,8 @@ class AuthApiService {
     int? page,
     int? limit,
   }) {
-    final endpoint = ApiEndpoints.search(
-      ApiEndpoints.userSearch,
+    final endpoint = ApiQueryBuilder.search(
+      ApiRoutes.userSearch,
       query: query,
       filters: filters,
       page: page,
@@ -165,7 +166,7 @@ class AuthApiService {
         });
 
         return _dio.post<Map<String, dynamic>>(
-          '${ApiEndpoints.updateProfile}/avatar',
+          '${ApiRoutes.updateProfile}/avatar',
           data: formData,
         );
       },
@@ -176,7 +177,7 @@ class AuthApiService {
   /// Download file (stream response example)
   Future<Response<ResponseBody>> downloadFile(String fileId) {
     return _dio.get<ResponseBody>(
-      ApiEndpoints.downloadFile(fileId),
+      ApiRoutes.downloadMedia(fileId),
       options: Options(responseType: ResponseType.stream),
     );
   }
