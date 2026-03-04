@@ -7,18 +7,9 @@ import 'app_router.dart';
 class NavigationHelper {
   NavigationHelper._();
 
-  /// Navigate to sign-up screen with optional initial email
-  static Future<void> toSignUp(
-    BuildContext context, {
-    String? initialEmail,
-  }) async {
-    final args = initialEmail != null ? {'email': initialEmail} : null;
-    
-    await Navigator.pushNamed(
-      context,
-      Routes.signUp,
-      arguments: args,
-    );
+  /// Navigate to authentication screen
+  static Future<void> toAuth(BuildContext context) async {
+    await Navigator.pushNamed(context, Routes.auth);
   }
 
   /// Navigate to home screen
@@ -45,23 +36,12 @@ class NavigationHelper {
     return Navigator.canPop(context);
   }
 
-  /// Example of navigating with complex arguments
-  static Future<void> toSignUpWithComplexArgs(
-    BuildContext context, {
-    required String email,
-    String? referralCode,
-    Map<String, dynamic>? metadata,
-  }) async {
-    final args = <String, dynamic>{
-      'email': email,
-      if (referralCode != null) 'referralCode': referralCode,
-      if (metadata != null) 'metadata': metadata,
-    };
-
-    await Navigator.pushNamed(
+  /// Navigate to authentication screen and replace current route
+  static Future<void> toAuthAndClearStack(BuildContext context) async {
+    await Navigator.pushNamedAndRemoveUntil(
       context,
-      Routes.signUp,
-      arguments: args,
+      Routes.auth,
+      (route) => false,
     );
   }
 }

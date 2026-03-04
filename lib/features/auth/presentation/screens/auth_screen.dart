@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/main.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
@@ -372,14 +373,14 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
-      // Navigate to home or close auth screen
-      Navigator.of(context).pop();
+      // Navigate to home on successful sign in
+      Navigator.of(context).pushReplacementNamed(HomePage.routeName);
     } else {
-      // Show error
+      // Show error message via SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage),
-          backgroundColor: Theme.of(context).extension<TulinkColors>()!.electricRed,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -398,14 +399,14 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
-      // Navigate to home or close auth screen
-      Navigator.of(context).pop();
+      // Navigate to home on successful sign up
+      Navigator.of(context).pushReplacementNamed(HomePage.routeName);
     } else {
-      // Show error
+      // Show error message via SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage),
-          backgroundColor: Theme.of(context).extension<TulinkColors>()!.electricRed,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }

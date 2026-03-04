@@ -6,13 +6,13 @@ import 'package:tulink_flutter/features/auth/data/services/auth_api_service.dart
 /// Zero hardcoded strings - all endpoints are defined in AuthApiService
 abstract class AuthRemoteDataSource {
   /// Sign in with email and password
-  Future<({UserModel user, String token})> signIn({
+  Future<({UserModel user, String token, String? refreshToken})> signIn({
     required String email,
     required String password,
   });
 
   /// Sign up with email, password and name
-  Future<({UserModel user, String token})> signUp({
+  Future<({UserModel user, String token, String? refreshToken})> signUp({
     required String email,
     required String password,
     required String name,
@@ -53,7 +53,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final AuthApiService _authApiService;
 
   @override
-  Future<({UserModel user, String token})> signIn({
+  Future<({UserModel user, String token, String? refreshToken})> signIn({
     required String email,
     required String password,
   }) async {
@@ -63,15 +63,18 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'password': password,
     });
 
-    // Map response to domain entities
-    final user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
-    final token = response['token'] as String;
+    // Backend response format: { "success": true, "data": { "user": {...}, "tokens": { "idToken": "...", "refreshToken": "..." } } }
+    final responseData = response['data'] as Map<String, dynamic>;
+    final user = UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
+    final tokens = responseData['tokens'] as Map<String, dynamic>;
+    final token = tokens['idToken'] as String;
+    final refreshToken = tokens['refreshToken'] as String?;
 
-    return (user: user, token: token);
+    return (user: user, token: token, refreshToken: refreshToken);
   }
 
   @override
-  Future<({UserModel user, String token})> signUp({
+  Future<({UserModel user, String token, String? refreshToken})> signUp({
     required String email,
     required String password,
     required String name,
@@ -80,14 +83,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     final response = await _authApiService.signUp({
       'email': email,
       'password': password,
-      'name': name,
+      'displayName': name,
     });
 
-    // Map response to domain entities
-    final user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
-    final token = response['token'] as String;
+    // Backend response format: { "success": true, "data": { "user": {...}, "tokens": { "idToken": "...", "refreshToken": "..." } } }
+    final responseData = response['data'] as Map<String, dynamic>;
+    final user = UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
+    final tokens = responseData['tokens'] as Map<String, dynamic>;
+    final token = tokens['idToken'] as String;
+    final refreshToken = tokens['refreshToken'] as String?;
 
-    return (user: user, token: token);
+    return (user: user, token: token, refreshToken: refreshToken);
   }
 
   @override
@@ -100,14 +106,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<UserModel> getCurrentUser() async {
     // Execute API call and map to domain entity
     final response = await _authApiService.getCurrentUser();
-    return UserModel.fromJson(response['user'] as Map<String, dynamic>);
+    final responseData = response['data'] as Map<String, dynamic>;
+    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
   }
 
   @override
   Future<String> refreshToken() async {
     // Execute API call and extract token
     final response = await _authApiService.refreshToken();
-    return response['token'] as String;
+    final responseData = response['data'] as Map<String, dynamic>;
+    final tokens = responseData['tokens'] as Map<String, dynamic>;
+    return tokens['idToken'] as String;
   }
 
   @override
@@ -134,7 +143,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     // Execute API call and map to domain entity
     final response = await _authApiService.updateProfile(profileData);
-    return UserModel.fromJson(response['user'] as Map<String, dynamic>);
+    final responseData = response['data'] as Map<String, dynamic>;
+    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
   }
 
   @override
@@ -148,7 +158,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   /// Get user profile by ID (example of using service's advanced features)
   Future<UserModel> getUserProfile(String userId) async {
     final response = await _authApiService.getUserProfile(userId);
-    return UserModel.fromJson(response['user'] as Map<String, dynamic>);
+    final responseData = response['data'] as Map<String, dynamic>;
+    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
   }
 
   /// Get paginated notifications (example of pagination)
@@ -163,9 +174,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       filter: filter,
     );
 
-    final notifications = (response['notifications'] as List<dynamic>)
+    final responseData = response['data'] as Map<String, dynamic>;
+    final notifications = (responseData['notifications'] as List<dynamic>)
         .cast<Map<String, dynamic>>();
-    final hasMore = response['hasMore'] as bool? ?? false;
+    final hasMore = responseData['hasMore'] as bool? ?? false;
 
     return (notifications: notifications, hasMore: hasMore);
   }
@@ -184,7 +196,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       limit: limit,
     );
 
-    final users = (response['users'] as List<dynamic>)
+    final responseData = response['data'] as Map<String, dynamic>;
+    final users = (responseData['users'] as List<dynamic>)
         .map((userData) => UserModel.fromJson(userData as Map<String, dynamic>))
         .toList();
 
@@ -203,6 +216,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       metadata: metadata,
     );
 
-    return UserModel.fromJson(response['user'] as Map<String, dynamic>);
+    final responseData = response['data'] as Map<String, dynamic>;
+    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
   }
 }

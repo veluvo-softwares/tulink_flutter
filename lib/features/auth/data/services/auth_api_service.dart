@@ -81,7 +81,7 @@ class AuthApiService {
   /// Update user profile
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> profileData) {
     return ApiHandler.performApiCall<Map<String, dynamic>>(
-      () => _dio.patch<Map<String, dynamic>>(
+      () => _dio.put<Map<String, dynamic>>(
         ApiRoutes.updateProfile,
         data: profileData,
       ),

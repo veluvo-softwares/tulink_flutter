@@ -58,12 +58,14 @@ class UserModel extends UserEntity {
 
   /// Create UserModel from JSON
   factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
-        id: json['id'] as String,
+        id: json['uid'] as String,
         email: json['email'] as String,
-        name: json['name'] as String,
+        name: json['displayName'] as String,
         profilePicture: json['profilePicture'] as String?,
-        isEmailVerified: json['isEmailVerified'] as bool? ?? false,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        isEmailVerified: json['emailVerified'] as bool? ?? false,
+        createdAt: json['createdAt'] != null 
+            ? DateTime.parse(json['createdAt'] as String)
+            : DateTime.now(),
         updatedAt: json['updatedAt'] != null 
             ? DateTime.parse(json['updatedAt'] as String)
             : null,
