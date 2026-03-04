@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// Application configuration and environment management
 /// Handles environment-specific settings and feature flags
 class AppConfig {
@@ -27,7 +29,21 @@ class AppConfig {
         return 'https://staging-api.tulink.com/v1';
       case 'development':
       default:
-        return 'http://localhost:3000/api/v1';
+        return _getDevelopmentUrl();
+    }
+  }
+
+  // Platform-specific localhost URL for development
+  static String _getDevelopmentUrl() {
+    if (Platform.isAndroid) {
+      // Android emulator uses 10.0.2.2 to access host machine's localhost
+      return 'http://10.0.2.2:3000';
+    } else if (Platform.isIOS) {
+      // iOS simulator can access localhost directly
+      return 'http://localhost:3000';
+    } else {
+      // Web and other platforms
+      return 'http://localhost:3000';
     }
   }
 

@@ -119,6 +119,19 @@ class ApiHandler {
         
       case DioExceptionType.badResponse:
         if (e.response != null) {
+          // Try to extract message from backend response
+          try {
+            final responseData = e.response!.data;
+            if (responseData is Map<String, dynamic> && 
+                responseData.containsKey('message')) {
+              return ServerFailure(
+                message: responseData['message'] as String,
+                statusCode: e.response!.statusCode,
+              );
+            }
+          } catch (_) {
+            // Fallback to status code based message
+          }
           return ServerFailure.fromStatusCode(e.response!.statusCode ?? 500);
         }
         return NetworkFailure.unknown;

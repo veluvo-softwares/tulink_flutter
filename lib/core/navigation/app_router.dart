@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:tulink_flutter/features/auth/presentation/screens/sign_up_screen.dart';
 import 'package:tulink_flutter/main.dart';
+import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
 import 'undefined_route_screen.dart';
 
 /// Centralized router for handling all navigation throughout the app
@@ -20,19 +20,9 @@ class AppRouter {
           settings,
         );
 
-      case SignUpScreen.routeName:
-        // Example of argument handling - SignUpScreen could accept initial email
-        final args = settings.arguments;
-        String? initialEmail;
-        
-        if (args is Map<String, dynamic>) {
-          initialEmail = _safeCast<String>(args['email']);
-        } else if (args is String) {
-          initialEmail = args;
-        }
-        
+      case AuthScreen.routeName:
         return _createRoute(
-          SignUpScreen(initialEmail: initialEmail),
+          const AuthScreen(),
           settings,
         );
 
@@ -58,16 +48,6 @@ class AppRouter {
     );
   }
 
-  /// Safe type casting utility for arguments
-  /// Returns null if cast fails instead of throwing exception
-  static T? _safeCast<T>(dynamic value) {
-    try {
-      return value as T?;
-    } catch (e) {
-      debugPrint('AppRouter: Failed to cast $value to $T: $e');
-      return null;
-    }
-  }
 }
 
 /// Route constants for type-safe navigation
@@ -76,8 +56,8 @@ abstract class Routes {
   /// Home page route
   static const String home = HomePage.routeName;
   
-  /// Sign up screen route
-  static const String signUp = SignUpScreen.routeName;
+  /// Authentication screen route
+  static const String auth = AuthScreen.routeName;
   
   /// Root route (alias for home)
   static const String root = '/';

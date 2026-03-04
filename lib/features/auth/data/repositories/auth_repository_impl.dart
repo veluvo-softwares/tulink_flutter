@@ -35,6 +35,11 @@ class AuthRepositoryImpl implements AuthRepository {
       await localDataSource.cacheUser(result.user);
       await localDataSource.cacheToken(result.token);
       await dioClient.saveAuthToken(result.token);
+      
+      // Save refresh token if provided
+      if (result.refreshToken != null) {
+        await dioClient.saveRefreshToken(result.refreshToken!);
+      }
 
       return (
         user: result.user.toEntity(),
@@ -70,6 +75,11 @@ class AuthRepositoryImpl implements AuthRepository {
       await localDataSource.cacheUser(result.user);
       await localDataSource.cacheToken(result.token);
       await dioClient.saveAuthToken(result.token);
+      
+      // Save refresh token if provided
+      if (result.refreshToken != null) {
+        await dioClient.saveRefreshToken(result.refreshToken!);
+      }
 
       return (
         user: result.user.toEntity(),

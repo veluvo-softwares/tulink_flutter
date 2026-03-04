@@ -7,11 +7,7 @@ import 'core/theme/app_theme.dart';
 import 'core/navigation/app_router.dart';
 import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
-<<<<<<< HEAD
 import 'features/auth/presentation/screens/auth_screen.dart';
-=======
-import 'features/auth/presentation/screens/sign_up_screen.dart';
->>>>>>> 45fc50b (feat: implement centralized navigation router with onGenerateRoute)
 import 'core/theme/theme_provider.dart';
 
 void main() async {
@@ -112,7 +108,7 @@ class HomePage extends StatelessWidget {
           }
 
           if (!authProvider.isSignedIn) {
-            return const SignUpScreen();
+            return const AuthScreen();
           } else {
             return _buildSignedOutView(context, authProvider);
           }
@@ -208,16 +204,7 @@ class HomePage extends StatelessWidget {
               child: const Text('Sign In / Sign Up'),
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, Routes.signUp);
-              },
-              child: const Text('Go to Sign-Up Screen'),
-            ),
-          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

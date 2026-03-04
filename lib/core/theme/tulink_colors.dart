@@ -11,6 +11,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
     required this.white,
     required this.silver,
     required this.cardDark,
+    required this.tulinkBlue,
   });
 
   /// Electric Red (#E8002D) - Primary accent color for CTAs and highlights
@@ -30,6 +31,9 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
   
   /// Card Dark (#1E1E1E) - Card background color
   final Color cardDark;
+  
+  /// Tu-Link Blue (#0066FF) - Racing blue accent
+  final Color tulinkBlue;
 
   @override
   TulinkColors copyWith({
@@ -39,6 +43,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
     Color? white,
     Color? silver,
     Color? cardDark,
+    Color? tulinkBlue,
   }) {
     return TulinkColors(
       electricRed: electricRed ?? this.electricRed,
@@ -47,6 +52,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
       white: white ?? this.white,
       silver: silver ?? this.silver,
       cardDark: cardDark ?? this.cardDark,
+      tulinkBlue: tulinkBlue ?? this.tulinkBlue,
     );
   }
 
@@ -62,6 +68,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
       white: Color.lerp(white, other.white, t)!,
       silver: Color.lerp(silver, other.silver, t)!,
       cardDark: Color.lerp(cardDark, other.cardDark, t)!,
+      tulinkBlue: Color.lerp(tulinkBlue, other.tulinkBlue, t)!,
     );
   }
 
@@ -73,6 +80,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
     white: Color(0xFFFFFFFF),
     silver: Color(0xFFC8C8C8),
     cardDark: Color(0xFF1E1E1E),
+    tulinkBlue: Color(0xFF0066FF),
   );
 
   /// Dark mode colors (same as light for Tu-Link)
@@ -83,6 +91,7 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
     white: Color(0xFFFFFFFF),
     silver: Color(0xFFC8C8C8),
     cardDark: Color(0xFF1E1E1E),
+    tulinkBlue: Color(0xFF0066FF),
   );
 }
 

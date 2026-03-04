@@ -10,7 +10,7 @@ class AppConstants {
 
   // API Configuration - DEPRECATED: Use AppConfig.baseUrl
   @Deprecated('Use AppConfig.baseUrl instead')
-  static const String baseUrl = 'http://localhost:3000/api/v1';
+  static const String baseUrl = 'http://localhost:3000/';
   
   @Deprecated('Use AppConfig.connectTimeout instead')
   static const Duration connectTimeout = Duration(seconds: 30);

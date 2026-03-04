@@ -5,11 +5,11 @@ class ApiRoutes {
   ApiRoutes._();
 
   // Authentication Routes
-  static const String signIn = '/auth/signin';
-  static const String signUp = '/auth/signup';
-  static const String signOut = '/auth/signout';
+  static const String signIn = '/auth/login';
+  static const String signUp = '/auth/register';
+  static const String signOut = '/auth/logout';
   static const String refreshToken = '/auth/refresh';
-  static const String currentUser = '/auth/me';
+  static const String currentUser = '/auth/profile';
   static const String resetPassword = '/auth/reset-password';
   static const String verifyEmail = '/auth/verify-email';
   static const String updateProfile = '/auth/profile';
@@ -26,7 +26,7 @@ class ApiRoutes {
   static String userFollowing(String id) => '/users/$id/following';
 
   // Content Routes
-  static const String posts = '/posts';
+
   static const String trending = '/posts/trending';
   static const String feed = '/feed';
   

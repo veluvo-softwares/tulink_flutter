@@ -4,6 +4,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../config/app_config.dart';
 import '../constants/storage_keys.dart';
+import 'api_routes.dart';
 
 /// A singleton Dio client with centralized configuration
 class DioClient {
@@ -14,6 +15,7 @@ class DioClient {
 
   late Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  bool _isRefreshing = false;
 
   Dio get dio => _dio;
 
@@ -52,13 +54,39 @@ class DioClient {
       },
       onError: (error, handler) async {
         // Handle token expiration (401 Unauthorized)
-        if (error.response?.statusCode == 401) {
-          // Clear stored token
-          await _secureStorage.delete(key: StorageKeys.authToken);
-          await _secureStorage.delete(key: StorageKeys.refreshToken);
+        if (error.response?.statusCode == 401 && !_isRefreshing) {
+          final refreshToken = await getRefreshToken();
           
-          // You can add automatic token refresh logic here
-          // For now, we'll just pass the error along
+          // Only attempt refresh if we have a refresh token and aren't already refreshing
+          if (refreshToken != null && refreshToken.isNotEmpty) {
+            _isRefreshing = true;
+            
+            try {
+              // Attempt to refresh the token
+              final newToken = await _refreshToken();
+              
+              if (newToken != null) {
+                // Save new token and retry original request
+                await saveAuthToken(newToken);
+                
+                // Update the failed request with new token and retry
+                final requestOptions = error.requestOptions;
+                requestOptions.headers['Authorization'] = 'Bearer $newToken';
+                
+                final response = await _dio.fetch(requestOptions);
+                handler.resolve(response);
+                return;
+              }
+            } catch (e) {
+              // Refresh failed, clear tokens and logout user
+              await clearTokens();
+            } finally {
+              _isRefreshing = false;
+            }
+          }
+          
+          // If no refresh token or refresh failed, clear tokens
+          await clearTokens();
         }
         handler.next(error);
       },
@@ -112,5 +140,45 @@ class DioClient {
   Future<bool> isAuthenticated() async {
     final token = await getAuthToken();
     return token != null && token.isNotEmpty;
+  }
+
+  /// Refresh authentication token using refresh token
+  Future<String?> _refreshToken() async {
+    try {
+      final refreshToken = await getRefreshToken();
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return null;
+      }
+
+      // Create a temporary Dio instance without interceptors to avoid recursion
+      final tempDio = Dio(BaseOptions(baseUrl: AppConfig.baseUrl));
+      
+      // Add refresh token to request
+      tempDio.options.headers['Authorization'] = 'Bearer $refreshToken';
+      
+      final response = await tempDio.post<Map<String, dynamic>>(
+        ApiRoutes.refreshToken,
+      );
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final responseData = response.data!;
+        final data = responseData['data'] as Map<String, dynamic>;
+        final tokens = data['tokens'] as Map<String, dynamic>;
+        final newToken = tokens['idToken'] as String;
+        final newRefreshToken = tokens['refreshToken'] as String?;
+        
+        // Save new refresh token if provided
+        if (newRefreshToken != null) {
+          await saveRefreshToken(newRefreshToken);
+        }
+        
+        return newToken;
+      }
+    } catch (e) {
+      // Refresh failed
+      return null;
+    }
+    
+    return null;
   }
 }
