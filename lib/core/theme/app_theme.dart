@@ -31,7 +31,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: _tulinkColorScheme,
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: GoogleFonts.rajdhani().fontFamily,
       scaffoldBackgroundColor: _colors.carbonBlack,
       
       // Theme extensions for custom colors
@@ -45,9 +45,9 @@ class AppTheme {
         centerTitle: true,
         backgroundColor: Colors.transparent,
         foregroundColor: _colors.white,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.rajdhani(
           fontSize: 22,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: _colors.white,
         ),
       ),
@@ -62,7 +62,7 @@ class AppTheme {
         clipBehavior: Clip.antiAlias,
       ),
 
-      // Global ElevatedButton theme - 16px radius, red background, bold Inter text
+      // Global ElevatedButton theme - 16px radius, red background, bold Rajdhani text
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: _colors.electricRed,
@@ -73,9 +73,9 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.rajdhani(
             fontSize: 16,
-            fontWeight: FontWeight.w800, // Extra Bold
+            fontWeight: FontWeight.w700, // Bold
             color: _colors.white,
           ),
         ),
@@ -90,7 +90,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.rajdhani(
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: _colors.white,
@@ -104,8 +104,8 @@ class AppTheme {
           foregroundColor: _colors.electricRed,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: GoogleFonts.inter(
-            fontSize: 13,
+          textStyle: GoogleFonts.rajdhani(
+            fontSize: 14,
             fontWeight: FontWeight.w600, // Semi-Bold
             color: _colors.electricRed,
           ),
@@ -132,15 +132,15 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: _colors.electricRed, width: 2),
         ),
-        hintStyle: GoogleFonts.inter(
+        hintStyle: GoogleFonts.rajdhani(
           color: _colors.silver,
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
         ),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: GoogleFonts.rajdhani(
           color: _colors.silver,
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
@@ -156,55 +156,55 @@ class AppTheme {
         selectedItemColor: _colors.electricRed,
         unselectedItemColor: _colors.silver,
         showUnselectedLabels: true,
-        selectedLabelStyle: GoogleFonts.inter(
-          fontWeight: FontWeight.w600,
+        selectedLabelStyle: GoogleFonts.rajdhani(
+          fontWeight: FontWeight.w700,
           fontSize: 12,
         ),
-        unselectedLabelStyle: GoogleFonts.inter(
-          fontWeight: FontWeight.w400,
+        unselectedLabelStyle: GoogleFonts.rajdhani(
+          fontWeight: FontWeight.w500,
           fontSize: 12,
         ),
       ),
 
-      // Custom Typography Specification (Inter Family)
-      textTheme: GoogleFonts.interTextTheme().copyWith(
-        // Sign-In/Sign-Up Titles: Inter, Extra Bold, Size 32, White
-        headlineLarge: GoogleFonts.inter(
-          fontSize: 32,
-          fontWeight: FontWeight.w800, // Extra Bold
+      // Custom Typography Specification (Rajdhani Family)
+      textTheme: GoogleFonts.rajdhaniTextTheme().copyWith(
+        // Sign-In/Sign-Up Titles: Rajdhani, Bold, Size 34, White
+        headlineLarge: GoogleFonts.rajdhani(
+          fontSize: 34,
+          fontWeight: FontWeight.w700, // Bold
           color: _colors.white,
         ),
-        // Card Action Titles: Inter, Extra Bold, Size 20, White
-        headlineMedium: GoogleFonts.inter(
-          fontSize: 20,
-          fontWeight: FontWeight.w800, // Extra Bold
+        // Card Action Titles: Rajdhani, Bold, Size 22, White
+        headlineMedium: GoogleFonts.rajdhani(
+          fontSize: 22,
+          fontWeight: FontWeight.w700, // Bold
           color: _colors.white,
         ),
-        // Standard Body Text: Inter, Regular, Size 15, Silver
-        bodyLarge: GoogleFonts.inter(
-          fontSize: 15,
-          fontWeight: FontWeight.w400, // Regular
+        // Standard Body Text: Rajdhani, Medium, Size 16, Silver
+        bodyLarge: GoogleFonts.rajdhani(
+          fontSize: 16,
+          fontWeight: FontWeight.w500, // Medium
           color: _colors.silver,
         ),
-        bodyMedium: GoogleFonts.inter(
-          fontSize: 15,
-          fontWeight: FontWeight.w400, // Regular
+        bodyMedium: GoogleFonts.rajdhani(
+          fontSize: 16,
+          fontWeight: FontWeight.w500, // Medium
           color: _colors.silver,
         ),
-        // Small Action Links: Inter, Semi-Bold, Size 13, Electric Red
-        bodySmall: GoogleFonts.inter(
-          fontSize: 13,
+        // Small Action Links: Rajdhani, Semi-Bold, Size 14, Electric Red
+        bodySmall: GoogleFonts.rajdhani(
+          fontSize: 14,
           fontWeight: FontWeight.w600, // Semi-Bold
           color: _colors.electricRed,
         ),
         // Additional text styles
-        labelLarge: GoogleFonts.inter(
-          fontSize: 15,
+        labelLarge: GoogleFonts.rajdhani(
+          fontSize: 16,
           fontWeight: FontWeight.w600,
           color: _colors.white,
         ),
-        labelMedium: GoogleFonts.inter(
-          fontSize: 13,
+        labelMedium: GoogleFonts.rajdhani(
+          fontSize: 14,
           fontWeight: FontWeight.w600,
           color: _colors.electricRed,
         ),
@@ -228,10 +228,10 @@ class AppTheme {
       // Snackbar theme
       snackBarTheme: SnackBarThemeData(
         backgroundColor: _colors.brushedSteel,
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.rajdhani(
           color: _colors.white,
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
         ),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(16)),
