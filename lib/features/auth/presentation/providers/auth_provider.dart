@@ -53,14 +53,17 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
+    print('🔵 AuthProvider.signIn() called with email: $email');
     _setLoading(true);
     _clearFailure();
 
     try {
+      print('📞 AuthProvider calling _authRepository.signIn()...');
       final result = await _authRepository.signIn(
         email: email,
         password: password,
       );
+      print('✅ AuthProvider received result: user=${result.user?.email}, failure=${result.failure}');
 
       if (result.failure == null) {
         _user = result.user;

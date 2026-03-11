@@ -14,6 +14,7 @@ class UserModel extends UserEntity {
     required this.id,
     required this.email,
     required this.name,
+    this.phoneNumber,
     this.profilePicture,
     this.isEmailVerified = false,
     required this.createdAt,
@@ -22,6 +23,7 @@ class UserModel extends UserEntity {
           id: id,
           email: email,
           name: name,
+          phoneNumber: phoneNumber,
           profilePicture: profilePicture,
           isEmailVerified: isEmailVerified,
           createdAt: createdAt,
@@ -29,6 +31,7 @@ class UserModel extends UserEntity {
         );
 
   @HiveField(0)
+  @JsonKey(name: 'uid')
   @override
   final String id;
 
@@ -37,71 +40,60 @@ class UserModel extends UserEntity {
   final String email;
 
   @HiveField(2)
+  @JsonKey(name: 'displayName')
   @override
   final String name;
 
   @HiveField(3)
   @override
-  final String? profilePicture;
+  final String? phoneNumber;
 
   @HiveField(4)
   @override
-  final bool isEmailVerified;
+  final String? profilePicture;
 
   @HiveField(5)
+  @JsonKey(name: 'emailVerified')
   @override
-  final DateTime createdAt;
+  final bool isEmailVerified;
 
   @HiveField(6)
   @override
+  final DateTime createdAt;
+
+  @HiveField(7)
+  @override
   final DateTime? updatedAt;
 
-  /// Create UserModel from JSON
-  factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
-        id: json['uid'] as String,
-        email: json['email'] as String,
-        name: json['displayName'] as String,
-        profilePicture: json['profilePicture'] as String?,
-        isEmailVerified: json['emailVerified'] as bool? ?? false,
-        createdAt: json['createdAt'] != null 
-            ? DateTime.parse(json['createdAt'] as String)
-            : DateTime.now(),
-        updatedAt: json['updatedAt'] != null 
-            ? DateTime.parse(json['updatedAt'] as String)
-            : null,
-      );
-
-  /// Convert UserModel to JSON
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'email': email,
-        'name': name,
-        'profilePicture': profilePicture,
-        'isEmailVerified': isEmailVerified,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt?.toIso8601String(),
-      };
-
-  /// Convert UserModel to UserEntity
-  UserEntity toEntity() => UserEntity(
-        id: id,
-        email: email,
-        name: name,
-        profilePicture: profilePicture,
-        isEmailVerified: isEmailVerified,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-      );
+  /// Create UserModel from JSON (uses generated method with JsonKey mappings)
+  factory UserModel.fromJson(Map<String, dynamic> json) => 
+      _$UserModelFromJson(json);
 
   /// Create UserModel from UserEntity
   factory UserModel.fromEntity(UserEntity entity) => UserModel(
         id: entity.id,
         email: entity.email,
         name: entity.name,
+        phoneNumber: entity.phoneNumber,
         profilePicture: entity.profilePicture,
         isEmailVerified: entity.isEmailVerified,
         createdAt: entity.createdAt,
         updatedAt: entity.updatedAt,
+      );
+
+  /// Convert UserModel to JSON (uses generated method with JsonKey mappings)
+  Map<String, dynamic> toJson() => _$UserModelToJson(this);
+
+  /// Convert UserModel to UserEntity
+  UserEntity toEntity() => UserEntity(
+        id: id,
+        email: email,
+        name: name,
+        phoneNumber: phoneNumber,
+        profilePicture: profilePicture,
+        isEmailVerified: isEmailVerified,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
       );
 
   /// Create a copy with new values
@@ -110,6 +102,7 @@ class UserModel extends UserEntity {
     String? id,
     String? email,
     String? name,
+    String? phoneNumber,
     String? profilePicture,
     bool? isEmailVerified,
     DateTime? createdAt,
@@ -119,6 +112,7 @@ class UserModel extends UserEntity {
       id: id ?? this.id,
       email: email ?? this.email,
       name: name ?? this.name,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
       profilePicture: profilePicture ?? this.profilePicture,
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       createdAt: createdAt ?? this.createdAt,

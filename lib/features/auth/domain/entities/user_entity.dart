@@ -6,6 +6,7 @@ class UserEntity extends Equatable {
     required this.id,
     required this.email,
     required this.name,
+    this.phoneNumber,
     this.profilePicture,
     this.isEmailVerified = false,
     required this.createdAt,
@@ -15,6 +16,7 @@ class UserEntity extends Equatable {
   final String id;
   final String email;
   final String name;
+  final String? phoneNumber;
   final String? profilePicture;
   final bool isEmailVerified;
   final DateTime createdAt;
@@ -25,16 +27,19 @@ class UserEntity extends Equatable {
         id,
         email,
         name,
+        phoneNumber,
         profilePicture,
         isEmailVerified,
         createdAt,
         updatedAt,
       ];
 
+  /// Create a copy of this entity with updated fields
   UserEntity copyWith({
     String? id,
     String? email,
     String? name,
+    String? phoneNumber,
     String? profilePicture,
     bool? isEmailVerified,
     DateTime? createdAt,
@@ -44,6 +49,7 @@ class UserEntity extends Equatable {
       id: id ?? this.id,
       email: email ?? this.email,
       name: name ?? this.name,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
       profilePicture: profilePicture ?? this.profilePicture,
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       createdAt: createdAt ?? this.createdAt,

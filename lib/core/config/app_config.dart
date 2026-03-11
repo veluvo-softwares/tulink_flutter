@@ -24,29 +24,17 @@ class AppConfig {
   // API Configuration by Environment
   static String get baseUrl {
     switch (_environment) {
-      case 'production':
-        return 'https://api.tulink.com/v1';
-      case 'staging':
-        return 'https://staging-api.tulink.com/v1';
+      // case 'production':
+      //   return 'https://api.tulink.com/v1';
+      // case 'staging':
+      //   return 'https://staging-api.tulink.com/v1';
       case 'development':
       default:
-        return _getDevelopmentUrl();
+        return 'https://api.dev.tulink.xyz';
     }
   }
 
-  // Platform-specific localhost URL for development
-  static String _getDevelopmentUrl() {
-    if (Platform.isAndroid) {
-      // Android emulator uses 10.0.2.2 to access host machine's localhost
-      return 'http://10.0.2.2:3000';
-    } else if (Platform.isIOS) {
-      // iOS simulator can access localhost directly
-      return 'http://localhost:3000';
-    } else {
-      // Web and other platforms
-      return 'http://localhost:3000';
-    }
-  }
+
 
   // Network Configuration
   static const Duration connectTimeout = Duration(seconds: 30);

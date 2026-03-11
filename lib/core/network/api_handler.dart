@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 
 import '../errors/failure.dart';
+import 'models/api_response.dart';
+import 'models/api_response_base.dart';
 
 /// Centralized API error handling utility
 /// Provides a consistent way to handle Dio errors across all remote data sources
@@ -220,5 +222,225 @@ class ApiHandler {
     } catch (e) {
       throw const ServerFailure(message: 'An unexpected error occurred');
     }
+  }
+
+  // ====== NEW STANDARDIZED RESPONSE METHODS ======
+
+  /// Performs an API call expecting a standardized ApiResponse<T> format
+  /// 
+  /// Handles the standard response structure:
+  /// ```json
+  /// {
+  ///   "success": true,
+  ///   "statusCode": 200,
+  ///   "message": "Operation completed successfully",
+  ///   "data": {...}
+  /// }
+  /// ```
+  /// 
+  /// Example usage:
+  /// ```dart
+  /// final result = await ApiHandler.performStandardApiCall<UserModel>(
+  ///   () => _dio.get('/users/123'),
+  ///   (data) => UserModel.fromJson(data),
+  /// );
+  /// ```
+  static Future<T> performStandardApiCall<T>(
+    Future<Response<dynamic>> Function() apiCall,
+    T Function(Map<String, dynamic> data) parser,
+  ) async {
+    try {
+      final response = await apiCall();
+      
+      if (response.statusCode != null && 
+          response.statusCode! >= 200 && 
+          response.statusCode! < 300) {
+        
+        final apiResponse = ApiResponse<Map<String, dynamic>>.fromJson(
+          response.data! as Map<String, dynamic>,
+          (json) => json! as Map<String, dynamic>,
+        );
+
+        if (apiResponse.success && apiResponse.data != null) {
+          return parser(apiResponse.data!);
+        } else {
+          // Handle API-level error response
+          throw _handleStandardApiError(apiResponse);
+        }
+      } else {
+        throw ServerFailure.fromStatusCode(response.statusCode ?? 500);
+      }
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    } catch (e) {
+      if (e is Failure) rethrow;
+      throw const ServerFailure(message: 'An unexpected error occurred');
+    }
+  }
+
+  /// Performs an API call expecting a standardized ApiResponseBase format
+  /// Used for operations that don't return data (DELETE, some POST endpoints)
+  /// 
+  /// Handles the standard response structure:
+  /// ```json
+  /// {
+  ///   "success": true,
+  ///   "statusCode": 200,
+  ///   "message": "Operation completed successfully"
+  /// }
+  /// ```
+  /// 
+  /// Example usage:
+  /// ```dart
+  /// await ApiHandler.performStandardVoidApiCall(
+  ///   () => _dio.delete('/users/123'),
+  /// );
+  /// ```
+  static Future<void> performStandardVoidApiCall(
+    Future<Response<dynamic>> Function() apiCall,
+  ) async {
+    try {
+      final response = await apiCall();
+      
+      if (response.statusCode != null && 
+          response.statusCode! >= 200 && 
+          response.statusCode! < 300) {
+        
+        final apiResponse = ApiResponseBase.fromJson(
+          response.data! as Map<String, dynamic>,
+        );
+
+        if (!apiResponse.success) {
+          // Handle API-level error response
+          throw _handleStandardApiBaseError(apiResponse);
+        }
+      } else {
+        throw ServerFailure.fromStatusCode(response.statusCode ?? 500);
+      }
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    } catch (e) {
+      if (e is Failure) rethrow;
+      throw const ServerFailure(message: 'An unexpected error occurred');
+    }
+  }
+
+  /// Performs an API call expecting a standardized response with multiple data
+  /// 
+  /// Example for auth endpoints that return both user and token:
+  /// ```dart
+  /// final result = await ApiHandler.performStandardMultiDataApiCall<
+  ///   ({UserModel user, String token})
+  /// >(
+  ///   () => _dio.post('/auth/signin', data: credentials),
+  ///   (data) => (
+  ///     user: UserModel.fromJson(data['user']),
+  ///     token: data['tokens']['idToken'] as String,
+  ///   ),
+  /// );
+  /// ```
+  static Future<T> performStandardMultiDataApiCall<T>(
+    Future<Response<dynamic>> Function() apiCall,
+    T Function(Map<String, dynamic> data) parser,
+  ) async {
+    try {
+      final response = await apiCall();
+      
+      if (response.statusCode != null && 
+          response.statusCode! >= 200 && 
+          response.statusCode! < 300) {
+        
+        final apiResponse = ApiResponse<Map<String, dynamic>>.fromJson(
+          response.data! as Map<String, dynamic>,
+          (json) => json! as Map<String, dynamic>,
+        );
+
+        if (apiResponse.success && apiResponse.data != null) {
+          return parser(apiResponse.data!);
+        } else {
+          // Handle API-level error response
+          throw _handleStandardApiError(apiResponse);
+        }
+      } else {
+        throw ServerFailure.fromStatusCode(response.statusCode ?? 500);
+      }
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    } catch (e) {
+      if (e is Failure) rethrow;
+      throw const ServerFailure(message: 'An unexpected error occurred');
+    }
+  }
+
+  /// Enhanced error handling for standardized responses
+  /// Extracts error details from ApiResponse error structure
+  static Failure _handleStandardApiError(ApiResponse<dynamic> apiResponse) {
+    final error = apiResponse.error;
+    if (error != null) {
+      // Map specific error codes to appropriate failure types
+      switch (error.code) {
+        case ApiErrorCodes.unauthorized:
+        case ApiErrorCodes.tokenExpired:
+          return AuthFailure(message: apiResponse.message);
+        case ApiErrorCodes.forbidden:
+          return const AuthFailure(message: 'Access forbidden');
+        case ApiErrorCodes.validationError:
+          return ValidationFailure(message: error.details);
+        case ApiErrorCodes.networkError:
+        case ApiErrorCodes.timeoutError:
+          return NetworkFailure.timeout;
+        case ApiErrorCodes.notFound:
+          return ServerFailure(
+            message: apiResponse.message,
+            statusCode: 404,
+          );
+        default:
+          return ServerFailure(
+            message: apiResponse.message,
+            statusCode: apiResponse.statusCode,
+          );
+      }
+    }
+    
+    return ServerFailure(
+      message: apiResponse.message,
+      statusCode: apiResponse.statusCode,
+    );
+  }
+
+  /// Enhanced error handling for standardized base responses
+  /// Extracts error details from ApiResponseBase error structure
+  static Failure _handleStandardApiBaseError(ApiResponseBase apiResponse) {
+    final error = apiResponse.error;
+    if (error != null) {
+      // Map specific error codes to appropriate failure types
+      switch (error.code) {
+        case ApiErrorCodes.unauthorized:
+        case ApiErrorCodes.tokenExpired:
+          return AuthFailure(message: apiResponse.message);
+        case ApiErrorCodes.forbidden:
+          return const AuthFailure(message: 'Access forbidden');
+        case ApiErrorCodes.validationError:
+          return ValidationFailure(message: error.details);
+        case ApiErrorCodes.networkError:
+        case ApiErrorCodes.timeoutError:
+          return NetworkFailure.timeout;
+        case ApiErrorCodes.notFound:
+          return ServerFailure(
+            message: apiResponse.message,
+            statusCode: 404,
+          );
+        default:
+          return ServerFailure(
+            message: apiResponse.message,
+            statusCode: apiResponse.statusCode,
+          );
+      }
+    }
+    
+    return ServerFailure(
+      message: apiResponse.message,
+      statusCode: apiResponse.statusCode,
+    );
   }
 }
