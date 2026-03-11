@@ -6,6 +6,10 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/data/services/auth_api_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/maps/data/datasources/map_local_data_source.dart';
+import '../../features/maps/data/repositories/map_repository_impl.dart';
+import '../../features/maps/domain/repositories/map_repository.dart';
+import '../../features/maps/presentation/providers/map_provider.dart';
 import '../constants/app_constants.dart';
 import '../network/dio_client.dart';
 import '../theme/theme_provider.dart';
@@ -27,6 +31,11 @@ class ServiceLocator {
   late AuthProvider _authProvider;
   late ThemeProvider _themeProvider;
 
+  // Map Feature
+  late MapLocalDataSource _mapLocalDataSource;
+  late MapRepository _mapRepository;
+  late MapProvider _mapProvider;
+
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
   Box<dynamic> get authBox => _authBox;
@@ -36,6 +45,9 @@ class ServiceLocator {
   AuthRepository get authRepository => _authRepository;
   AuthProvider get authProvider => _authProvider;
   ThemeProvider get themeProvider => _themeProvider;
+  
+  // Map Feature Getters
+  MapProvider get mapProvider => _mapProvider;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -53,6 +65,7 @@ class ServiceLocator {
     // Initialize data sources
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
+    _mapLocalDataSource = MapLocalDataSourceImpl();
 
     // Initialize repositories
     _authRepository = AuthRepositoryImpl(
@@ -60,10 +73,12 @@ class ServiceLocator {
       localDataSource: _authLocalDataSource,
       dioClient: _dioClient,
     );
+    _mapRepository = MapRepositoryImpl(localDataSource: _mapLocalDataSource);
 
     // Initialize providers
     _authProvider = AuthProvider(_authRepository);
     _themeProvider = ThemeProvider();
+    _mapProvider = MapProvider(_mapRepository);
 
     // Initialize auth provider
     await _authProvider.initialize();

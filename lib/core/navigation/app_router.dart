@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:tulink_flutter/main.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
+import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
+import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
+import 'main_navigation_screen.dart';
 import 'undefined_route_screen.dart';
 
 /// Centralized router for handling all navigation throughout the app
@@ -17,6 +20,24 @@ class AppRouter {
       case HomePage.routeName:
         return _createRoute(
           const HomePage(),
+          settings,
+        );
+
+      case MainNavigationScreen.routeName:
+        return _createRoute(
+          const MainNavigationScreen(),
+          settings,
+        );
+
+      case HomeScreen.routeName:
+        return _createRoute(
+          const HomeScreen(),
+          settings,
+        );
+
+      case TulinkMapScreen.routeName:
+        return _createRoute(
+          const TulinkMapScreen(),
           settings,
         );
 
@@ -53,8 +74,14 @@ class AppRouter {
 /// Route constants for type-safe navigation
 /// Centralizes all route names in one place
 abstract class Routes {
-  /// Home page route
+  /// Home page route (entry logic)
   static const String home = HomePage.routeName;
+  
+  /// Main navigation route (Dashboard)
+  static const String main = MainNavigationScreen.routeName;
+
+  /// Map screen route
+  static const String map = TulinkMapScreen.routeName;
   
   /// Authentication screen route
   static const String auth = AuthScreen.routeName;

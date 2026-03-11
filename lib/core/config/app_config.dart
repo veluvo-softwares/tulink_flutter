@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Application configuration and environment management
 /// Handles environment-specific settings and feature flags
@@ -73,6 +74,9 @@ class AppConfig {
 
   // Storage Configuration
   static const String secureStoragePrefix = 'tulink_';
+  
+  // Mapbox Configuration
+  static String get mapboxAccessToken => dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '';
   
   // Debug Configuration
   static bool get showDebugBanner => isDevelopment;

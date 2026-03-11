@@ -1,18 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
 
+import 'core/config/app_config.dart';
 import 'core/di/service_locator.dart';
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_router.dart';
+import 'core/navigation/main_navigation_screen.dart';
 import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'core/theme/theme_provider.dart';
+import 'features/maps/presentation/providers/map_provider.dart';
 
 void main() async {
   // Ensure Flutter framework is initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env file
+  await dotenv.load(fileName: ".env");
 
   // Initialize Hive
   await Hive.initFlutter();
@@ -23,6 +32,9 @@ void main() async {
   // Initialize service locator and all dependencies
   final serviceLocator = ServiceLocator();
   await serviceLocator.init();
+
+  // Initialize Mapbox with access token before running the app
+  MapboxOptions.setAccessToken(AppConfig.mapboxAccessToken);
 
   runApp(MyApp(serviceLocator: serviceLocator));
 }
@@ -46,6 +58,10 @@ class MyApp extends StatelessWidget {
         // Auth Provider
         ChangeNotifierProvider<AuthProvider>.value(
           value: serviceLocator.authProvider,
+        ),
+        // Map Provider
+        ChangeNotifierProvider<MapProvider>.value(
+          value: serviceLocator.mapProvider,
         ),
       ],
       child: Consumer<ThemeProvider>(
@@ -80,25 +96,6 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TuLink Flutter'),
-        actions: [
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              return IconButton(
-                icon: Icon(
-                  themeProvider.isDarkMode 
-                      ? Icons.light_mode 
-                      : Icons.dark_mode,
-                ),
-                onPressed: () {
-                  themeProvider.toggleTheme();
-                },
-              );
-            },
-          ),
-        ],
-      ),
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {
           if (authProvider.isLoading) {
@@ -110,103 +107,11 @@ class HomePage extends StatelessWidget {
           if (!authProvider.isSignedIn) {
             return const AuthScreen();
           } else {
-            return _buildSignedOutView(context, authProvider);
+            return const MainNavigationScreen();
           }
         },
       ),
     );
   }
 
-
-  Widget _buildSignedOutView(BuildContext context, AuthProvider authProvider) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (authProvider.hasError)
-            Card(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      color: Theme.of(context).colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        authProvider.errorMessage,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Clean Architecture Demo',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'This is a professional Flutter project structure following Clean Architecture principles.',
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Architecture layers:'),
-                  const SizedBox(height: 4),
-                  const Text('• Domain: Entities, Repositories, Use Cases'),
-                  const Text('• Data: Models, Data Sources, Repository Impl'),
-                  const Text('• Presentation: Pages, Providers, Widgets'),
-                  const SizedBox(height: 16),
-                  const Text('Key features implemented:'),
-                  const SizedBox(height: 4),
-                  const Text('• Feature-first directory structure'),
-                  const Text('• Repository pattern with caching'),
-                  const Text('• Dio HTTP client with interceptors'),
-                  const Text('• Hive local storage'),
-                  const Text('• Flutter Secure Storage'),
-                  const Text('• Provider state management'),
-                  const Text('• Material 3 theming'),
-                  const Text('• Centralized error handling'),
-                ],
-              ),
-            ),
-          ),
-          const Spacer(),
-          const Text(
-            'Note: This demo uses mock authentication. '
-            'In production, connect to your actual API.',
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const AuthScreen(),
-                  ),
-                );
-              },
-              child: const Text('Sign In / Sign Up'),
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
 }
