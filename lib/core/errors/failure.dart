@@ -114,3 +114,30 @@ class ValidationFailure extends Failure {
     message: 'Invalid data format received',
   );
 }
+
+/// Failure related to authentication and authorization
+class AuthFailure extends Failure {
+  /// Creates an authentication failure
+  const AuthFailure({
+    required super.message,
+    super.statusCode,
+  });
+
+  /// Invalid credentials error
+  static const AuthFailure invalidCredentials = AuthFailure(
+    message: 'Invalid email or password',
+    statusCode: 401,
+  );
+
+  /// Token expired error
+  static const AuthFailure tokenExpired = AuthFailure(
+    message: 'Session expired. Please login again',
+    statusCode: 401,
+  );
+
+  /// Access denied error
+  static const AuthFailure accessDenied = AuthFailure(
+    message: 'Access denied. Insufficient permissions',
+    statusCode: 403,
+  );
+}

@@ -20,17 +20,18 @@ class UserModelAdapter extends TypeAdapter<UserModel> {
       id: fields[0] as String,
       email: fields[1] as String,
       name: fields[2] as String,
-      profilePicture: fields[3] as String?,
-      isEmailVerified: fields[4] as bool,
-      createdAt: fields[5] as DateTime,
-      updatedAt: fields[6] as DateTime?,
+      phoneNumber: fields[3] as String?,
+      profilePicture: fields[4] as String?,
+      isEmailVerified: fields[5] as bool,
+      createdAt: fields[6] as DateTime,
+      updatedAt: fields[7] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, UserModel obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -38,12 +39,14 @@ class UserModelAdapter extends TypeAdapter<UserModel> {
       ..writeByte(2)
       ..write(obj.name)
       ..writeByte(3)
-      ..write(obj.profilePicture)
+      ..write(obj.phoneNumber)
       ..writeByte(4)
-      ..write(obj.isEmailVerified)
+      ..write(obj.profilePicture)
       ..writeByte(5)
-      ..write(obj.createdAt)
+      ..write(obj.isEmailVerified)
       ..writeByte(6)
+      ..write(obj.createdAt)
+      ..writeByte(7)
       ..write(obj.updatedAt);
   }
 
@@ -63,11 +66,12 @@ class UserModelAdapter extends TypeAdapter<UserModel> {
 // **************************************************************************
 
 UserModel _$UserModelFromJson(Map<String, dynamic> json) => UserModel(
-      id: json['id'] as String,
+      id: json['uid'] as String,
       email: json['email'] as String,
-      name: json['name'] as String,
+      name: json['displayName'] as String,
+      phoneNumber: json['phoneNumber'] as String?,
       profilePicture: json['profilePicture'] as String?,
-      isEmailVerified: json['isEmailVerified'] as bool? ?? false,
+      isEmailVerified: json['emailVerified'] as bool? ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: json['updatedAt'] == null
           ? null
@@ -75,11 +79,12 @@ UserModel _$UserModelFromJson(Map<String, dynamic> json) => UserModel(
     );
 
 Map<String, dynamic> _$UserModelToJson(UserModel instance) => <String, dynamic>{
-      'id': instance.id,
+      'uid': instance.id,
       'email': instance.email,
-      'name': instance.name,
+      'displayName': instance.name,
+      'phoneNumber': instance.phoneNumber,
       'profilePicture': instance.profilePicture,
-      'isEmailVerified': instance.isEmailVerified,
+      'emailVerified': instance.isEmailVerified,
       'createdAt': instance.createdAt.toIso8601String(),
       'updatedAt': instance.updatedAt?.toIso8601String(),
     };

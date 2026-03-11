@@ -40,8 +40,18 @@ class ServiceLocator {
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
   Future<void> init() async {
-    // Initialize Hive boxes
-    _authBox = await Hive.openBox(AppConstants.authBoxName);
+    // Initialize Hive boxes with error recovery
+    try {
+      _authBox = await Hive.openBox(AppConstants.authBoxName);
+    } catch (e) {
+      // If there's a type error (likely due to model structure changes),
+      // delete the box and recreate it
+      print('⚠️ Hive box error detected: $e');
+      print('🧹 Clearing auth_box and recreating...');
+      await Hive.deleteBoxFromDisk(AppConstants.authBoxName);
+      _authBox = await Hive.openBox(AppConstants.authBoxName);
+      print('✅ Auth box recreated successfully');
+    }
 
     // Initialize network client
     _dioClient = DioClient();

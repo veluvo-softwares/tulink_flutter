@@ -1,3 +1,4 @@
+import 'package:tulink_flutter/features/auth/data/models/auth_response_model.dart';
 import 'package:tulink_flutter/features/auth/data/models/user_model.dart';
 import 'package:tulink_flutter/features/auth/data/services/auth_api_service.dart';
 
@@ -57,20 +58,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String email,
     required String password,
   }) async {
-    // Execute API call through service
-    final response = await _authApiService.signIn({
+    // Execute API call through service - this now uses standardized response
+    final responseData = await _authApiService.signIn({
       'email': email,
       'password': password,
     });
 
-    // Backend response format: { "success": true, "data": { "user": {...}, "tokens": { "idToken": "...", "refreshToken": "..." } } }
-    final responseData = response['data'] as Map<String, dynamic>;
-    final user = UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
-    final tokens = responseData['tokens'] as Map<String, dynamic>;
-    final token = tokens['idToken'] as String;
-    final refreshToken = tokens['refreshToken'] as String?;
-
-    return (user: user, token: token, refreshToken: refreshToken);
+    // Parse the response using our DTOs - extract 'data' from the wrapper
+    final dataObject = responseData['data'] as Map<String, dynamic>;
+    final authResponse = AuthResponseModel.fromJson(dataObject);
+    
+    print('📥 SignIn API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
+    print('📥 SignIn API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
+    
+    return (
+      user: authResponse.user,
+      token: authResponse.tokens.idToken,
+      refreshToken: authResponse.tokens.refreshToken,
+    );
   }
 
   @override
@@ -79,21 +84,25 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String password,
     required String name,
   }) async {
-    // Execute API call through service
-    final response = await _authApiService.signUp({
+    // Execute API call through service - this now uses standardized response
+    final responseData = await _authApiService.signUp({
       'email': email,
       'password': password,
       'displayName': name,
     });
 
-    // Backend response format: { "success": true, "data": { "user": {...}, "tokens": { "idToken": "...", "refreshToken": "..." } } }
-    final responseData = response['data'] as Map<String, dynamic>;
-    final user = UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
-    final tokens = responseData['tokens'] as Map<String, dynamic>;
-    final token = tokens['idToken'] as String;
-    final refreshToken = tokens['refreshToken'] as String?;
-
-    return (user: user, token: token, refreshToken: refreshToken);
+    // Parse the response using our DTOs - extract 'data' from the wrapper
+    final dataObject = responseData['data'] as Map<String, dynamic>;
+    final authResponse = AuthResponseModel.fromJson(dataObject);
+    
+    print('📥 SignUp API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
+    print('📥 SignUp API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
+    
+    return (
+      user: authResponse.user,
+      token: authResponse.tokens.idToken,
+      refreshToken: authResponse.tokens.refreshToken,
+    );
   }
 
   @override
@@ -104,17 +113,19 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   @override
   Future<UserModel> getCurrentUser() async {
-    // Execute API call and map to domain entity
-    final response = await _authApiService.getCurrentUser();
-    final responseData = response['data'] as Map<String, dynamic>;
-    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
+    // Execute API call using standardized response
+    final responseData = await _authApiService.getCurrentUser();
+    
+    // The API returns just the user data for this endpoint
+    return UserModel.fromJson(responseData);
   }
 
   @override
   Future<String> refreshToken() async {
-    // Execute API call and extract token
-    final response = await _authApiService.refreshToken();
-    final responseData = response['data'] as Map<String, dynamic>;
+    // Execute API call using standardized response
+    final responseData = await _authApiService.refreshToken();
+    
+    // Parse tokens response
     final tokens = responseData['tokens'] as Map<String, dynamic>;
     return tokens['idToken'] as String;
   }
@@ -141,10 +152,11 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     if (name != null) profileData['name'] = name;
     if (profilePicture != null) profileData['profile_picture'] = profilePicture;
 
-    // Execute API call and map to domain entity
-    final response = await _authApiService.updateProfile(profileData);
-    final responseData = response['data'] as Map<String, dynamic>;
-    return UserModel.fromJson(responseData['user'] as Map<String, dynamic>);
+    // Execute API call using standardized response
+    final responseData = await _authApiService.updateProfile(profileData);
+    
+    // Parse user data directly
+    return UserModel.fromJson(responseData);
   }
 
   @override

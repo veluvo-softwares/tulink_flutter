@@ -24,12 +24,15 @@ class AuthRepositoryImpl implements AuthRepository {
     required String email,
     required String password,
   }) async {
+    print('🚀 AuthRepositoryImpl.signIn() called with email: $email');
     try {
+      print('📞 Calling remoteDataSource.signIn()...');
       // Attempt remote sign in
       final result = await remoteDataSource.signIn(
         email: email,
         password: password,
       );
+      print('✅ RemoteDataSource.signIn() returned successfully');
 
       // Cache the user and token locally
       await localDataSource.cacheUser(result.user);
@@ -38,7 +41,11 @@ class AuthRepositoryImpl implements AuthRepository {
       
       // Save refresh token if provided
       if (result.refreshToken != null) {
+        print('🔑 Refresh token being saved: ${result.refreshToken}');
         await dioClient.saveRefreshToken(result.refreshToken!);
+        print('✅ Refresh token save operation completed');
+      } else {
+        print('⚠️ No refresh token provided in API response');
       }
 
       return (
@@ -47,8 +54,10 @@ class AuthRepositoryImpl implements AuthRepository {
         failure: null,
       );
     } on Failure catch (failure) {
+      print('❌ AuthRepositoryImpl.signIn() caught Failure: $failure');
       return (user: null, token: null, failure: failure);
     } catch (e) {
+      print('❌ AuthRepositoryImpl.signIn() caught exception: $e');
       return (
         user: null,
         token: null,
@@ -78,7 +87,11 @@ class AuthRepositoryImpl implements AuthRepository {
       
       // Save refresh token if provided
       if (result.refreshToken != null) {
+        print('🔑 Refresh token being saved: ${result.refreshToken}');
         await dioClient.saveRefreshToken(result.refreshToken!);
+        print('✅ Refresh token save operation completed');
+      } else {
+        print('⚠️ No refresh token provided in API response');
       }
 
       return (

@@ -14,8 +14,9 @@ class AuthApiService {
   final Dio _dio;
 
   /// Sign in with email and password
+  /// Returns standardized response with user and tokens
   Future<Map<String, dynamic>> signIn(Map<String, dynamic> credentials) {
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
       () => _dio.post<Map<String, dynamic>>(
         ApiRoutes.signIn,
         data: credentials,
@@ -25,8 +26,9 @@ class AuthApiService {
   }
 
   /// Sign up with email, password and name
+  /// Returns standardized response with user and tokens
   Future<Map<String, dynamic>> signUp(Map<String, dynamic> userDetails) {
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
       () => _dio.post<Map<String, dynamic>>(
         ApiRoutes.signUp,
         data: userDetails,
@@ -36,31 +38,35 @@ class AuthApiService {
   }
 
   /// Sign out the current user
+  /// Uses standardized void response format
   Future<void> signOut() {
-    return ApiHandler.performVoidApiCall(
+    return ApiHandler.performStandardVoidApiCall(
       () => _dio.post<void>(ApiRoutes.signOut),
     );
   }
 
   /// Get currently signed in user
+  /// Returns standardized response with user data
   Future<Map<String, dynamic>> getCurrentUser() {
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
       () => _dio.get<Map<String, dynamic>>(ApiRoutes.currentUser),
       (data) => data,
     );
   }
 
   /// Refresh authentication token
+  /// Returns standardized response with new tokens
   Future<Map<String, dynamic>> refreshToken() {
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
       () => _dio.post<Map<String, dynamic>>(ApiRoutes.refreshToken),
       (data) => data,
     );
   }
 
   /// Send password reset email
+  /// Uses standardized void response format
   Future<void> resetPassword(Map<String, dynamic> emailData) {
-    return ApiHandler.performVoidApiCall(
+    return ApiHandler.performStandardVoidApiCall(
       () => _dio.post<void>(
         ApiRoutes.resetPassword,
         data: emailData,
@@ -69,8 +75,9 @@ class AuthApiService {
   }
 
   /// Verify email address
+  /// Uses standardized void response format
   Future<void> verifyEmail(Map<String, dynamic> tokenData) {
-    return ApiHandler.performVoidApiCall(
+    return ApiHandler.performStandardVoidApiCall(
       () => _dio.post<void>(
         ApiRoutes.verifyEmail,
         data: tokenData,
@@ -79,8 +86,9 @@ class AuthApiService {
   }
 
   /// Update user profile
+  /// Returns standardized response with updated user data
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> profileData) {
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
       () => _dio.put<Map<String, dynamic>>(
         ApiRoutes.updateProfile,
         data: profileData,
@@ -90,8 +98,9 @@ class AuthApiService {
   }
 
   /// Delete user account
+  /// Uses standardized void response format
   Future<void> deleteAccount() {
-    return ApiHandler.performVoidApiCall(
+    return ApiHandler.performStandardVoidApiCall(
       () => _dio.delete<void>(ApiRoutes.deleteAccount),
     );
   }
