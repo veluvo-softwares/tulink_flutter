@@ -15,8 +15,12 @@ class AuthResponseModel {
   });
 
   /// Factory constructor from JSON
-  factory AuthResponseModel.fromJson(Map<String, dynamic> json) =>
-      _$AuthResponseModelFromJson(json);
+  factory AuthResponseModel.fromJson(Map<String, dynamic> json) {
+    return AuthResponseModel(
+      user: UserModel.fromJson(json['user'] as Map<String, dynamic>),
+      tokens: AuthTokensModel.fromJson(json['tokens'] as Map<String, dynamic>),
+    );
+  }
 
   /// User information from Firebase Auth
   final UserModel user;

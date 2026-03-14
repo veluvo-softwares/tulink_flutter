@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_page.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../widgets/dashboard_card.dart';
@@ -71,7 +73,9 @@ class HomeScreen extends StatelessWidget {
                 description: "Create a convoy and lead the pack",
                 colors: [colors.electricRed, colors.electricRed.withValues(alpha: 0.8)],
                 iconText: '🏁',
-                onTap: () {},
+                onTap: () {
+                  Navigator.of(context).pushNamed(CreateJourneyPage.routeName);
+                },
               ),
 
                const SizedBox(height: 16),

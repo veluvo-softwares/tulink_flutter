@@ -64,9 +64,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'password': password,
     });
 
-    // Parse the response using our DTOs - extract 'data' from the wrapper
-    final dataObject = responseData['data'] as Map<String, dynamic>;
-    final authResponse = AuthResponseModel.fromJson(dataObject);
+    // Parse the response using our DTOs
+    final authResponse = AuthResponseModel.fromJson(responseData);
     
     print('📥 SignIn API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
     print('📥 SignIn API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
@@ -91,9 +90,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       'displayName': name,
     });
 
-    // Parse the response using our DTOs - extract 'data' from the wrapper
-    final dataObject = responseData['data'] as Map<String, dynamic>;
-    final authResponse = AuthResponseModel.fromJson(dataObject);
+    // Parse the response using our DTOs
+    final authResponse = AuthResponseModel.fromJson(responseData);
     
     print('📥 SignUp API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
     print('📥 SignUp API Response - Refresh Token: ${authResponse.tokens.refreshToken}');

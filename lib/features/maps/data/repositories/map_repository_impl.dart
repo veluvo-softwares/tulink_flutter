@@ -8,7 +8,7 @@ class MapRepositoryImpl implements MapRepository {
   MapRepositoryImpl({required this.localDataSource});
 
   @override
-  Future<RaceRoute> getMarathonRoute() async {
+  Future<RaceRoute?> getMarathonRoute() async {
     return await localDataSource.loadMarathonRoute();
   }
 }
