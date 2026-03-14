@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../../features/journeys/domain/entities/journey.dart';
+import '../../../../features/journeys/presentation/pages/create_journey_page.dart';
+import '../../../../features/journeys/presentation/providers/journey_provider.dart';
 
 class MapJourneyOverlay extends StatelessWidget {
   const MapJourneyOverlay({super.key});
@@ -7,6 +11,8 @@ class MapJourneyOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final journeyProvider = context.watch<JourneyProvider>();
+    final activeJourney = journeyProvider.currentJourney;
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -37,45 +43,61 @@ class MapJourneyOverlay extends StatelessWidget {
               ),
             ),
             
-            // Journey Stats
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStat(context, "DISTANCE", "12.4", "KM"),
-                _buildStat(context, "TIME", "00:45", "MIN"),
-                _buildStat(context, "PACE", "5:20", "/KM"),
-              ],
-            ),
-            
-            const SizedBox(height: 24),
-            
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.electricRed,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+            if (activeJourney == null)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pushNamed(CreateJourneyPage.routeName),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colors.electricRed,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text("CREATE NEW JOURNEY"),
+                ),
+              )
+            else ...[
+              // Journey Stats
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStat(context, "DISTANCE", "0.0", "KM"),
+                  _buildStat(context, "TIME", "00:00", "MIN"),
+                  _buildStat(context, "PACE", "0:00", "/KM"),
+                ],
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Action Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: activeJourney.status == JourneyStatus.PENDING 
+                        ? () => journeyProvider.startJourney(activeJourney.id)
+                        : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colors.electricRed,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: Text(activeJourney.status == JourneyStatus.PENDING ? "START JOURNEY" : "ACTIVE"),
                     ),
-                    child: const Text("RESUME JOURNEY"),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    color: colors.brushedSteel,
-                    borderRadius: BorderRadius.circular(16),
+                  const SizedBox(width: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: colors.brushedSteel,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: IconButton(
+                      onPressed: () {},
+                      icon: Icon(Icons.stop_rounded, color: colors.electricRed, size: 28),
+                      padding: const EdgeInsets.all(12),
+                    ),
                   ),
-                  child: IconButton(
-                    onPressed: () {},
-                    icon: Icon(Icons.stop_rounded, color: colors.electricRed, size: 28),
-                    padding: const EdgeInsets.all(12),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

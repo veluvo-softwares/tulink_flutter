@@ -15,6 +15,7 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/maps/presentation/providers/map_provider.dart';
+import 'features/journeys/presentation/providers/journey_provider.dart';
 
 void main() async {
   // Ensure Flutter framework is initialized
@@ -62,6 +63,10 @@ class MyApp extends StatelessWidget {
         // Map Provider
         ChangeNotifierProvider<MapProvider>.value(
           value: serviceLocator.mapProvider,
+        ),
+        // Journey Provider
+        ChangeNotifierProvider<JourneyProvider>.value(
+          value: serviceLocator.journeyProvider,
         ),
       ],
       child: Consumer<ThemeProvider>(

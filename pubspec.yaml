@@ -84,7 +84,6 @@ flutter:
   # Assets configuration
   assets:
     - .env
-    - rio_marathon.geojson
     - assets/icons/
   
   # Tu-Link uses custom fonts from Google Fonts:

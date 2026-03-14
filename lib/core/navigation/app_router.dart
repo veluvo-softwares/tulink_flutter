@@ -4,6 +4,7 @@ import 'package:tulink_flutter/main.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_page.dart';
 import 'main_navigation_screen.dart';
 import 'undefined_route_screen.dart';
 
@@ -44,6 +45,12 @@ class AppRouter {
       case AuthScreen.routeName:
         return _createRoute(
           const AuthScreen(),
+          settings,
+        );
+
+      case CreateJourneyPage.routeName:
+        return _createRoute(
+          const CreateJourneyPage(),
           settings,
         );
 

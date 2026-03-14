@@ -65,9 +65,71 @@ class UserModel extends UserEntity {
   @override
   final DateTime? updatedAt;
 
-  /// Create UserModel from JSON (uses generated method with JsonKey mappings)
-  factory UserModel.fromJson(Map<String, dynamic> json) => 
-      _$UserModelFromJson(json);
+  /// Create UserModel from JSON with robust error handling
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['uid']?.toString() ?? json['id']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      name: json['displayName']?.toString() ?? json['name']?.toString() ?? '',
+      phoneNumber: json['phoneNumber']?.toString(),
+      profilePicture: json['profilePicture']?.toString() ?? 
+                      json['photoURL']?.toString(),
+      isEmailVerified: json['emailVerified'] as bool? ?? 
+                      json['email_verified'] as bool? ?? false,
+      createdAt: _parseCreatedAt(json),
+      updatedAt: _parseUpdatedAt(json),
+    );
+  }
+
+  /// Parse createdAt from various possible structures
+  static DateTime _parseCreatedAt(Map<String, dynamic> json) {
+    // Direct field
+    if (json['createdAt'] != null) {
+      final parsed = DateTime.tryParse(json['createdAt'].toString());
+      if (parsed != null) return parsed;
+    }
+    
+    // Firebase metadata structure
+    if (json['metadata'] != null) {
+      final metadata = json['metadata'] as Map<String, dynamic>;
+      if (metadata['creationTime'] != null) {
+        final parsed = DateTime.tryParse(metadata['creationTime'].toString());
+        if (parsed != null) return parsed;
+      }
+    }
+    
+    // Fallback alternatives
+    if (json['created_at'] != null) {
+      final parsed = DateTime.tryParse(json['created_at'].toString());
+      if (parsed != null) return parsed;
+    }
+    
+    // Default to current time
+    return DateTime.now();
+  }
+
+  /// Parse updatedAt from various possible structures  
+  static DateTime? _parseUpdatedAt(Map<String, dynamic> json) {
+    // Direct field
+    if (json['updatedAt'] != null) {
+      return DateTime.tryParse(json['updatedAt'].toString());
+    }
+    
+    // Firebase metadata structure
+    if (json['metadata'] != null) {
+      final metadata = json['metadata'] as Map<String, dynamic>;
+      if (metadata['lastSignInTime'] != null) {
+        return DateTime.tryParse(metadata['lastSignInTime'].toString());
+      }
+    }
+    
+    // Fallback alternatives
+    if (json['updated_at'] != null) {
+      return DateTime.tryParse(json['updated_at'].toString());
+    }
+    
+    return null;
+  }
 
   /// Create UserModel from UserEntity
   factory UserModel.fromEntity(UserEntity entity) => UserModel(

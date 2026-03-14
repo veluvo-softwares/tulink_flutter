@@ -3,6 +3,7 @@ import '../../domain/entities/race_route.dart';
 import '../../domain/repositories/map_repository.dart';
 
 class MapProvider with ChangeNotifier {
+  // ignore: unused_field
   final MapRepository _repository;
 
   MapProvider(this._repository);
@@ -16,17 +17,8 @@ class MapProvider with ChangeNotifier {
   String? get error => _error;
 
   Future<void> loadMarathonData() async {
-    _isLoading = true;
-    _error = null;
+    // Marathon data is deprecated
+    _marathonRoute = null;
     notifyListeners();
-
-    try {
-      _marathonRoute = await _repository.getMarathonRoute();
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
   }
 }

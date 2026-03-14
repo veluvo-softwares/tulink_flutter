@@ -6,6 +6,12 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/data/services/auth_api_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/journeys/data/datasources/journey_remote_data_source.dart';
+import '../../features/journeys/data/datasources/mapbox_search_datasource.dart';
+import '../../features/journeys/data/repositories/journey_repository_impl.dart';
+import '../../features/journeys/domain/repositories/journey_repository.dart';
+import '../../features/journeys/domain/usecases/journey_usecases.dart';
+import '../../features/journeys/presentation/providers/journey_provider.dart';
 import '../../features/maps/data/datasources/map_local_data_source.dart';
 import '../../features/maps/data/repositories/map_repository_impl.dart';
 import '../../features/maps/domain/repositories/map_repository.dart';
@@ -36,6 +42,12 @@ class ServiceLocator {
   late MapRepository _mapRepository;
   late MapProvider _mapProvider;
 
+  // Journey Feature
+  late JourneyRemoteDataSource _journeyRemoteDataSource;
+  late MapboxSearchDataSource _mapboxSearchDataSource;
+  late JourneyRepository _journeyRepository;
+  late JourneyProvider _journeyProvider;
+
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
   Box<dynamic> get authBox => _authBox;
@@ -48,6 +60,9 @@ class ServiceLocator {
   
   // Map Feature Getters
   MapProvider get mapProvider => _mapProvider;
+
+  // Journey Feature Getters
+  JourneyProvider get journeyProvider => _journeyProvider;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -76,6 +91,8 @@ class ServiceLocator {
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
     _mapLocalDataSource = MapLocalDataSourceImpl();
+    _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
+    _mapboxSearchDataSource = MapboxSearchDataSource(dio: _dioClient.dio);
 
     // Initialize repositories
     _authRepository = AuthRepositoryImpl(
@@ -84,11 +101,19 @@ class ServiceLocator {
       dioClient: _dioClient,
     );
     _mapRepository = MapRepositoryImpl(localDataSource: _mapLocalDataSource);
+    _journeyRepository = JourneyRepositoryImpl(remoteDataSource: _journeyRemoteDataSource);
 
     // Initialize providers
     _authProvider = AuthProvider(_authRepository);
     _themeProvider = ThemeProvider();
     _mapProvider = MapProvider(_mapRepository);
+    _journeyProvider = JourneyProvider(
+      createJourneyUseCase: CreateJourney(_journeyRepository),
+      getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
+      getActiveJourneysUseCase: GetActiveJourneys(_journeyRepository),
+      startJourneyUseCase: StartJourney(_journeyRepository),
+      mapboxSearchDataSource: _mapboxSearchDataSource,
+    );
 
     // Initialize auth provider
     await _authProvider.initialize();
