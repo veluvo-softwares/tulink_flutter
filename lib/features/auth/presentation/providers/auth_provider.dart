@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/errors/failure.dart';
+import '../../../../core/services/car_toast_service.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -69,10 +70,18 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
+        
+        // Show success toast
+        CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
+        
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
+        
+        // Show error toast with specific message
+        CarToastService.showError(_getErrorMessage(result.failure));
+        
         return false;
       }
     } catch (e) {
@@ -102,10 +111,18 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
+        
+        // Show success toast
+        CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
+        
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
+        
+        // Show error toast with specific message
+        CarToastService.showError(_getErrorMessage(result.failure));
+        
         return false;
       }
     } catch (e) {
@@ -127,10 +144,18 @@ class AuthProvider extends ChangeNotifier {
         _user = null;
         _isSignedIn = false;
         _setLoading(false);
+        
+        // Show success toast
+        CarToastService.showSuccess('Successfully signed out. See you next time!');
+        
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
+        
+        // Show error toast
+        CarToastService.showError('Failed to sign out. Please try again.');
+        
         return false;
       }
     } catch (e) {
@@ -196,10 +221,18 @@ class AuthProvider extends ChangeNotifier {
 
       if (result.success) {
         _setLoading(false);
+        
+        // Show success toast
+        CarToastService.showSuccess('Password reset email sent successfully!');
+        
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
+        
+        // Show error toast
+        CarToastService.showError(_getErrorMessage(result.failure));
+        
         return false;
       }
     } catch (e) {
@@ -277,5 +310,25 @@ class AuthProvider extends ChangeNotifier {
   /// Clear all error messages
   void clearError() {
     _clearFailure();
+  }
+  
+  /// Get user-friendly error message from failure
+  String _getErrorMessage(Failure? failure) {
+    if (failure == null) return 'An unexpected error occurred';
+    
+    switch (failure.runtimeType) {
+      case AuthFailure:
+        return 'Invalid email or password. Please check your credentials.';
+      case NetworkFailure:
+        return 'Network connection issue. Please check your internet connection.';
+      case ServerFailure:
+        return failure.message.isNotEmpty ? failure.message : 'Server error. Please try again later.';
+      case ValidationFailure:
+        return failure.message.isNotEmpty ? failure.message : 'Please check your input and try again.';
+      case TokenFailure:
+        return 'Session expired. Please sign in again.';
+      default:
+        return failure.message.isNotEmpty ? failure.message : 'Something went wrong. Please try again.';
+    }
   }
 }
