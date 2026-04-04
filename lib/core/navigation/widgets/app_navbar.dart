@@ -16,7 +16,7 @@ class AppNavbar extends StatelessWidget {
     final colors = Theme.of(context).tulinkColors;
     
     return Container(
-      height: 90,
+      height: 100,
       decoration: BoxDecoration(
         color: colors.cardDark,
         border: Border(

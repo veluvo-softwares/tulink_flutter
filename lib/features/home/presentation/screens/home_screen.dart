@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_page.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
@@ -15,7 +17,8 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
-    
+    final user = context.watch<AuthProvider>().user;
+
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -41,7 +44,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        "CHAMPION!",
+                        (user?.name ?? 'Champion').toUpperCase(),
                         style: TextStyle(
                           color: colors.white,
                           fontSize: 28,

@@ -105,7 +105,7 @@ class AuthApiService {
     );
   }
 
-  // Example of dynamic endpoints using ApiEndpoints helper methods
+  // Example of dynamic endpoints using ApiQueryBuilder helper methods
 
   /// Get user profile by ID (using dynamic endpoint construction)
   Future<Map<String, dynamic>> getUserProfile(String userId) {
@@ -188,6 +188,22 @@ class AuthApiService {
     return _dio.get<ResponseBody>(
       ApiRoutes.downloadMedia(fileId),
       options: Options(responseType: ResponseType.stream),
+    );
+  }
+
+  /// Health check endpoint for API connectivity testing
+  Future<Map<String, dynamic>> healthCheck() {
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
+      () => _dio.get<Map<String, dynamic>>(ApiRoutes.health),
+      (data) => data,
+    );
+  }
+
+  /// Get API version information
+  Future<Map<String, dynamic>> getApiVersion() {
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
+      () => _dio.get<Map<String, dynamic>>(ApiRoutes.version),
+      (data) => data,
     );
   }
 }
