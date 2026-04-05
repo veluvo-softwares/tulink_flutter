@@ -1,4 +1,5 @@
 import 'package:hive/hive.dart';
+import 'package:tulink_flutter/features/journeys/data/services/journey_api_service.dart';
 
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
@@ -47,6 +48,7 @@ class ServiceLocator {
   late MapboxSearchDataSource _mapboxSearchDataSource;
   late JourneyRepository _journeyRepository;
   late JourneyProvider _journeyProvider;
+  late JourneyApiService _journeyApiService;
 
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
@@ -91,7 +93,7 @@ class ServiceLocator {
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
     _mapLocalDataSource = MapLocalDataSourceImpl();
-    _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
+    _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(_journeyApiService);
     _mapboxSearchDataSource = MapboxSearchDataSource(dio: _dioClient.dio);
 
     // Initialize repositories

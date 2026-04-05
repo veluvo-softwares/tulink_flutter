@@ -1,7 +1,12 @@
-import 'package:dio/dio.dart';
 import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart';
+import 'package:tulink_flutter/features/journeys/data/services/journey_api_service.dart';
 
+/// Remote data source for journeys
+/// Now focuses purely on executing service calls and mapping results to
+/// Domain Entities
+/// Zero hardcoded strings - all endpoints are defined in JourneyApiService
 abstract class JourneyRemoteDataSource {
+  /// Create a new journey
   Future<JourneyModel> createJourney({
     required String name,
     required double latitude,
@@ -10,17 +15,43 @@ abstract class JourneyRemoteDataSource {
     required int lagThresholdMeters,
   });
 
+  /// Get journey by ID
   Future<JourneyModel> getJourneyById(String journeyId);
 
+  /// Get all active journeys
   Future<List<JourneyModel>> getActiveJourneys();
 
+  /// Get user's journeys
+  Future<List<JourneyModel>> getMyJourneys();
+
+  /// Start a journey
   Future<JourneyModel> startJourney(String journeyId);
+
+  /// Stop a journey
+  Future<JourneyModel> stopJourney(String journeyId);
+
+  /// Pause a journey
+  Future<JourneyModel> pauseJourney(String journeyId);
+
+  /// Resume a journey
+  Future<JourneyModel> resumeJourney(String journeyId);
+
+  /// Update journey details
+  Future<JourneyModel> updateJourney(String journeyId, Map<String, dynamic> updateData);
+
+  /// Delete a journey
+  Future<void> deleteJourney(String journeyId);
 }
 
+/// Implementation of JourneyRemoteDataSource using JourneyApiService
+/// Pure data mapping layer with no business logic
+/// Single responsibility: Execute API calls and map responses to domain
+/// entities
 class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
-  final Dio dio;
+  /// Constructor takes JourneyApiService dependency
+  JourneyRemoteDataSourceImpl(this._journeyApiService);
 
-  JourneyRemoteDataSourceImpl({required this.dio});
+  final JourneyApiService _journeyApiService;
 
   @override
   Future<JourneyModel> createJourney({
@@ -30,82 +61,112 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
     required String destinationAddress,
     required int lagThresholdMeters,
   }) async {
-    final response = await dio.post<Map<String, dynamic>>(
-      '/journeys',
-      data: {
-        'name': name,
-        'destination': {
-          'latitude': latitude,
-          'longitude': longitude,
-        },
-        'destinationAddress': destinationAddress,
-        'lagThresholdMeters': lagThresholdMeters,
+    // Execute API call through service - this now uses standardized response
+    final responseData = await _journeyApiService.createJourney({
+      'name': name,
+      'destination': {
+        'latitude': latitude,
+        'longitude': longitude,
       },
-    );
+      'destinationAddress': destinationAddress,
+      'lagThresholdMeters': lagThresholdMeters,
+    });
 
-    if (response.statusCode == 201 && response.data != null) {
-      final journeyData = response.data!['data'] as Map<String, dynamic>?;
-      if (journeyData != null) {
-        return JourneyModel.fromJson(journeyData);
-      }
-    }
-    throw DioException(
-      requestOptions: response.requestOptions,
-      response: response,
-      message: 'Invalid response format or failed to create journey',
-    );
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
   }
 
   @override
   Future<JourneyModel> getJourneyById(String journeyId) async {
-    final response = await dio.get<Map<String, dynamic>>('/journeys/$journeyId');
-
-    if (response.statusCode == 200 && response.data != null) {
-      final journeyData = response.data!['data'] as Map<String, dynamic>?;
-      if (journeyData != null) {
-        return JourneyModel.fromJson(journeyData);
-      }
-    }
-    throw DioException(
-      requestOptions: response.requestOptions,
-      response: response,
-      message: 'Invalid response format or journey not found',
-    );
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.getJourneyById(journeyId);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
   }
 
   @override
   Future<List<JourneyModel>> getActiveJourneys() async {
-    final response = await dio.get<Map<String, dynamic>>('/journeys/active');
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.getActiveJourneys();
+    
+    // Parse the response data
+    final journeysData = responseData['data'] as List<dynamic>;
+    return journeysData
+        .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
 
-    if (response.statusCode == 200 && response.data != null) {
-      final data = response.data!['data'] as List<dynamic>?;
-      if (data != null) {
-        return data
-            .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))
-            .toList();
-      }
-    }
-    throw DioException(
-      requestOptions: response.requestOptions,
-      response: response,
-      message: 'Invalid response format or failed to get active journeys',
-    );
+  @override
+  Future<List<JourneyModel>> getMyJourneys() async {
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.getMyJourneys();
+    
+    // Parse the response data
+    final journeysData = responseData['data'] as List<dynamic>;
+    return journeysData
+        .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   @override
   Future<JourneyModel> startJourney(String journeyId) async {
-    final response = await dio.post<Map<String, dynamic>>('/journeys/$journeyId/start');
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.startJourney(journeyId);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
+  }
 
-    if (response.statusCode == 201 && response.data != null) {
-      final journeyData = response.data!['data'] as Map<String, dynamic>?;
-      if (journeyData != null) {
-        return JourneyModel.fromJson(journeyData);
-      }
-    }
-    throw DioException(
-      requestOptions: response.requestOptions,
-      response: response,
-      message: 'Invalid response format or failed to start journey',
-    );
+  @override
+  Future<JourneyModel> stopJourney(String journeyId) async {
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.stopJourney(journeyId);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
+  }
+
+  @override
+  Future<JourneyModel> pauseJourney(String journeyId) async {
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.pauseJourney(journeyId);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
+  }
+
+  @override
+  Future<JourneyModel> resumeJourney(String journeyId) async {
+    // Execute API call using standardized response
+    final responseData = await _journeyApiService.resumeJourney(journeyId);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
+  }
+
+  @override
+  Future<JourneyModel> updateJourney(
+      String journeyId, Map<String, dynamic> updateData) async {
+    // Execute API call using standardized response
+    final responseData =
+        await _journeyApiService.updateJourney(journeyId, updateData);
+    
+    // Parse the response data
+    final journeyData = responseData['data'] as Map<String, dynamic>;
+    return JourneyModel.fromJson(journeyData);
+  }
+
+  @override
+  Future<void> deleteJourney(String journeyId) async {
+    // Direct delegation to service
+    await _journeyApiService.deleteJourney(journeyId);
   }
 }
+

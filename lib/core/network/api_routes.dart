@@ -67,6 +67,64 @@ class ApiRoutes {
   static const String adminSettings = '/admin/settings';
   static const String adminAnalytics = '/admin/analytics';
 
+  // Journey Routes
+  static const String journeys = '/journeys';
+  static const String activeJourneys = '/journeys/active';
+  static const String myJourneys = '/journeys/my';
+  
+  // Dynamic Journey Routes
+  static String journeyById(String id) => '/journeys/$id';
+  static String startJourney(String id) => '/journeys/$id/start';
+  static String stopJourney(String id) => '/journeys/$id/stop';
+  static String pauseJourney(String id) => '/journeys/$id/pause';
+  static String resumeJourney(String id) => '/journeys/$id/resume';
+  static String journeyParticipants(String id) => '/journeys/$id/participants';
+  static String journeyInvitations(String id) => '/journeys/$id/invitations';
+  static String journeyRoutes(String id) => '/journeys/$id/routes';
+  static String journeyProgress(String id) => '/journeys/$id/progress';
+
+  // Invitation Routes
+  static const String invitations = '/invitations';
+  static const String myInvitations = '/invitations/my';
+  static const String pendingInvitations = '/invitations/pending';
+  static const String sentInvitations = '/invitations/sent';
+  
+  // Dynamic Invitation Routes
+  static String invitationById(String id) => '/invitations/$id';
+  static String respondToInvitation(String id) => '/invitations/$id/respond';
+  static String cancelInvitation(String id) => '/invitations/$id';
+  static String resendInvitation(String id) => '/invitations/$id/resend';
+
+  // Participant Routes
+  static const String participants = '/participants';
+  
+  // Dynamic Participant Routes
+  static String participantById(String id) => '/participants/$id';
+  static String removeParticipant(String journeyId, String participantId) => 
+      '/journeys/$journeyId/participants/$participantId';
+  static String participantLocation(String id) => '/participants/$id/location';
+  static String participantStatus(String id) => '/participants/$id/status';
+
+  // Location/Map Routes
+  static const String locations = '/locations';
+  static const String geocode = '/locations/geocode';
+  static const String reverseGeocode = '/locations/reverse-geocode';
+  static const String routeOptimization = '/locations/route-optimization';
+  static const String nearbyPlaces = '/locations/nearby';
+  
+  // Dynamic Location Routes
+  static String locationById(String id) => '/locations/$id';
+  static String searchPlaces(String query) => '/locations/search?q=$query';
+
+  // Real-time Updates (WebSocket endpoints)
+  static const String wsJourneyUpdates = '/ws/journey-updates';
+  static const String wsParticipantUpdates = '/ws/participant-updates';
+  static const String wsLocationUpdates = '/ws/location-updates';
+  
+  // Dynamic WebSocket Routes
+  static String wsJourneyById(String id) => '/ws/journeys/$id';
+  //static String wsParticipantUpdates(String journeyId) => '/ws/journeys/$journeyId/participants';
+
   // System Routes
   static const String health = '/health';
   static const String version = '/version';
