@@ -13,6 +13,8 @@ class JourneyModel extends Journey {
     super.updatedAt,
     super.startTime,
     super.participants,
+    super.startedAt,
+    super.completedAt,
   });
 
   factory JourneyModel.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,8 @@ class JourneyModel extends Journey {
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) : null,
       startTime: json['startTime'] != null ? DateTime.tryParse(json['startTime'].toString()) : null,
+      startedAt: json['startedAt'] != null ? DateTime.tryParse(json['startedAt'].toString()) : null,
+      completedAt: json['completedAt'] != null ? DateTime.tryParse(json['completedAt'].toString()) : null,
       participants: json['participants'] != null
           ? (json['participants'] as List<dynamic>).map((p) => ParticipantModel.fromJson(p as Map<String, dynamic>)).toList()
           : null,
@@ -76,6 +80,8 @@ class JourneyModel extends Journey {
     switch (status?.toUpperCase()) {
       case 'ACTIVE':
         return JourneyStatus.ACTIVE;
+      case 'PAUSED':
+        return JourneyStatus.PAUSED;
       case 'COMPLETED':
         return JourneyStatus.COMPLETED;
       case 'CANCELLED':

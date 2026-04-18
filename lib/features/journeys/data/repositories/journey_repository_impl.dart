@@ -105,4 +105,25 @@ class JourneyRepositoryImpl implements JourneyRepository {
       );
     }
   }
+
+  @override
+  Future<Result<Journey>> updateJourney(String journeyId, Map<String, dynamic> updateData) async {
+    try {
+      final journey = await remoteDataSource.updateJourney(journeyId, updateData);
+      return (data: journey, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message: e.response?.data?['message']?.toString() ?? 
+              'Failed to update journey',
+        ),
+      );
+    } catch (e) {
+      return (
+        data: null, 
+        failure: ServerFailure(message: e.toString()),
+      );
+    }
+  }
 }

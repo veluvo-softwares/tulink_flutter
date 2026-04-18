@@ -15,4 +15,6 @@ abstract class JourneyRepository {
   Future<Result<List<Journey>>> getActiveJourneys();
 
   Future<Result<Journey>> startJourney(String journeyId);
+
+  Future<Result<Journey>> updateJourney(String journeyId, Map<String, dynamic> updateData);
 }

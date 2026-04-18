@@ -1,18 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/core/services/car_toast_service.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/journey_provider.dart';
+import '../../domain/entities/journey.dart';
 
-class CreateJourneyPage extends StatefulWidget {
-  const CreateJourneyPage({super.key});
+class CreateJourneyScreen extends StatefulWidget {
+  final Journey? journey;
+  final bool isEdit;
+  
+  const CreateJourneyScreen({
+    super.key,
+    this.journey,
+    this.isEdit = false,
+  });
 
   static const String routeName = '/create-journey';
+  static const String editRouteName = '/edit-journey';
 
   @override
-  State<CreateJourneyPage> createState() => _CreateJourneyPageState();
+  State<CreateJourneyScreen> createState() => _CreateJourneyScreenState();
 }
 
-class _CreateJourneyPageState extends State<CreateJourneyPage> {
+class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   final _nameController = TextEditingController();
   final _searchController = TextEditingController();
   final _lagController = TextEditingController(text: '500');
@@ -22,6 +33,26 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
   String? _selectedAddress;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.isEdit && widget.journey != null) {
+      _initializeEditMode();
+    }
+  }
+
+  void _initializeEditMode() {
+    final journey = widget.journey!;
+    _nameController.text = journey.name;
+    _lagController.text = journey.lagThresholdMeters.toString();
+    
+    // Initialize destination from journey
+    _selectedLat = journey.destination.latitude;
+    _selectedLng = journey.destination.longitude;
+    _selectedAddress = journey.destinationAddress;
+    _searchController.text = journey.destinationAddress;
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _searchController.dispose();
@@ -29,7 +60,7 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
     super.dispose();
   }
 
-  void _onCreateJourney() async {
+  Future<void> _onCreateJourney() async {
     if (_nameController.text.isEmpty || _selectedLat == null || _selectedLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all fields and select a destination')),
@@ -37,16 +68,60 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
       return;
     }
 
-    final success = await context.read<JourneyProvider>().createJourney(
-      name: _nameController.text,
-      latitude: _selectedLat!,
-      longitude: _selectedLng!,
-      destinationAddress: _selectedAddress ?? '',
-      lagThresholdMeters: int.tryParse(_lagController.text) ?? 500,
-    );
+    final journeyProvider = context.read<JourneyProvider>();
+    bool success;
+    
+    if (widget.isEdit && widget.journey != null) {
+      // Update existing journey
+      final updateData = {
+        'name': _nameController.text,
+        'destinationAddress': _selectedAddress ?? '',
+        'destination': {
+          'latitude': _selectedLat!,
+          'longitude': _selectedLng!,
+        },
+        'lagThresholdMeters': int.tryParse(_lagController.text) ?? 500,
+      };
+      
+      success = await journeyProvider.updateJourney(
+        journeyId: widget.journey!.id,
+        updateData: updateData,
+      );
+    } else {
+      // Create new journey
+      success = await journeyProvider.createJourney(
+        name: _nameController.text,
+        latitude: _selectedLat!,
+        longitude: _selectedLng!,
+        destinationAddress: _selectedAddress ?? '',
+        lagThresholdMeters: int.tryParse(_lagController.text) ?? 500,
+      );
+    }
 
-    if (success && mounted) {
-      Navigator.of(context).pop();
+    if (!mounted) return;
+
+    if (success) {
+      if (widget.isEdit) {
+        // Return to previous screen (journey preview)
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Journey updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Navigate to journey preview for new journey
+        await Navigator.of(context).pushNamed(
+          JourneyPreviewScreen.routeName,
+          arguments: journeyProvider.currentJourney?.id,
+        );
+      }
+    } else {
+      final message = journeyProvider.error;
+      if (message != null) {
+        context.showErrorToast(message);
+      }
     }
   }
 
@@ -60,7 +135,7 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('CREATE JOURNEY'),
+        title: Text(widget.isEdit ? 'EDIT JOURNEY' : 'CREATE JOURNEY'),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -166,9 +241,9 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
                 ),
                 child: journeyProvider.isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "CREATE JOURNEY",
-                        style: TextStyle(
+                    : Text(
+                        widget.isEdit ? "UPDATE JOURNEY" : "CREATE JOURNEY",
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
@@ -176,16 +251,6 @@ class _CreateJourneyPageState extends State<CreateJourneyPage> {
                       ),
               ),
             ),
-            
-            if (journeyProvider.error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: Text(
-                  journeyProvider.error!,
-                  style: TextStyle(color: colors.electricRed),
-                  textAlign: TextAlign.center,
-                ),
-              ),
           ],
         ),
       ),

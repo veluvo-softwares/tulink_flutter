@@ -44,6 +44,9 @@ dependencies:
   dio: ^5.7.0
   pretty_dio_logger: ^1.4.0
   
+  # Logging
+  logger: ^2.4.0
+  
   # Local Storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -51,6 +54,9 @@ dependencies:
   
   # Error Handling
   equatable: ^2.0.5
+  
+  # Date & Time Formatting
+  intl: ^0.19.0
   
   # JSON Serialization
   json_annotation: ^4.9.0

@@ -30,7 +30,7 @@ class JourneyCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         decoration: BoxDecoration(
           color: hasBorder ? themeColors.carbonBlack : null,
           gradient: hasBorder ? null : LinearGradient(
@@ -39,12 +39,12 @@ class JourneyCard extends StatelessWidget {
             end: Alignment.bottomRight,
           ),
           border: hasBorder ? Border.all(color: borderColor!, width: 2) : null,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
               color: (hasBorder ? borderColor! : colors!.first).withValues(alpha: 0.2),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -60,9 +60,9 @@ class JourneyCard extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
+                      letterSpacing: 1.2,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -70,7 +70,7 @@ class JourneyCard extends StatelessWidget {
                     description,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -78,20 +78,20 @@ class JourneyCard extends StatelessWidget {
               ),
             ),
             if (iconText != null) ...[
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Container(
                 alignment: Alignment.center,
-                width: 60,
-                height: 60,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: themeColors.carbonBlack,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   iconText!,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

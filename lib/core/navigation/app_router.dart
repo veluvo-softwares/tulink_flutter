@@ -4,7 +4,13 @@ import 'package:tulink_flutter/main.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
-import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_page.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/invite_participants_screen.dart';
+import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
+import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
+import 'package:tulink_flutter/features/analytics/presentation/screens/journey_details_screen.dart';
+import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 import 'main_navigation_screen.dart';
 import 'undefined_route_screen.dart';
 
@@ -48,9 +54,81 @@ class AppRouter {
           settings,
         );
 
-      case CreateJourneyPage.routeName:
+      case CreateJourneyScreen.routeName:
         return _createRoute(
-          const CreateJourneyPage(),
+          const CreateJourneyScreen(),
+          settings,
+        );
+
+      case CreateJourneyScreen.editRouteName:
+        final journey = settings.arguments as Journey?;
+        if (journey == null) {
+          return _createRoute(
+            UndefinedRouteScreen(
+              undefinedRouteName: 'Edit Journey - Missing Journey Data',
+            ),
+            settings,
+          );
+        }
+        return _createRoute(
+          CreateJourneyScreen(journey: journey, isEdit: true),
+          settings,
+        );
+
+      case JourneyPreviewScreen.routeName:
+        final journeyId = settings.arguments as String?;
+        if (journeyId == null) {
+          return _createRoute(
+            UndefinedRouteScreen(
+              undefinedRouteName: 'Journey Preview - Missing ID',
+            ),
+            settings,
+          );
+        }
+        return _createRoute(
+          JourneyPreviewScreen(journeyId: journeyId),
+          settings,
+        );
+
+      case InviteParticipantsScreen.routeName:
+        final journeyId = settings.arguments as String?;
+        if (journeyId == null) {
+          return _createRoute(
+            UndefinedRouteScreen(
+              undefinedRouteName: 'Invite Participants - Missing ID',
+            ),
+            settings,
+          );
+        }
+        return _createRoute(
+          InviteParticipantsScreen(journeyId: journeyId),
+          settings,
+        );
+
+      case JourneyHistoryScreen.routeName:
+        return _createRoute(
+          const JourneyHistoryScreen(),
+          settings,
+        );
+
+      case JourneyDetailsScreen.routeName:
+        final journey = settings.arguments as Journey?;
+        if (journey == null) {
+          return _createRoute(
+            UndefinedRouteScreen(
+              undefinedRouteName: 'Journey Details - Missing Journey Data',
+            ),
+            settings,
+          );
+        }
+        return _createRoute(
+          JourneyDetailsScreen(journey: journey),
+          settings,
+        );
+
+      case ProfileScreen.routeName:
+        return _createRoute(
+          const ProfileScreen(),
           settings,
         );
 
