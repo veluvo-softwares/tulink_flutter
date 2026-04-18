@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/status_indicator.dart';
+import '../../../../core/widgets/shimmer_widgets.dart';
 import '../../../journeys/domain/entities/journey.dart';
 
 /// A reusable card widget that displays up to 4 journeys in a single container
@@ -11,6 +12,7 @@ class JourneysCard extends StatelessWidget {
   final VoidCallback? onSeeAll;
   final void Function(Journey)? onJourneyTap;
   final bool showParticipants;
+  final bool isLoading;
 
   const JourneysCard({
     super.key,
@@ -19,6 +21,7 @@ class JourneysCard extends StatelessWidget {
     this.onSeeAll,
     this.onJourneyTap,
     this.showParticipants = false,
+    this.isLoading = false,
   });
 
   @override
@@ -37,7 +40,7 @@ class JourneysCard extends StatelessWidget {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Header with title and "See all" button
           Row(
@@ -51,7 +54,7 @@ class JourneysCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (onSeeAll != null)
+              if (displayJourneys.isNotEmpty && onSeeAll != null)
                 GestureDetector(
                   onTap: onSeeAll,
                   child: Text(
@@ -68,8 +71,10 @@ class JourneysCard extends StatelessWidget {
           
           const SizedBox(height: 16),
           
-          // Journey items
-          if (displayJourneys.isEmpty)
+          // Journey items or loading state
+          if (isLoading && displayJourneys.isEmpty)
+            _buildLoadingState()
+          else if (displayJourneys.isEmpty)
             _buildEmptyState(colors)
           else
             ...displayJourneys.asMap().entries.map((entry) {
@@ -170,36 +175,68 @@ class JourneysCard extends StatelessWidget {
   }
 
   Widget _buildEmptyState(TulinkColors colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        children: [
-          Icon(
-            Icons.route_outlined,
+    return Column(
+      children: [
+        Icon(
+          Icons.route_outlined,
+          color: colors.electricRed,
+          size: 32,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          showParticipants ? 'No active journeys' : 'No recent journeys',
+          style: TextStyle(
             color: colors.silver,
-            size: 32,
+            fontSize: 14,
           ),
-          const SizedBox(height: 8),
-          Text(
-            showParticipants ? 'No active journeys' : 'No recent journeys',
-            style: TextStyle(
-              color: colors.silver,
-              fontSize: 14,
-            ),
-          ),
-          if (showParticipants)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Start a journey to see it here',
-                style: TextStyle(
-                  color: colors.silver.withOpacity(0.7),
-                  fontSize: 12,
-                ),
+        ),
+      
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: showParticipants ? Text(
+              'Start a journey to see it here',
+              style: TextStyle(
+                color: colors.silver.withOpacity(0.7),
+                fontSize: 12,
+              ),
+            ) : Text(
+              'Your recent journeys will show up here',
+              style: TextStyle(
+                color: colors.silver.withOpacity(0.7),
+                fontSize: 12,
               ),
             ),
-        ],
-      ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Column(
+      children: [
+        // Generate 3 shimmer items that match the journey item layout
+        ...List.generate(3, (index) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Builder(
+                builder: (context) => ShimmerEffect.listItem(context),
+              ),
+            ),
+            if (index < 2)
+              Builder(
+                builder: (context) {
+                  final colors = Theme.of(context).tulinkColors;
+                  return Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    color: colors.brushedSteel.withValues(alpha: 0.3),
+                  );
+                },
+              ),
+          ],
+        )),
+      ],
     );
   }
 
