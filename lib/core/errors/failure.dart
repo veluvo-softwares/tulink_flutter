@@ -220,6 +220,13 @@ class NetworkFailure extends Failure {
     timestamp: DateTime.now(),
   );
 
+  /// Search-specific network error
+  static NetworkFailure searchConnection = NetworkFailure(
+    message: 'Connection problem :(\nPlease check your internet and try again',
+    details: 'Unable to connect to search service.',
+    timestamp: DateTime.now(),
+  );
+
   @override
   NetworkFailure copyWith({
     String? message,
@@ -426,6 +433,70 @@ class AuthFailure extends Failure {
       timestamp: timestamp ?? this.timestamp,
       isRetryable: isRetryable,
       requiresReauth: requiresReauth,
+    );
+  }
+}
+
+/// Failure related to search operations
+class SearchFailure extends Failure {
+  const SearchFailure({
+    required super.message,
+    super.details,
+    super.timestamp,
+    this.searchQuery,
+  });
+
+  final String? searchQuery;
+
+  /// No results found for search query
+  static SearchFailure noResults(String query) => SearchFailure(
+    message: 'No places found :(\nTry searching with a different term',
+    details: 'Search query "$query" returned no results.',
+    timestamp: DateTime.now(),
+    searchQuery: query,
+  );
+
+  /// Search service temporarily unavailable
+  static SearchFailure serviceUnavailable = SearchFailure(
+    message: 'Search service unavailable :(\nPlease try again later',
+    details: 'The search service is temporarily down or unreachable.',
+    timestamp: DateTime.now(),
+  );
+
+  /// Invalid search query format
+  static SearchFailure invalidQuery(String query) => SearchFailure(
+    message: 'Search not found :(\nTry a different search term',
+    details: 'The search query "$query" is invalid or malformed.',
+    timestamp: DateTime.now(),
+    searchQuery: query,
+  );
+
+  /// Search request limit exceeded
+  static SearchFailure rateLimitExceeded = SearchFailure(
+    message: 'Too many searches :(\nPlease wait a moment and try again',
+    details: 'Search rate limit has been exceeded.',
+    timestamp: DateTime.now(),
+  );
+
+  /// Search access denied
+  static SearchFailure accessDenied = SearchFailure(
+    message: 'Search access denied :(\nPlease restart the app',
+    details: 'Access to search service has been denied.',
+    timestamp: DateTime.now(),
+  );
+
+  @override
+  SearchFailure copyWith({
+    String? message,
+    int? statusCode,
+    String? details,
+    DateTime? timestamp,
+  }) {
+    return SearchFailure(
+      message: message ?? this.message,
+      details: details ?? this.details,
+      timestamp: timestamp ?? this.timestamp,
+      searchQuery: searchQuery,
     );
   }
 }

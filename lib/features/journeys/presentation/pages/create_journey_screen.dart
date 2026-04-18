@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../maps/presentation/providers/map_provider.dart';
 import '../providers/journey_provider.dart';
 import '../../domain/entities/journey.dart';
 
@@ -31,6 +32,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   double? _selectedLat;
   double? _selectedLng;
   String? _selectedAddress;
+  bool _isSettingSelectedValue = false;
 
   @override
   void initState() {
@@ -45,11 +47,15 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     _nameController.text = journey.name;
     _lagController.text = journey.lagThresholdMeters.toString();
     
-    // Initialize destination from journey
-    _selectedLat = journey.destination.latitude;
-    _selectedLng = journey.destination.longitude;
-    _selectedAddress = journey.destinationAddress;
-    _searchController.text = journey.destinationAddress;
+    // Initialize destination from journey without triggering search
+    setState(() {
+      _selectedLat = journey.destination.latitude;
+      _selectedLng = journey.destination.longitude;
+      _selectedAddress = journey.destinationAddress;
+      _isSettingSelectedValue = true;
+      _searchController.text = journey.destinationAddress;
+      _isSettingSelectedValue = false;
+    });
   }
 
   @override
@@ -156,41 +162,124 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
             _buildTextField(
               controller: _searchController,
               hintText: "Search for a place...",
-              onChanged: (value) => journeyProvider.searchLocations(value),
+              onChanged: (value) {
+                if (!_isSettingSelectedValue) {
+                  // Clear selection when user types manually
+                  if (_selectedLat != null) {
+                    setState(() {
+                      _selectedLat = null;
+                      _selectedLng = null;
+                      _selectedAddress = null;
+                    });
+                  }
+                  context.read<MapProvider>().searchPlaces(value);
+                }
+              },
               suffixIcon: const Icon(Icons.search, color: Colors.white54),
             ),
             
-            if (journeyProvider.searchResults.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(
-                  color: colors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: colors.brushedSteel),
-                ),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: journeyProvider.searchResults.length,
-                  separatorBuilder: (_, __) => Divider(color: colors.brushedSteel, height: 1),
-                  itemBuilder: (context, index) {
-                    final result = journeyProvider.searchResults[index];
-                    return ListTile(
-                      title: Text(result.name, style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(result.address, style: TextStyle(color: colors.silver, fontSize: 12)),
-                      onTap: () {
-                        setState(() {
-                          _selectedLat = result.latitude;
-                          _selectedLng = result.longitude;
-                          _selectedAddress = result.address;
-                          _searchController.text = result.name;
-                        });
-                        journeyProvider.clearSearchResults();
+            Consumer<MapProvider>(
+              builder: (context, mapProvider, child) {
+                if (mapProvider.isSearching) {
+                  return Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colors.brushedSteel),
+                    ),
+                    child: const Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white54,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'Searching...',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                if (mapProvider.searchError != null) {
+                  return Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colors.brushedSteel),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.search_off, color: colors.silver, size: 18),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                mapProvider.searchError!,
+                                style: TextStyle(
+                                  color: colors.silver, 
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                                textAlign: TextAlign.left,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                if (mapProvider.searchResults.isNotEmpty) {
+                  return Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colors.brushedSteel),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: mapProvider.searchResults.length,
+                      separatorBuilder: (_, __) => Divider(color: colors.brushedSteel, height: 1),
+                      itemBuilder: (context, index) {
+                        final result = mapProvider.searchResults[index];
+                        return ListTile(
+                          title: Text(result.displayName, style: const TextStyle(color: Colors.white)),
+                          subtitle: Text(result.address, style: TextStyle(color: colors.silver, fontSize: 12)),
+                          onTap: () {
+                            setState(() {
+                              _selectedLat = result.lat;
+                              _selectedLng = result.lng;
+                              _selectedAddress = result.address;
+                              _isSettingSelectedValue = true;
+                              _searchController.text = result.displayName;
+                              _isSettingSelectedValue = false;
+                            });
+                            mapProvider.clearSearchResults();
+                          },
+                        );
                       },
-                    );
-                  },
-                ),
-              ),
+                    ),
+                  );
+                }
+                
+                return const SizedBox.shrink();
+              },
+            ),
             
             if (_selectedLat != null) ...[
               const SizedBox(height: 12),
@@ -273,7 +362,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     required TextEditingController controller,
     required String hintText,
     TextInputType keyboardType = TextInputType.text,
-    Function(String)? onChanged,
+    void Function(String)? onChanged,
     Widget? suffixIcon,
   }) {
     final colors = Theme.of(context).tulinkColors;
