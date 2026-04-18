@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/utils/journey_stats_calculator.dart';
+import '../../../../core/widgets/status_indicator.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../analytics/presentation/providers/analytics_provider.dart';
+import '../../../journeys/domain/entities/journey.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_stats_grid.dart';
 import '../widgets/settings_menu_item.dart';
@@ -93,7 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: colors.cardDark,
                   borderRadius: BorderRadius.circular(25),
                   border: Border.all(
-                    color: colors.brushedSteel.withOpacity(0.3),
+                    color: colors.brushedSteel.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -137,6 +140,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
               
               const SizedBox(height: 32),
               
+              // My Journeys Section
+                     Container(
+                decoration: BoxDecoration(
+                  color: colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colors.brushedSteel.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    SettingsMenuItem(
+                      icon: Icons.route_outlined,
+                      title: 'My journeys',
+                      onTap: () => Navigator.of(context).pushNamed(JourneyHistoryScreen.routeName),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
               // Settings Section
               Container(
                 width: double.infinity,
@@ -153,14 +178,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               
               const SizedBox(height: 16),
-              
+            
               // Settings Menu Items
               Container(
                 decoration: BoxDecoration(
                   color: colors.cardDark,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: colors.brushedSteel.withOpacity(0.3),
+                    color: colors.brushedSteel.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -201,7 +226,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: colors.cardDark,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: colors.electricRed.withOpacity(0.3),
+                    color: colors.electricRed.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -220,6 +245,208 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildJourneysLoadingState(TulinkColors colors) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colors.brushedSteel.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white54,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Loading journeys...',
+            style: TextStyle(
+              color: colors.silver,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyJourneysState(TulinkColors colors) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colors.brushedSteel.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.route_outlined,
+            color: colors.silver,
+            size: 32,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'No journeys yet',
+            style: TextStyle(
+              color: colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Create your first journey to get started',
+            style: TextStyle(
+              color: colors.silver,
+              fontSize: 12,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJourneyItem(Journey journey, TulinkColors colors) {
+    return InkWell(
+      onTap: () => _navigateToJourneyDetails(journey),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Journey name and status
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    journey.name,
+                    style: TextStyle(
+                      color: colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                StatusIndicator(status: journey.status, fontSize: 10),
+              ],
+            ),
+            
+            const SizedBox(height: 8),
+            
+            // Destination
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on,
+                  color: colors.electricRed,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    journey.destinationAddress,
+                    style: TextStyle(
+                      color: colors.silver,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 6),
+            
+            // Info row
+            Row(
+              children: [
+                Icon(
+                  Icons.group,
+                  color: colors.silver,
+                  size: 12,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${journey.participants?.length ?? 1}',
+                  style: TextStyle(
+                    color: colors.silver,
+                    fontSize: 11,
+                  ),
+                ),
+                
+                const SizedBox(width: 12),
+                
+                Icon(
+                  Icons.speed,
+                  color: colors.silver,
+                  size: 12,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${journey.lagThresholdMeters}m',
+                  style: TextStyle(
+                    color: colors.silver,
+                    fontSize: 11,
+                  ),
+                ),
+                
+                const Spacer(),
+                
+                Text(
+                  _formatJourneyDate(journey.createdAt),
+                  style: TextStyle(
+                    color: colors.silver,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatJourneyDate(DateTime? date) {
+    if (date == null) return 'Unknown';
+    
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays > 30) {
+      return '${date.month}/${date.year}';
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inMinutes}m ago';
+    }
+  }
+
+  void _navigateToJourneyDetails(Journey journey) {
+    Navigator.of(context).pushNamed(
+      '/journey-details',
+      arguments: journey,
     );
   }
 

@@ -273,11 +273,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).pushNamed(JourneyHistoryScreen.routeName),
-        label: const Text("Journey History"),
-        icon: const Icon(Icons.play_arrow_rounded),
-      ),
+      // floatingActionButton: FloatingActionButton.extended(
+      //   onPressed: () => Navigator.of(context).pushNamed(JourneyHistoryScreen.routeName),
+      //   label: const Text("Journey History"),
+      //   icon: const Icon(Icons.play_arrow_rounded),
+      // ),
     );
   }
 
