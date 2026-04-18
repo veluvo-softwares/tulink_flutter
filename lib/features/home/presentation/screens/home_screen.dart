@@ -5,6 +5,7 @@ import 'package:tulink_flutter/features/auth/presentation/providers/auth_provide
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
+import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../widgets/journey_card.dart';
 import '../widgets/journeys_card.dart';
@@ -23,10 +24,16 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AnalyticsProvider>().loadRecentJourneys();
-      context.read<JourneyProvider>().fetchActiveJourneys();
-      context.read<AnalyticsProvider>().loadJourneyHistory();
+      _refreshData();
     });
+  }
+
+  Future<void> _refreshData() async {
+    await Future.wait([
+      context.read<AnalyticsProvider>().loadRecentJourneys(),
+      context.read<JourneyProvider>().fetchActiveJourneys(),
+      context.read<AnalyticsProvider>().loadJourneyHistory(),
+    ]);
   }
 
   @override
@@ -36,9 +43,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Column(
+        child: RefreshIndicator(
+          onRefresh: _refreshData,
+          color: colors.electricRed,
+          backgroundColor: colors.cardDark,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
@@ -69,15 +81,84 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: colors.electricRed, width: 2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: colors.brushedSteel,
-                      child: Icon(Icons.person_rounded, color: colors.white),
+                  GestureDetector(
+                    onTap: _navigateToProfile,
+                    child: SizedBox(
+                      width: 54,
+                      height: 54,
+                      child: Stack(
+                        children: [
+                          // Main Avatar Container
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: colors.electricRed,
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: colors.electricRed.withValues(alpha: 0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Container(
+                              margin: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    colors.brushedSteel,
+                                    colors.brushedSteel.withValues(alpha: 0.8),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _getInitials(user?.name ?? 'User'),
+                                  style: TextStyle(
+                                    color: colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          
+                          // Online Status Indicator
+                          Positioned(
+                            bottom: 3,
+                            right: 3,
+                            child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.green,
+                                border: Border.all(
+                                  color: colors.carbonBlack,
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.green.withValues(alpha: 0.4),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -115,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: 'Active Journeys',
                     journeys: journeyProvider.activeJourneys,
                     showParticipants: true,
+                    isLoading: journeyProvider.isLoading && journeyProvider.activeJourneys.isEmpty,
                     onJourneyTap: (journey) => _navigateToJourneyPreview(journey.id),
                   );
                 },
@@ -178,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: 'Recent Journeys',
                     journeys: analyticsProvider.recentJourneys,
                     showParticipants: false,
+                    isLoading: analyticsProvider.isLoading && analyticsProvider.recentJourneys.isEmpty,
                     onSeeAll: () => _navigateToJourneyHistory(),
                     onJourneyTap: (journey) => _navigateToJourneyDetails(journey),
                   );
@@ -186,6 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
               
               const SizedBox(height: 120), // Space for Navbar and FAB
             ],
+            ),
           ),
         ),
       ),
@@ -207,5 +291,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _navigateToJourneyPreview(String journeyId) {
     Navigator.of(context).pushNamed('/journey-preview', arguments: journeyId);
+  }
+
+  void _navigateToProfile() {
+    Navigator.of(context).pushNamed(ProfileScreen.routeName);
+  }
+
+  String _getInitials(String name) {
+    final nameParts = name.split(' ');
+    if (nameParts.length >= 2) {
+      return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
+    } else if (nameParts.isNotEmpty) {
+      return nameParts[0][0].toUpperCase();
+    }
+    return 'U';
   }
 }
