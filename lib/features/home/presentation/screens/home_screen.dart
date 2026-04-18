@@ -25,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AnalyticsProvider>().loadRecentJourneys();
       context.read<JourneyProvider>().fetchActiveJourneys();
+      context.read<AnalyticsProvider>().loadJourneyHistory();
     });
   }
 
