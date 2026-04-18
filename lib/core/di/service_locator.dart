@@ -19,8 +19,10 @@ import '../../features/journeys/domain/repositories/journey_repository.dart';
 import '../../features/journeys/domain/usecases/journey_usecases.dart';
 import '../../features/journeys/presentation/providers/journey_provider.dart';
 import '../../features/maps/data/datasources/map_local_data_source.dart';
+import '../../features/maps/data/datasources/place_search_remote_data_source.dart';
 import '../../features/maps/data/repositories/map_repository_impl.dart';
 import '../../features/maps/domain/repositories/map_repository.dart';
+import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
 import '../constants/app_constants.dart';
 import '../network/dio_client.dart';
@@ -45,7 +47,9 @@ class ServiceLocator {
 
   // Map Feature
   late MapLocalDataSource _mapLocalDataSource;
+  late PlaceSearchRemoteDataSource _placeSearchRemoteDataSource;
   late MapRepository _mapRepository;
+  late SearchPlacesUseCase _searchPlacesUseCase;
   late MapProvider _mapProvider;
 
   // Journey Feature
@@ -112,6 +116,7 @@ class ServiceLocator {
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
     _mapLocalDataSource = MapLocalDataSourceImpl();
+    _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(dio: _dioClient.dio);
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
     _mapboxSearchDataSource = MapboxSearchDataSource(dio: _dioClient.dio);
     _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(_analyticsApiService);
@@ -123,11 +128,15 @@ class ServiceLocator {
       localDataSource: _authLocalDataSource,
       dioClient: _dioClient,
     );
-    _mapRepository = MapRepositoryImpl(localDataSource: _mapLocalDataSource);
+    _mapRepository = MapRepositoryImpl(
+      localDataSource: _mapLocalDataSource,
+      placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
+    );
     _journeyRepository = JourneyRepositoryImpl(remoteDataSource: _journeyRemoteDataSource);
     _analyticsRepository = AnalyticsRepositoryImpl(remoteDataSource: _analyticsRemoteDataSource);
 
     // Initialize use cases
+    _searchPlacesUseCase = SearchPlacesUseCase(repository: _mapRepository);
     _getRecentJourneysUseCase = GetRecentJourneysUseCase(_analyticsRepository);
     _getJourneyHistoryUseCase = GetJourneyHistoryUseCase(_analyticsRepository);
     _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(_analyticsRepository);
@@ -135,7 +144,7 @@ class ServiceLocator {
     // Initialize providers
     _authProvider = AuthProvider(_authRepository);
     _themeProvider = ThemeProvider();
-    _mapProvider = MapProvider(_mapRepository);
+    _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
     _journeyProvider = JourneyProvider(
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
