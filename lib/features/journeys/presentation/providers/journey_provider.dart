@@ -9,6 +9,7 @@ class JourneyProvider extends ChangeNotifier {
   final GetJourneyById getJourneyByIdUseCase;
   final GetActiveJourneys getActiveJourneysUseCase;
   final StartJourney startJourneyUseCase;
+  final UpdateJourney updateJourneyUseCase;
   final MapboxSearchDataSource mapboxSearchDataSource;
 
   JourneyProvider({
@@ -16,6 +17,7 @@ class JourneyProvider extends ChangeNotifier {
     required this.getJourneyByIdUseCase,
     required this.getActiveJourneysUseCase,
     required this.startJourneyUseCase,
+    required this.updateJourneyUseCase,
     required this.mapboxSearchDataSource,
   });
 
@@ -108,6 +110,29 @@ class JourneyProvider extends ChangeNotifier {
     _setError(null);
 
     final result = await startJourneyUseCase(journeyId);
+
+    if (result.isSuccess && result.data != null) {
+      _currentJourney = result.data;
+      _setLoading(false);
+      return true;
+    } else {
+      _setError(result.failure?.message ?? 'Unknown error');
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> updateJourney({
+    required String journeyId,
+    required Map<String, dynamic> updateData,
+  }) async {
+    _setLoading(true);
+    _setError(null);
+
+    final result = await updateJourneyUseCase(
+      journeyId: journeyId,
+      updateData: updateData,
+    );
 
     if (result.isSuccess && result.data != null) {
       _currentJourney = result.data;

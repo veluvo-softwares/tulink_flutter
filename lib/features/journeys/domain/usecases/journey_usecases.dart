@@ -53,3 +53,16 @@ class StartJourney {
     return repository.startJourney(journeyId);
   }
 }
+
+class UpdateJourney {
+  final JourneyRepository repository;
+
+  UpdateJourney(this.repository);
+
+  Future<Result<Journey>> call({
+    required String journeyId,
+    required Map<String, dynamic> updateData,
+  }) {
+    return repository.updateJourney(journeyId, updateData);
+  }
+}

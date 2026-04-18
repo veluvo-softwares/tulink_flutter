@@ -60,6 +60,11 @@ class ApiRoutes {
   static const String analytics = '/analytics';
   static const String analyticsEvents = '/analytics/events';
   static const String analyticsUserStats = '/analytics/users/stats';
+  static const String userAnalytics = '/analytics/user';
+  static const String userJourneyHistory = '/analytics/user';
+  
+  // Dynamic Analytics Routes
+  static String journeyAnalytics(String id) => '/analytics/journeys/$id';
 
   // Admin Routes (if user has admin privileges)
   static const String adminUsers = '/admin/users';

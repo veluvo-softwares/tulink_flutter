@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../features/journeys/domain/entities/journey.dart';
-import '../../../../features/journeys/presentation/pages/create_journey_page.dart';
+import '../../../journeys/presentation/pages/create_journey_screen.dart';
 import '../../../../features/journeys/presentation/providers/journey_provider.dart';
 
 class MapJourneyOverlay extends StatelessWidget {
@@ -47,7 +47,7 @@ class MapJourneyOverlay extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pushNamed(CreateJourneyPage.routeName),
+                  onPressed: () => Navigator.of(context).pushNamed(CreateJourneyScreen.routeName),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colors.electricRed,
                     padding: const EdgeInsets.symmetric(vertical: 16),

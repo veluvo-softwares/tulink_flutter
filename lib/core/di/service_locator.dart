@@ -1,4 +1,10 @@
 import 'package:hive/hive.dart';
+import 'package:tulink_flutter/features/analytics/data/services/analytics_api_service.dart';
+import 'package:tulink_flutter/features/analytics/data/datasources/analytics_remote_data_source.dart';
+import 'package:tulink_flutter/features/analytics/data/repositories/analytics_repository_impl.dart';
+import 'package:tulink_flutter/features/analytics/domain/repositories/analytics_repository.dart';
+import 'package:tulink_flutter/features/analytics/domain/usecases/analytics_usecases.dart';
+import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
@@ -48,6 +54,16 @@ class ServiceLocator {
   late JourneyRepository _journeyRepository;
   late JourneyProvider _journeyProvider;
 
+
+  // Analytics Feature
+  late AnalyticsApiService _analyticsApiService;
+  late AnalyticsRemoteDataSource _analyticsRemoteDataSource;
+  late AnalyticsRepository _analyticsRepository;
+  late GetRecentJourneysUseCase _getRecentJourneysUseCase;
+  late GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
+  late GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
+  late AnalyticsProvider _analyticsProvider;
+
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
   Box<dynamic> get authBox => _authBox;
@@ -63,6 +79,10 @@ class ServiceLocator {
 
   // Journey Feature Getters
   JourneyProvider get journeyProvider => _journeyProvider;
+
+
+  // Analytics Feature Getters
+  AnalyticsProvider get analyticsProvider => _analyticsProvider;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -86,6 +106,7 @@ class ServiceLocator {
 
     // Initialize API services
     _authApiService = AuthApiService(_dioClient.dio);
+    _analyticsApiService = AnalyticsApiService(_dioClient.dio);
 
     // Initialize data sources
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
@@ -93,6 +114,8 @@ class ServiceLocator {
     _mapLocalDataSource = MapLocalDataSourceImpl();
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
     _mapboxSearchDataSource = MapboxSearchDataSource(dio: _dioClient.dio);
+    _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(_analyticsApiService);
+   
 
     // Initialize repositories
     _authRepository = AuthRepositoryImpl(
@@ -102,6 +125,12 @@ class ServiceLocator {
     );
     _mapRepository = MapRepositoryImpl(localDataSource: _mapLocalDataSource);
     _journeyRepository = JourneyRepositoryImpl(remoteDataSource: _journeyRemoteDataSource);
+    _analyticsRepository = AnalyticsRepositoryImpl(remoteDataSource: _analyticsRemoteDataSource);
+
+    // Initialize use cases
+    _getRecentJourneysUseCase = GetRecentJourneysUseCase(_analyticsRepository);
+    _getJourneyHistoryUseCase = GetJourneyHistoryUseCase(_analyticsRepository);
+    _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(_analyticsRepository);
 
     // Initialize providers
     _authProvider = AuthProvider(_authRepository);
@@ -112,7 +141,13 @@ class ServiceLocator {
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
       getActiveJourneysUseCase: GetActiveJourneys(_journeyRepository),
       startJourneyUseCase: StartJourney(_journeyRepository),
+      updateJourneyUseCase: UpdateJourney(_journeyRepository),
       mapboxSearchDataSource: _mapboxSearchDataSource,
+    );
+    _analyticsProvider = AnalyticsProvider(
+      _getRecentJourneysUseCase,
+      _getJourneyHistoryUseCase,
+      _getJourneyAnalyticsUseCase,
     );
 
     // Initialize auth provider

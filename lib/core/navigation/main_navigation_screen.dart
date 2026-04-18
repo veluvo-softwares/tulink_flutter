@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/profile/presentation/screens/profile_screen.dart';
 import 'widgets/app_navbar.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -18,7 +19,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     const HomeScreen(),
     const Center(child: Text("Explore Screen")), // Placeholder
     const Center(child: Text("Rewards Screen")), // Placeholder
-    const Center(child: Text("Profile Screen")), // Placeholder
+    const ProfileScreen(),
   ];
 
   @override

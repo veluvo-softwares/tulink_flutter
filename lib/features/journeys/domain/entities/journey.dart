@@ -1,6 +1,13 @@
 import 'package:equatable/equatable.dart';
 
-enum JourneyStatus { PENDING, ACTIVE, COMPLETED, CANCELLED }
+enum JourneyStatus { PENDING, ACTIVE, PAUSED, COMPLETED, CANCELLED }
+
+enum ParticipantRole { LEADER, FOLLOWER }
+
+enum ParticipantStatus { INVITED, ACTIVE, LEFT }
+
+// Type alias for backward compatibility with analytics screens
+typedef JourneyParticipant = Participant;
 
 class LatLng extends Equatable {
   final double latitude;
@@ -24,6 +31,8 @@ class Journey extends Equatable {
   final DateTime? updatedAt;
   final DateTime? startTime;
   final List<Participant>? participants;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
 
   const Journey({
     required this.id,
@@ -37,6 +46,8 @@ class Journey extends Equatable {
     this.updatedAt,
     this.startTime,
     this.participants,
+    this.startedAt,
+    this.completedAt,
   });
 
   @override
@@ -52,6 +63,8 @@ class Journey extends Equatable {
         updatedAt,
         startTime,
         participants,
+        startedAt,
+        completedAt,
       ];
 }
 
