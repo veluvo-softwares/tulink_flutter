@@ -3,18 +3,22 @@ import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
 
-/// A card widget that displays up to 4 recent journeys in a single container
-/// Similar to the "Recent Transactions" design with title, destination, and status
-class RecentJourneysCard extends StatelessWidget {
+/// A reusable card widget that displays up to 4 journeys in a single container
+/// Can be used for both recent journeys and active journeys
+class JourneysCard extends StatelessWidget {
   final List<Journey> journeys;
+  final String title;
   final VoidCallback? onSeeAll;
-  final Function(Journey)? onJourneyTap;
+  final void Function(Journey)? onJourneyTap;
+  final bool showParticipants;
 
-  const RecentJourneysCard({
+  const JourneysCard({
     super.key,
     required this.journeys,
+    required this.title,
     this.onSeeAll,
     this.onJourneyTap,
+    this.showParticipants = false,
   });
 
   @override
@@ -40,7 +44,7 @@ class RecentJourneysCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Recent Journeys',
+                title,
                 style: TextStyle(
                   color: colors.white,
                   fontSize: 18,
@@ -139,9 +143,11 @@ class RecentJourneysCard extends StatelessWidget {
                   
                   const SizedBox(height: 4),
                   
-                  // Destination and time
+                  // Destination and time or participants
                   Text(
-                    '${_formatDate(journey.createdAt)} • ${journey.destinationAddress}',
+                    showParticipants 
+                        ? '${journey.participants?.length ?? 0} participants • ${journey.destinationAddress}'
+                        : '${_formatDate(journey.createdAt)} • ${journey.destinationAddress}',
                     style: TextStyle(
                       color: colors.silver,
                       fontSize: 12,
@@ -175,12 +181,23 @@ class RecentJourneysCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'No recent journeys',
+            showParticipants ? 'No active journeys' : 'No recent journeys',
             style: TextStyle(
               color: colors.silver,
               fontSize: 14,
             ),
           ),
+          if (showParticipants)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Start a journey to see it here',
+                style: TextStyle(
+                  color: colors.silver.withOpacity(0.7),
+                  fontSize: 12,
+                ),
+              ),
+            ),
         ],
       ),
     );

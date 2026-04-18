@@ -2,17 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
-import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
-import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
-import '../../../../core/widgets/status_indicator.dart';
-import '../widgets/dashboard_card.dart';
 import '../widgets/journey_card.dart';
-import '../widgets/recent_journey_item.dart';
-import '../widgets/recent_journeys_card.dart';
+import '../widgets/journeys_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -115,47 +110,16 @@ class _HomeScreenState extends State<HomeScreen> {
               // Active Journeys Section
               Consumer<JourneyProvider>(
                 builder: (context, journeyProvider, child) {
-                  if (journeyProvider.activeJourneys.isNotEmpty) {
-                    return Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              "Active journeys",
-                              style: TextStyle(
-                                color: colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Active Journey Items
-                        ...journeyProvider.activeJourneys.take(3).map((journey) => 
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: RecentJourneyItem(
-                              title: journey.name,
-                              date: _formatDate(journey.createdAt),
-                              members: "${journey.participants?.length ?? 0} members",
-                              status: "ACTIVE",
-                              onTap: () => _navigateToJourneyPreview(journey.id),
-                            ),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 24),
-                      ],
-                    );
-                  }
-                  return const SizedBox.shrink();
+                  return JourneysCard(
+                    title: 'Active Journeys',
+                    journeys: journeyProvider.activeJourneys,
+                    showParticipants: true,
+                    onJourneyTap: (journey) => _navigateToJourneyPreview(journey.id),
+                  );
                 },
               ),
+              
+              const SizedBox(height: 32),
               
               // Recent Journeys Section
               Consumer<AnalyticsProvider>(
@@ -209,8 +173,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   }
 
-                  return RecentJourneysCard(
+                  return JourneysCard(
+                    title: 'Recent Journeys',
                     journeys: analyticsProvider.recentJourneys,
+                    showParticipants: false,
                     onSeeAll: () => _navigateToJourneyHistory(),
                     onJourneyTap: (journey) => _navigateToJourneyDetails(journey),
                   );
@@ -234,43 +200,11 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pushNamed('/journey-history');
   }
 
-  void _navigateToJourneyDetails(journey) {
+  void _navigateToJourneyDetails(dynamic journey) {
     Navigator.of(context).pushNamed('/journey-details', arguments: journey);
   }
 
   void _navigateToJourneyPreview(String journeyId) {
     Navigator.of(context).pushNamed('/journey-preview', arguments: journeyId);
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Unknown';
-    
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else {
-      return 'Recently';
-    }
-  }
-
-  String _getStatusText(status) {
-    switch (status.toString()) {
-      case 'JourneyStatus.PENDING':
-        return 'PENDING';
-      case 'JourneyStatus.ACTIVE':
-        return 'ACTIVE';
-      case 'JourneyStatus.PAUSED':
-        return 'PAUSED';
-      case 'JourneyStatus.COMPLETED':
-        return 'COMPLETED';
-      case 'JourneyStatus.CANCELLED':
-        return 'CANCELLED';
-      default:
-        return status.toString().split('.').last;
-    }
   }
 }
