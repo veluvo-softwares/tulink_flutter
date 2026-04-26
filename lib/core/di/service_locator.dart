@@ -185,7 +185,8 @@ class ServiceLocator {
       getActiveJourneysUseCase: GetActiveJourneys(_journeyRepository),
       startJourneyUseCase: StartJourney(_journeyRepository),
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
-      mapboxSearchDataSource: _mapboxSearchDataSource,
+      mapboxSearchDataSource: _mapboxSearchDataSource, 
+      endJourneyUseCase: EndJourney(_journeyRepository),
     );
     _analyticsProvider = AnalyticsProvider(
       _getRecentJourneysUseCase,

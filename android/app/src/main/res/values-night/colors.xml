@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TuLink brand colors for dark theme -->
+    <color name="tulink_dark_background">#1A1A1A</color>
+    <color name="tulink_primary">#E53E3E</color>
+</resources>

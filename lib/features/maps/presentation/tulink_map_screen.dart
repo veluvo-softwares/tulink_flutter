@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
 import '../../journeys/domain/entities/journey.dart';
 import '../../convoy/presentation/providers/convoy_provider.dart';
 import '../../convoy/presentation/widgets/convoy_status_bar.dart';
 import '../../convoy/presentation/widgets/convoy_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
+import '../../convoy/presentation/widgets/journey_progress_card.dart';
 import '../../convoy/presentation/widgets/driver_marker.dart';
 import '../../convoy/presentation/widgets/convoy_route_line.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
@@ -69,7 +71,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       final isFirstUpdate = _lastSnapshot == null;
       _lastSnapshot = convoySnapshot;
       
-      if (convoySnapshot != null && convoySnapshot.members.isNotEmpty && currentUserId != null) {
+      if (convoySnapshot != null && currentUserId != null) {
         // Update convoy visualization with route line and member markers
         if (isFirstUpdate) {
           // First time: add convoy visualization
@@ -238,6 +240,31 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     );
   }
 
+  /// End the journey and stop convoy coordination
+  void _endJourney() {
+    final convoyProvider = context.read<ConvoyProvider>();
+    final journeyProvider = context.read<JourneyProvider>();
+     context.read<AnalyticsProvider>().loadRecentJourneys();
+     context.read<JourneyProvider>().fetchActiveJourneys();
+     context.read<AnalyticsProvider>().loadJourneyHistory();
+    
+    // Stop convoy coordination
+    convoyProvider.stopCoordination();
+    
+    // End the journey (set status to completed)
+    final currentJourney = journeyProvider.currentJourney;
+    if (currentJourney != null) {
+      journeyProvider.endJourney(currentJourney.id);
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Journey ended. Convoy coordination stopped.')),
+    );
+    
+    // Navigate back to home
+    Navigator.of(context).pop();
+  }
+
   /// Show confirmation dialog for ending journey
   void _showEndJourneyConfirmation() {
     showDialog(
@@ -257,11 +284,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              final convoyProvider = context.read<ConvoyProvider>();
-              convoyProvider.stopCoordination();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Journey ended. Convoy coordination stopped.')),
-              );
+              _endJourney();
             },
             child: const Text('End Journey', style: TextStyle(color: Colors.red)),
           ),
@@ -304,7 +327,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
   @override
   void dispose() {
-    _stopConvoyCoordination();
+    // Don't stop convoy coordination when leaving map screen
+    // The journey should continue in the background
+    // Only stop convoy coordination when journey is actually ended
     super.dispose();
   }
 
@@ -363,12 +388,52 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               alignment: Alignment.topCenter,
               child: MapHeaderOverlay(),
             ),
-            
-          // Map Bottom Bar - Bottom Overlay
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: MapJourneyOverlay(),
+
+          // Back Button - Top Left
+          Positioned(
+            top: 50,
+            left: 16,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A).withValues(alpha: 0.9),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
           ),
+            
+          // Journey Progress Card - Bottom Overlay
+          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: JourneyProgressCard(
+                journey: currentJourney,
+                convoySnapshot: convoySnapshot,
+                onEndJourney: _showEndJourneyConfirmation,
+              ),
+            ),
+            
+          // Map Bottom Bar - Show when no active journey
+          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: MapJourneyOverlay(),
+            ),
 
           // Error Banner - Show when convoy has errors
           if (convoyError != null && convoyError.isNotEmpty)

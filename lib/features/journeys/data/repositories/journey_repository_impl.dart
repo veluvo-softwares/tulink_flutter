@@ -126,4 +126,25 @@ class JourneyRepositoryImpl implements JourneyRepository {
       );
     }
   }
+  
+  @override
+  Future<Result<Journey>> endJourney(String journeyId) async {
+    try {
+      final journey = await remoteDataSource.endJourney(journeyId);
+      return (data: journey, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message: e.response?.data?['message']?.toString() ?? 
+              'Failed to start journey',
+        ),
+      );
+    } catch (e) {
+      return (
+        data: null, 
+        failure: ServerFailure(message: e.toString()),
+      );
+    }
+  }
 }

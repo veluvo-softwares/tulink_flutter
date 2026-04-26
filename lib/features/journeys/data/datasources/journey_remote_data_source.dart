@@ -18,6 +18,8 @@ abstract class JourneyRemoteDataSource {
   Future<JourneyModel> startJourney(String journeyId);
 
   Future<JourneyModel> updateJourney(String journeyid, Map<String, dynamic> updateData);
+
+  Future<JourneyModel> endJourney(String journeyId);
 }
 
 class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
@@ -131,4 +133,23 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
       message: 'Invalid response format or failed to update journey',
     );
   }
+
+    @override
+  Future<JourneyModel> endJourney(String journeyId) async {
+    final response = await dio.post<Map<String, dynamic>>('/journeys/$journeyId/end');
+
+    if (response.statusCode == 201 && response.data != null) {
+      final journeyData = response.data!['data'] as Map<String, dynamic>?;
+      if (journeyData != null) {
+        return JourneyModel.fromJson(journeyData);
+      }
+    }
+    throw DioException(
+      requestOptions: response.requestOptions,
+      response: response,
+      message: 'Invalid response format or failed to end journey',
+    );
+  }
+
+  
 }

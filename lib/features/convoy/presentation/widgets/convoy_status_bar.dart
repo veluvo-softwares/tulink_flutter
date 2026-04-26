@@ -204,6 +204,10 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
     if (snapshot.allMembersArrived) return 'ALL ARRIVED';
     if (snapshot.laggingMembers.isNotEmpty) return 'MEMBERS LAGGING';
     if (snapshot.movingMemberCount > 0) return 'IN PROGRESS';
+    
+    // For solo journeys, show journey status instead of waiting
+    if (snapshot.totalMembers <= 1) return 'SOLO JOURNEY';
+    
     if (!snapshot.hasActiveMembers) return 'WAITING';
     
     return 'CONVOY READY';
@@ -216,7 +220,7 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
     final moving = snapshot.movingMemberCount;
     
     if (total == 0) return 'NO MEMBERS';
-    if (total == 1) return '1 MEMBER';
+    if (total == 1) return 'SOLO MODE';
     
     String baseText = '$total MEMBERS';
     

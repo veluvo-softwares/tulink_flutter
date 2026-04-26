@@ -1,7 +1,12 @@
 PODS:
+  - battery_plus (1.0.0):
+    - Flutter
   - Flutter (1.0.0)
   - flutter_secure_storage (6.0.0):
     - Flutter
+  - geolocator_apple (1.2.0):
+    - Flutter
+    - FlutterMacOS
   - mapbox_maps_flutter (2.19.1):
     - Flutter
     - MapboxMaps (= 11.19.0)
@@ -14,12 +19,17 @@ PODS:
     - MapboxCommon (= 24.19.0)
     - MapboxCoreMaps (= 11.19.0)
     - Turf (= 4.0.0)
+  - permission_handler_apple (9.3.0):
+    - Flutter
   - Turf (4.0.0)
 
 DEPENDENCIES:
+  - battery_plus (from `.symlinks/plugins/battery_plus/ios`)
   - Flutter (from `Flutter`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - mapbox_maps_flutter (from `.symlinks/plugins/mapbox_maps_flutter/ios`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
 
 SPEC REPOS:
   trunk:
@@ -29,20 +39,29 @@ SPEC REPOS:
     - Turf
 
 EXTERNAL SOURCES:
+  battery_plus:
+    :path: ".symlinks/plugins/battery_plus/ios"
   Flutter:
     :path: Flutter
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  geolocator_apple:
+    :path: ".symlinks/plugins/geolocator_apple/darwin"
   mapbox_maps_flutter:
     :path: ".symlinks/plugins/mapbox_maps_flutter/ios"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
 
 SPEC CHECKSUMS:
+  battery_plus: b42253f6d2dde71712f8c36fef456d99121c5977
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
+  geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
   mapbox_maps_flutter: 632563764d2dff820a123312fa5b50417a214b1f
   MapboxCommon: b40bcf330493e0d218802a63cabbd2efe6ca303b
   MapboxCoreMaps: badf69766576702ccb09a901c5859a45f0f600c0
   MapboxMaps: db05259e1ea68e9a8a4e6f9014027418025f2ebe
+  permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
   Turf: c9eb11a65d96af58cac523460fd40fec5061b081
 
 PODFILE CHECKSUM: e30f02f9d1c72c47bb6344a0a748c9d268180865

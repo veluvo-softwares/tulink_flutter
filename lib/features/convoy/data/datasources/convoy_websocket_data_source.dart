@@ -70,6 +70,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
+  bool _intentionalDisconnect = false; // Flag to prevent reconnection on intentional disconnect
   static const int _maxReconnectAttempts = 10;
   static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
 
@@ -90,6 +91,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     if (isConnected) return;
 
     try {
+      _intentionalDisconnect = false; // Reset flag when starting new connection
       _updateConnectionState(ConvoyConnectionState.connecting);
 
       // Create Socket.IO client with authentication
@@ -127,6 +129,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   @override
   Future<void> disconnect() async {
+    _intentionalDisconnect = true; // Set flag to prevent reconnection
     _stopHeartbeat();
     _stopReconnectTimer();
     
@@ -236,8 +239,13 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     _socket!.onDisconnect((_) {
       print('❌ WebSocket disconnected');
-      _updateConnectionState(ConvoyConnectionState.reconnecting);
-      _scheduleReconnect();
+      if (_intentionalDisconnect) {
+        print('🔌 Intentional disconnect - not attempting to reconnect');
+        _updateConnectionState(ConvoyConnectionState.disconnected);
+      } else {
+        _updateConnectionState(ConvoyConnectionState.reconnecting);
+        _scheduleReconnect();
+      }
     });
 
     // Connection status event
@@ -498,6 +506,11 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   /// Schedule reconnection with exponential backoff
   void _scheduleReconnect() {
+    if (_intentionalDisconnect) {
+      print('🔌 Skipping reconnect - intentional disconnect');
+      return;
+    }
+    
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _updateConnectionState(ConvoyConnectionState.error);
       return;
@@ -524,7 +537,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   /// Attempt to reconnect
   Future<void> _attemptReconnect() async {
-    if (isConnected) return;
+    if (isConnected || _intentionalDisconnect) return;
 
     try {
       print('🔄 Attempting reconnect...');

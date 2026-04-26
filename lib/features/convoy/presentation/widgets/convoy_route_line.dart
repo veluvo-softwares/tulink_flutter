@@ -173,12 +173,14 @@ class ConvoyRouteLine {
   ) {
     final points = <List<double>>[];
     
-    // Get all convoy members (exclude current user)
+    // Get all convoy members (for solo journeys, include current user)
     final members = snapshot.members.values
-        .where((member) => member.userId != currentUserId)
+        .where((member) => snapshot.totalMembers > 1 ? member.userId != currentUserId : true)
         .toList();
     
     if (members.isEmpty) {
+      // For solo journeys with no position yet, create route from destination
+      points.add([snapshot.destination.longitude, snapshot.destination.latitude]);
       return points;
     }
 
@@ -285,9 +287,9 @@ class ConvoyRouteLine {
   ) async {
     final features = <Map<String, dynamic>>[];
 
-    // Filter out current user
+    // For solo journeys, include current user; for multi-member, exclude current user
     final members = snapshot.members.values
-        .where((member) => member.userId != currentUserId)
+        .where((member) => snapshot.totalMembers > 1 ? member.userId != currentUserId : true)
         .toList();
 
     for (int i = 0; i < members.length; i++) {

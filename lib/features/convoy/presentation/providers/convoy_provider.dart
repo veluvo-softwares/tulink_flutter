@@ -304,9 +304,16 @@ class ConvoyProvider extends ChangeNotifier {
     }
   }
 
-  /// Filter out current user from convoy snapshot for display
+  /// Get convoy snapshot for display (includes solo journey support)
   ConvoySnapshot? getDisplaySnapshot(String currentUserId) {
     if (_snapshot == null) return null;
+    
+    // For solo journeys, return the original snapshot to show destination
+    if (_snapshot!.totalMembers <= 1) {
+      return _snapshot;
+    }
+    
+    // For multi-member convoys, filter out current user
     return _snapshot!.filterOutUser(currentUserId);
   }
 
