@@ -1,7 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
+import '../../journeys/domain/entities/journey.dart';
+import '../../convoy/presentation/providers/convoy_provider.dart';
+import '../../convoy/presentation/widgets/convoy_status_bar.dart';
+import '../../convoy/presentation/widgets/convoy_bottom_sheet.dart';
+import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
+import '../../convoy/presentation/widgets/journey_progress_card.dart';
+import '../../convoy/presentation/widgets/driver_marker.dart';
+import '../../convoy/presentation/widgets/convoy_route_line.dart';
+import '../../convoy/domain/entities/convoy_snapshot.dart';
+import '../../convoy/domain/entities/member_position.dart';
+import '../../auth/presentation/providers/auth_provider.dart';
 import 'widgets/map_journey_overlay.dart';
 import 'widgets/map_header_overlay.dart';
 
@@ -17,6 +29,10 @@ class TulinkMapScreen extends StatefulWidget {
 class _TulinkMapScreenState extends State<TulinkMapScreen> {
   MapboxMap? _mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
+  String? _activeJourneyId;
+  bool _isConvoyCoordinationActive = false;
+  ConvoySnapshot? _lastSnapshot;
+  int _lastUpdateHash = 0;
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
@@ -30,119 +46,313 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     ));
 
     await _updateMarkers();
+    _checkAndStartConvoyCoordination();
   }
 
   Future<void> _updateMarkers() async {
-    if (_mapboxMap == null || _pointAnnotationManager == null) return;
+    if (_mapboxMap == null) return;
 
-    // Clear previous annotations
-    await _pointAnnotationManager?.deleteAll();
+    // Get convoy snapshot and current user
+    final convoyProvider = context.read<ConvoyProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    
+    // Get convoy snapshot filtered to exclude current user
+    final convoySnapshot = currentUserId != null 
+        ? convoyProvider.getDisplaySnapshot(currentUserId)
+        : convoyProvider.snapshot;
 
-    // Sample journey participants for demonstration
-    final sampleUsers = [
-      {
-        'name': 'John Doe',
-        'lat': -1.2921,
-        'lng': 36.8219,
-        'index': 0,
-        'isMe': true
-      }, // Nairobi, Kenya
-      {
-        'name': 'Mary Jane Watson',
-        'lat': -1.2845,
-        'lng': 36.8310,
-        'index': 1,
-        'isMe': false
-      }, // Westlands
-      {
-        'name': 'Peter Parker',
-        'lat': -1.3032,
-        'lng': 36.8256,
-        'index': 2,
-        'isMe': false
-      }, // Karen
-      {
-        'name': 'Tony Stark',
-        'lat': -1.2881,
-        'lng': 36.8170,
-        'index': 3,
-        'isMe': false
-      }, // Museum Hill
-      {
-        'name': 'Natasha Romanoff',
-        'lat': -1.2815,
-        'lng': 36.8023,
-        'index': 4,
-        'isMe': false
-      }, // Kilimani
-    ];
-
-    // Add sample user markers demonstrating the new pin design
-    // Note: Using PointAnnotation for now until ViewAnnotation 
-    // integration is ready
-    for (final userData in sampleUsers) {
-      final userPos = Point(
-        coordinates: Position(
-          userData['lng']! as double,
-          userData['lat']! as double,
-        ),
-      );
+    // Generate a hash to check if the snapshot has actually changed
+    final currentHash = _generateSnapshotHash(convoySnapshot);
+    
+    // Only update if the snapshot has changed
+    if (currentHash != _lastUpdateHash) {
+      _lastUpdateHash = currentHash;
+      final isFirstUpdate = _lastSnapshot == null;
+      _lastSnapshot = convoySnapshot;
       
-      // Create basic marker with color-coded text and icon
-      await _pointAnnotationManager?.create(PointAnnotationOptions(
-        geometry: userPos,
-        textField: userData['name']! as String,
-        textColor: userData['isMe']! as bool 
-            ? Colors.red.toARGB32()  // Electric red for current user
-            : _getUserAnnotationColor(userData['index']! as int),
-        textSize: 11,
-        textOffset: [0, 2.5],
-        iconImage: 'marker-15', // Default Mapbox marker
-      ));
+      if (convoySnapshot != null && currentUserId != null) {
+        // Update convoy visualization with route line and member markers
+        if (isFirstUpdate) {
+          // First time: add convoy visualization
+          await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
+          await ConvoyRouteLine.addConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
+        } else {
+          // Subsequent updates: use update methods for better performance
+          await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
+          await ConvoyRouteLine.updateConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
+        }
+        
+        print('✅ Updated convoy markers: ${convoySnapshot.members.length} members');
+      } else {
+        // Remove convoy visualization when no active convoy
+        await ConvoyRouteLine.removeConvoyMarkers(_mapboxMap!);
+        await ConvoyRouteLine.removeConvoyRoute(_mapboxMap!);
+        print('✅ Removed convoy visualization');
+        _lastSnapshot = null; // Reset for next convoy session
+      }
     }
-
-    // Add destination marker
-    final destPos = Point(
-      coordinates: Position(36.9066, -1.4210), // Kiambu destination
-    );
-    await _pointAnnotationManager?.create(PointAnnotationOptions(
-      geometry: destPos,
-      textField: 'DESTINATION',
-      textColor: Colors.orange.toARGB32(),
-      textSize: 12,
-      textOffset: [0, 2.5],
-      iconImage: 'rocket-15',
-    ));
   }
 
-  // Helper method to get annotation colors matching UserPinUtils color scheme
-  int _getUserAnnotationColor(int userIndex) {
-    final colors = [
-      0xFFE53E3E, // Red
-      0xFF38A169, // Green  
-      0xFFDD6B20, // Orange
-      0xFF3182CE, // Blue
-      0xFF805AD5, // Purple
-      0xFFD69E2E, // Yellow
-      0xFFE53E3E, // Pink (reusing red variant)
-      0xFF319795, // Teal
-    ];
+  /// Generate a simple hash of the convoy snapshot for change detection
+  int _generateSnapshotHash(ConvoySnapshot? snapshot) {
+    if (snapshot == null) return 0;
     
-    return colors[userIndex % colors.length];
+    int hash = 0;
+    hash ^= snapshot.members.length.hashCode;
+    hash ^= snapshot.destination.latitude.hashCode;
+    hash ^= snapshot.destination.longitude.hashCode;
+    
+    // Include member positions in hash
+    for (final member in snapshot.members.values) {
+      hash ^= member.latitude.hashCode;
+      hash ^= member.longitude.hashCode;
+      hash ^= member.timestamp.hashCode;
+      hash ^= (member.isMoving ? 1 : 0).hashCode;
+    }
+    
+    return hash;
+  }
+
+
+  /// Check if convoy coordination should be started
+  void _checkAndStartConvoyCoordination() {
+    final journeyProvider = context.read<JourneyProvider>();
+    final convoyProvider = context.read<ConvoyProvider>();
+    final currentJourney = journeyProvider.currentJourney;
+
+    // Start convoy coordination if there's an active journey
+    if (currentJourney != null && 
+        currentJourney.status == JourneyStatus.ACTIVE &&
+        !_isConvoyCoordinationActive) {
+      
+      _activeJourneyId = currentJourney.id;
+      _isConvoyCoordinationActive = true;
+      
+      // Start convoy coordination
+      convoyProvider.startCoordination(currentJourney.id);
+    }
+  }
+
+  /// Stop convoy coordination when leaving the map
+  void _stopConvoyCoordination() {
+    if (_isConvoyCoordinationActive) {
+      final convoyProvider = context.read<ConvoyProvider>();
+      convoyProvider.stopCoordination();
+      _isConvoyCoordinationActive = false;
+      _activeJourneyId = null;
+    }
+  }
+
+  /// Show convoy bottom sheet with member list
+  void _showConvoyBottomSheet() {
+    final convoyProvider = context.read<ConvoyProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    
+    final snapshot = currentUserId != null 
+        ? convoyProvider.getDisplaySnapshot(currentUserId)
+        : convoyProvider.snapshot;
+
+    if (snapshot != null) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => ConvoyBottomSheet(
+          snapshot: snapshot,
+          onMemberTap: (member) {
+            // TODO: Center map on member position
+            Navigator.pop(context);
+          },
+          onClose: () => Navigator.pop(context),
+        ),
+      );
+    }
+  }
+
+  /// Show convoy management options
+  void _showConvoyManagementOptions() {
+    final convoyProvider = context.read<ConvoyProvider>();
+    final journeyProvider = context.read<JourneyProvider>();
+    final currentJourney = journeyProvider.currentJourney;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.refresh, color: Colors.blue),
+              title: const Text('Refresh Convoy Data', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                if (currentJourney != null) {
+                  convoyProvider.refreshSnapshot(currentJourney.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Refreshing convoy data...')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.wifi_off, color: Colors.orange),
+              title: const Text('Reconnect to Convoy', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                if (currentJourney != null) {
+                  convoyProvider.stopCoordination().then((_) {
+                    convoyProvider.startCoordination(currentJourney.id);
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Reconnecting to convoy...')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.error_outline, color: Colors.red),
+              title: const Text('Clear Error', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                convoyProvider.clearError();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.stop, color: Colors.red),
+              title: const Text('End Journey', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _showEndJourneyConfirmation();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// End the journey and stop convoy coordination
+  void _endJourney() {
+    final convoyProvider = context.read<ConvoyProvider>();
+    final journeyProvider = context.read<JourneyProvider>();
+     context.read<AnalyticsProvider>().loadRecentJourneys();
+     context.read<JourneyProvider>().fetchActiveJourneys();
+     context.read<AnalyticsProvider>().loadJourneyHistory();
+    
+    // Stop convoy coordination
+    convoyProvider.stopCoordination();
+    
+    // End the journey (set status to completed)
+    final currentJourney = journeyProvider.currentJourney;
+    if (currentJourney != null) {
+      journeyProvider.endJourney(currentJourney.id);
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Journey ended. Convoy coordination stopped.')),
+    );
+    
+    // Navigate back to home
+    Navigator.of(context).pop();
+  }
+
+  /// Show confirmation dialog for ending journey
+  void _showEndJourneyConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('End Journey?', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'Are you sure you want to end this convoy journey? This will stop coordination for all members.',
+          style: TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _endJourney();
+            },
+            child: const Text('End Journey', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show convoy metrics bottom sheet
+  void _showConvoyMetricsBottomSheet() {
+    final convoyProvider = context.read<ConvoyProvider>();
+    final journeyProvider = context.read<JourneyProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    final currentJourney = journeyProvider.currentJourney;
+    
+    final snapshot = currentUserId != null 
+        ? convoyProvider.getDisplaySnapshot(currentUserId)
+        : convoyProvider.snapshot;
+
+    if (snapshot != null && currentJourney != null) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => ConvoyMetricsBottomSheet(
+          snapshot: snapshot,
+          journeyName: currentJourney.name,
+          onEndJourney: () {
+            Navigator.pop(context);
+            // TODO: Implement journey end functionality
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('End journey functionality coming soon!')),
+            );
+          },
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    // Don't stop convoy coordination when leaving map screen
+    // The journey should continue in the background
+    // Only stop convoy coordination when journey is actually ended
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Listen to journey changes to update markers
-    context.watch<JourneyProvider>().currentJourney;
+    // Listen to journey and convoy changes to update markers
+    final currentJourney = context.watch<JourneyProvider>().currentJourney;
+    final convoySnapshot = context.watch<ConvoyProvider>().snapshot;
+    final convoyConnectionState = context.watch<ConvoyProvider>().connectionState;
+    final convoyError = context.watch<ConvoyProvider>().errorMessage;
+    
+    // Update markers when convoy state changes
     if (_mapboxMap != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _updateMarkers());
     }
 
+    // Check convoy coordination state
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndStartConvoyCoordination());
+
     return Scaffold(
       body: Stack(
         children: [
-          // Standard Mapbox Map without custom datasets
+          // Standard Mapbox Map
           RepaintBoundary(
             child: MapWidget(
               key: const ValueKey('mapbox_map'),
@@ -152,24 +362,131 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                 center: Point(
                   coordinates: Position(36.8219, -1.2921), // Nairobi
                 ),
-                zoom: 7, // Zoom out to show more of Kenya
+                zoom: 10, // Zoom in more for convoy coordination
               ),
             ),
           ),
           
-          // Map Header - Top Overlay
-          const Align(
-            alignment: Alignment.topCenter,
-            child: MapHeaderOverlay(),
+          // Convoy Status Bar - Show when active journey exists
+          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+            Align(
+              alignment: Alignment.topCenter,
+              child: GestureDetector(
+                onTap: _showConvoyBottomSheet,
+                onLongPress: _showConvoyManagementOptions,
+                child: ConvoyStatusBar(
+                  snapshot: convoySnapshot,
+                  connectionState: convoyConnectionState,
+                  onTap: _showConvoyBottomSheet,
+                ),
+              ),
+            ),
+          
+          // Map Header - Top Overlay (when no active journey)
+          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+            const Align(
+              alignment: Alignment.topCenter,
+              child: MapHeaderOverlay(),
+            ),
+
+          // Back Button - Top Left
+          Positioned(
+            top: 50,
+            left: 16,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A).withValues(alpha: 0.9),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
           ),
             
-          // Map Bottom Bar - Bottom Overlay
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: MapJourneyOverlay(),
-          ),
+          // Journey Progress Card - Bottom Overlay
+          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: JourneyProgressCard(
+                journey: currentJourney,
+                convoySnapshot: convoySnapshot,
+                onEndJourney: _showEndJourneyConfirmation,
+              ),
+            ),
+            
+          // Map Bottom Bar - Show when no active journey
+          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: MapJourneyOverlay(),
+            ),
+
+          // Error Banner - Show when convoy has errors
+          if (convoyError != null && convoyError.isNotEmpty)
+            Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                margin: const EdgeInsets.only(top: 120, left: 16, right: 16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade700),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        convoyError,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _showConvoyManagementOptions,
+                      icon: const Icon(Icons.settings, color: Colors.white, size: 20),
+                      tooltip: 'Convoy Management',
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
+      // Convoy Metrics FAB - Show when active convoy exists
+      floatingActionButton: (currentJourney != null && 
+          currentJourney.status == JourneyStatus.ACTIVE && 
+          convoySnapshot != null &&
+          convoySnapshot.members.isNotEmpty) 
+        ? FloatingActionButton(
+            onPressed: _showConvoyMetricsBottomSheet,
+            backgroundColor: const Color(0xFFE53E3E),
+            child: const Icon(
+              Icons.analytics_outlined,
+              color: Colors.white,
+            ),
+          )
+        : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

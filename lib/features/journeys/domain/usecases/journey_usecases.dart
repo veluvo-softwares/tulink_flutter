@@ -66,3 +66,13 @@ class UpdateJourney {
     return repository.updateJourney(journeyId, updateData);
   }
 }
+
+class EndJourney {
+  final JourneyRepository repository;
+
+  EndJourney(this.repository);
+
+  Future<Result<Journey>> call(String journeyId) {
+    return repository.endJourney(journeyId);
+  }
+}

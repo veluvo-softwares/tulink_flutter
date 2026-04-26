@@ -1,0 +1,95 @@
+import 'package:dio/dio.dart';
+
+import '../models/location_update_dto.dart';
+
+/// API service for convoy coordination REST endpoints
+/// Handles location publishing and snapshot fetching via HTTP
+class ConvoyApiService {
+  ConvoyApiService(this._dio);
+
+  final Dio _dio;
+
+  /// Publish location update to the convoy
+  /// POST /locations
+  /// Rate limited to 60 updates/minute per user per journey
+  Future<Map<String, dynamic>> publishLocation(LocationUpdateDto locationUpdate) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/locations',
+        data: locationUpdate.toJson(),
+      );
+
+      if (response.data == null) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+          error: 'Empty response from server',
+        );
+      }
+
+      return response.data!;
+    } on DioException catch (e) {
+      // Handle rate limiting specifically
+      if (e.response?.statusCode == 429) {
+        throw DioException(
+          requestOptions: e.requestOptions,
+          response: e.response,
+          type: DioExceptionType.badResponse,
+          error: 'Location update rate limit exceeded. Please slow down.',
+        );
+      }
+      
+      // Re-throw other Dio exceptions as-is
+      rethrow;
+    } catch (e) {
+      // Wrap other exceptions in DioException for consistent error handling
+      throw DioException(
+        requestOptions: RequestOptions(path: '/locations'),
+        type: DioExceptionType.unknown,
+        error: 'Unexpected error publishing location: $e',
+      );
+    }
+  }
+
+  /// Fetch latest convoy snapshot for cold start
+  /// GET /locations/journeys/{journeyId}/latest
+  Future<Map<String, dynamic>> fetchLatestPositions(String journeyId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/locations/journeys/$journeyId/latest',
+      );
+
+      if (response.data == null) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+          error: 'Empty response from server',
+        );
+      }
+
+      return response.data!;
+    } on DioException catch (e) {
+      // Handle journey not found specifically
+      if (e.response?.statusCode == 404) {
+        throw DioException(
+          requestOptions: e.requestOptions,
+          response: e.response,
+          type: DioExceptionType.badResponse,
+          error: 'Journey not found or no members have shared positions yet.',
+        );
+      }
+      
+      // Re-throw other Dio exceptions as-is
+      rethrow;
+    } catch (e) {
+      // Wrap other exceptions in DioException for consistent error handling
+      throw DioException(
+        requestOptions: RequestOptions(path: '/locations/journeys/$journeyId/latest'),
+        type: DioExceptionType.unknown,
+        error: 'Unexpected error fetching convoy positions: $e',
+      );
+    }
+  }
+}

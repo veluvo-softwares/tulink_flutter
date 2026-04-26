@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
+import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
-import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
-import '../../../../core/theme/tulink_colors.dart';
+import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import '../widgets/journey_card.dart';
 import '../widgets/journeys_card.dart';
 
@@ -61,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "WELCOME BACK,",
+                        'WELCOME BACK,',
                         style: TextStyle(
                           color: colors.silver,
                           fontSize: 14,
@@ -76,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: colors.white,
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
+                          letterSpacing: 1,
                         ),
                       ),
                     ],
@@ -166,24 +167,44 @@ class _HomeScreenState extends State<HomeScreen> {
               
               const SizedBox(height: 32),
               
-              // New Journey Call To Action Card
-              JourneyCard(
-                title: "Start a journey",
-                description: "Create a convoy and lead the pack",
-                colors: [colors.electricRed, colors.electricRed.withValues(alpha: 0.8)],
-                iconText: '🏁',
-                onTap: () {
-                  Navigator.of(context).pushNamed(CreateJourneyScreen.routeName);
+              // Journey Action Cards - Show active journey card OR create/join cards
+              Consumer<JourneyProvider>(
+                builder: (context, journeyProvider, child) {
+                  final hasActiveJourney = 
+                      journeyProvider.currentJourney != null && 
+                      journeyProvider.currentJourney!.status == 
+                          JourneyStatus.ACTIVE;
+                  
+                  if (hasActiveJourney) {
+                    return _buildActiveJourneyCard(
+                        colors, journeyProvider.currentJourney!);
+                  } else {
+                    return Column(
+                      children: [
+                        JourneyCard(
+                          title: 'Start a journey',
+                          description: 'Create a convoy and lead the pack',
+                          colors: [
+                            colors.electricRed, 
+                            colors.electricRed.withValues(alpha: 0.8)
+                          ],
+                          iconText: '🏁',
+                          onTap: () {
+                            Navigator.of(context).pushNamed(
+                                CreateJourneyScreen.routeName);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        JourneyCard(
+                          title: 'Join a journey',
+                          description: 'Enter a code and join the formation',
+                          borderColor: colors.electricRed,
+                          onTap: () {},
+                        ),
+                      ],
+                    );
+                  }
                 },
-              ),
-
-               const SizedBox(height: 16),
-              
-                 JourneyCard(
-                title: "Join a journey",
-                description: "Enter a code and join the formation",
-                borderColor: colors.electricRed,
-                onTap: () {},
               ),
               
             
@@ -196,8 +217,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: 'Active Journeys',
                     journeys: journeyProvider.activeJourneys,
                     showParticipants: true,
-                    isLoading: journeyProvider.isLoading && journeyProvider.activeJourneys.isEmpty,
-                    onJourneyTap: (journey) => _navigateToJourneyPreview(journey.id),
+                    isLoading: journeyProvider.isLoading && 
+                        journeyProvider.activeJourneys.isEmpty,
+                    onJourneyTap: _continueActiveJourney,
                   );
                 },
               ),
@@ -207,7 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
               // Recent Journeys Section
               Consumer<AnalyticsProvider>(
                 builder: (context, analyticsProvider, child) {
-                  if (analyticsProvider.isLoading && analyticsProvider.recentJourneys.isEmpty) {
+                  if (analyticsProvider.isLoading && 
+                      analyticsProvider.recentJourneys.isEmpty) {
                     return Container(
                       height: 150,
                       alignment: Alignment.center,
@@ -215,13 +238,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   }
 
-                  if (analyticsProvider.error != null && analyticsProvider.recentJourneys.isEmpty) {
+                  if (analyticsProvider.error != null && 
+                      analyticsProvider.recentJourneys.isEmpty) {
                     return Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: colors.cardDark,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+                        border: Border.all(
+                            color: colors.brushedSteel.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         children: [
@@ -232,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            "Failed to load recent journeys",
+                            'Failed to load recent journeys',
                             style: TextStyle(
                               color: colors.white,
                               fontSize: 14,
@@ -243,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           GestureDetector(
                             onTap: () => analyticsProvider.refreshRecentJourneys(),
                             child: Text(
-                              "Tap to retry",
+                              'Tap to retry',
                               style: TextStyle(
                                 color: colors.electricRed,
                                 fontSize: 12,
@@ -260,9 +285,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: 'Recent Journeys',
                     journeys: analyticsProvider.recentJourneys,
                     showParticipants: false,
-                    isLoading: analyticsProvider.isLoading && analyticsProvider.recentJourneys.isEmpty,
-                    onSeeAll: () => _navigateToJourneyHistory(),
-                    onJourneyTap: (journey) => _navigateToJourneyDetails(journey),
+                    isLoading: analyticsProvider.isLoading && 
+                        analyticsProvider.recentJourneys.isEmpty,
+                    onSeeAll: _navigateToJourneyHistory,
+                    onJourneyTap: _navigateToJourneyDetails,
                   );
                 },
               ),
@@ -293,8 +319,114 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pushNamed('/journey-preview', arguments: journeyId);
   }
 
+  /// Navigate to map screen to continue an active journey
+  void _continueActiveJourney(dynamic journey) {
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    // Set this journey as the current journey
+    if (journey is Journey) {
+      journeyProvider.setCurrentJourney(journey);
+    }
+    
+    // Navigate directly to map screen for active journey
+    Navigator.of(context).pushNamed('/mapview');
+  }
+
   void _navigateToProfile() {
     Navigator.of(context).pushNamed(ProfileScreen.routeName);
+  }
+
+  /// Build the active journey in progress card
+  Widget _buildActiveJourneyCard(TulinkColors colors, dynamic journey) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            colors.electricRed,
+            colors.electricRed.withValues(alpha: 0.8),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.electricRed, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: colors.electricRed.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Racing flag icon
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: Text(
+                '🏁',
+                style: TextStyle(fontSize: 28),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ACTIVE JOURNEY IN PROGRESS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You are currently in an active convoy journey',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Continue journey button
+                GestureDetector(
+                  onTap: () => _continueActiveJourney(journey),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'CONTINUE JOURNEY →',
+                      style: TextStyle(
+                        color: colors.electricRed,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _getInitials(String name) {

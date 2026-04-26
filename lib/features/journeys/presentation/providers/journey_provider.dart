@@ -10,6 +10,7 @@ class JourneyProvider extends ChangeNotifier {
   final GetActiveJourneys getActiveJourneysUseCase;
   final StartJourney startJourneyUseCase;
   final UpdateJourney updateJourneyUseCase;
+  final EndJourney endJourneyUseCase;
   final MapboxSearchDataSource mapboxSearchDataSource;
 
   JourneyProvider({
@@ -18,6 +19,7 @@ class JourneyProvider extends ChangeNotifier {
     required this.getActiveJourneysUseCase,
     required this.startJourneyUseCase,
     required this.updateJourneyUseCase,
+    required this.endJourneyUseCase,
     required this.mapboxSearchDataSource,
   });
 
@@ -159,5 +161,29 @@ class JourneyProvider extends ChangeNotifier {
   void clearSearchResults() {
     _searchResults = [];
     notifyListeners();
+  }
+
+  /// Set the current journey (used for continuing active journeys)
+  void setCurrentJourney(Journey journey) {
+    _currentJourney = journey;
+    notifyListeners();
+  }
+
+  /// End a journey
+    Future<bool> endJourney(String journeyId) async {
+    _setLoading(true);
+    _setError(null);
+
+    final result = await endJourneyUseCase(journeyId);
+
+    if (result.isSuccess && result.data != null) {
+      _currentJourney = result.data;
+      _setLoading(false);
+      return true;
+    } else {
+      _setError(result.failure?.message ?? 'Unknown error');
+      _setLoading(false);
+      return false;
+    }
   }
 }
