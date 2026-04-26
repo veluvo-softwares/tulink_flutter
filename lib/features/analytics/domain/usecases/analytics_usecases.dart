@@ -3,15 +3,6 @@ import 'package:tulink_flutter/core/utils/logger.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import '../repositories/analytics_repository.dart';
 
-class GetRecentJourneysUseCase {
-  final AnalyticsRepository repository;
-
-  GetRecentJourneysUseCase(this.repository);
-
-  Future<Result<List<Journey>>> call({int? limit}) async {
-    return await repository.getRecentJourneys(limit: limit);
-  }
-}
 
 class GetJourneyHistoryUseCase {
   final AnalyticsRepository repository;

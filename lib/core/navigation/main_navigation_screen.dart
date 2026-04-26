@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import 'widgets/app_navbar.dart';
@@ -17,8 +18,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _screens = [
     const HomeScreen(),
-    const Center(child: Text("Explore Screen")), // Placeholder
-    const Center(child: Text("Rewards Screen")), // Placeholder
+    const JourneyHistoryScreen(),
     const ProfileScreen(),
   ];
 

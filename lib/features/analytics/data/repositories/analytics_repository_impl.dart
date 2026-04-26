@@ -11,28 +11,6 @@ class AnalyticsRepositoryImpl implements AnalyticsRepository {
   AnalyticsRepositoryImpl({required this.remoteDataSource});
 
   @override
-  Future<Result<List<Journey>>> getRecentJourneys({int? limit}) async {
-    try {
-      final journeys = await remoteDataSource.getRecentJourneys(limit: limit);
-      
-      return (data: journeys, failure: null);
-    } on DioException catch (e) {
-      return (
-        data: null,
-        failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
-              'Failed to get recent journeys',
-        ),
-      );
-    } catch (e) {
-      return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
-      );
-    }
-  }
-
-  @override
   Future<Result<List<Journey>>> getJourneyHistory({int limit = 20}) async {
     try {
       final journeys = await remoteDataSource.getJourneyHistory(limit: limit);

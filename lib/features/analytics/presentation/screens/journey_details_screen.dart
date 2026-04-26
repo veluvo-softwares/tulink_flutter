@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../journeys/presentation/widgets/journey_preview_map.dart';
+import '../../../journeys/presentation/providers/journey_provider.dart';
+import '../providers/analytics_provider.dart';
 
 class JourneyDetailsScreen extends StatelessWidget {
   final Journey journey;
+  final bool showDoneButton;
 
   const JourneyDetailsScreen({
     super.key,
     required this.journey,
+    this.showDoneButton = false,
   });
 
   static const String routeName = '/journey-details';
@@ -204,6 +209,33 @@ class JourneyDetailsScreen extends StatelessWidget {
             ),
 
             const SizedBox(height: 20),
+
+            // Done Button (for completed journeys)
+            if (showDoneButton) ...[
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                child: ElevatedButton(
+                  onPressed: () => _navigateToHomeAndRefresh(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colors.electricRed,
+                    foregroundColor: colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40), // Extra padding for bottom
+            ],
           ],
         ),
       ),
@@ -244,6 +276,58 @@ class JourneyDetailsScreen extends StatelessWidget {
     );
   }
 
+  /// Navigate to home screen and refresh data
+  Future<void> _navigateToHomeAndRefresh(BuildContext context) async {
+    final analyticsProvider = context.read<AnalyticsProvider>();
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    // Show loading indicator while refreshing data
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+    
+    try {
+      // Refresh data: loadJourneyHistory and fetchActiveJourneys
+      await Future.wait([
+        analyticsProvider.loadJourneyHistory(),
+        journeyProvider.fetchActiveJourneys(),
+      ]);
+      
+      if (context.mounted) {
+        // Dismiss loading dialog
+        Navigator.of(context).pop();
+        
+        // Navigate to home screen (clear all routes)
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        // Dismiss loading dialog
+        Navigator.of(context).pop();
+        
+        // Show error but still navigate
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Data refresh failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        
+        // Navigate to home anyway
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home',
+          (route) => false,
+        );
+      }
+    }
+  }
 
   String _getTimeAgo(DateTime? date) {
     if (date == null) return 'UNKNOWN TIME';

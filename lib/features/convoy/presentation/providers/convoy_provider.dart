@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -304,17 +305,18 @@ class ConvoyProvider extends ChangeNotifier {
     }
   }
 
-  /// Get convoy snapshot for display (includes solo journey support)
+  /// Get convoy snapshot for display (excludes current user from markers)
   ConvoySnapshot? getDisplaySnapshot(String currentUserId) {
     if (_snapshot == null) return null;
     
-    // For solo journeys, return the original snapshot to show destination
-    if (_snapshot!.totalMembers <= 1) {
-      return _snapshot;
-    }
-    
-    // For multi-member convoys, filter out current user
+    // Always filter out current user for marker display to avoid duplicate with built-in user location
+    // The Mapbox built-in location component handles showing the user's own position
     return _snapshot!.filterOutUser(currentUserId);
+  }
+
+  /// Get convoy snapshot for member counting (includes current user)  
+  ConvoySnapshot? getFullSnapshot() {
+    return _snapshot;
   }
 
   void _setError(String message) {
@@ -330,6 +332,13 @@ class ConvoyProvider extends ChangeNotifier {
   /// Clear error manually
   void clearError() {
     _clearError();
+  }
+
+  /// Set snapshot for testing purposes only
+  @visibleForTesting
+  void setSnapshotForTesting(ConvoySnapshot snapshot) {
+    _snapshot = snapshot;
+    notifyListeners();
   }
 
   @override

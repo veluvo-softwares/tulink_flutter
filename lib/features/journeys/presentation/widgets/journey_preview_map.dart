@@ -33,7 +33,7 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
     // Clear previous annotations
     await _pointAnnotationManager?.deleteAll();
 
-    // Add destination marker
+    // Add destination marker with a pin-like visual
     final destPos = Point(
       coordinates: Position(
         widget.journey.destination.longitude,
@@ -41,13 +41,12 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
       ),
     );
     
+    // Use the location pin marker with electric red color
     await _pointAnnotationManager?.create(PointAnnotationOptions(
       geometry: destPos,
-      textField: 'DESTINATION',
-      textColor: 0xFFE53E3E, // Electric Red
-      textSize: 10,
-      textOffset: [0, 2.0],
-      iconImage: 'rocket-15',
+      iconImage: 'mapbox-marker-icon-default', // Built-in pin icon
+      iconColor: 0xFFE53E3E, // Electric Red
+      iconSize: 1.2,
     ));
   }
 

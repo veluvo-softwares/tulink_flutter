@@ -6,12 +6,10 @@ import '../../../journeys/domain/entities/journey.dart';
 
 
 class AnalyticsProvider extends ChangeNotifier {
-  final GetRecentJourneysUseCase _getRecentJourneysUseCase;
   final GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
   final GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
 
   AnalyticsProvider(
-    this._getRecentJourneysUseCase,
     this._getJourneyHistoryUseCase,
     this._getJourneyAnalyticsUseCase,
   );
@@ -29,25 +27,61 @@ class AnalyticsProvider extends ChangeNotifier {
   String? get error => _error;
 
 
-  /// Load recent journeys (limited to 5 for home screen)
-  Future<void> loadRecentJourneys({int limit = 5}) async {
+  /// Load recent journeys (derived from journey history, limited to 4 for home screen)
+  /// Excludes active journeys and shows only completed/cancelled/paused journeys
+  Future<void> loadRecentJourneys({int limit = 4}) async {
+    print('🔄 Loading recent journeys (derived from journey history) with limit: $limit');
+    
+    // If we already have journey history loaded, derive from it
+    if (_journeyHistory.isNotEmpty) {
+      _deriveRecentJourneysFromHistory(limit);
+      return;
+    }
+
+    // Otherwise, load journey history first, then derive recent journeys
     _setLoading(true);
     _clearError();
 
-    final result = await _getRecentJourneysUseCase(limit: limit);
-    
-    if (result.data != null) {
-      _recentJourneys = result.data!;
-    } else {
-      _setError(result.failure?.message ?? 'Failed to load recent journeys');
+    try {
+      final result = await _getJourneyHistoryUseCase(limit: 100); // Get larger set to filter from
+      
+      if (result.data != null) {
+        _journeyHistory = result.data!;
+        print('✅ Loaded ${_journeyHistory.length} journey history items for recent journeys derivation');
+        
+        // Derive recent journeys from the loaded history
+        _deriveRecentJourneysFromHistory(limit);
+      } else {
+        final errorMsg = result.failure?.message ?? 'Failed to load recent journeys';
+        print('❌ Failed to load recent journeys: $errorMsg');
+        _setError(errorMsg);
+        _recentJourneys = [];
+      }
+    } catch (e) {
+      print('❌ Exception loading recent journeys: $e');
+      _setError('Failed to load recent journeys: $e');
       _recentJourneys = [];
     }
 
     _setLoading(false);
   }
 
+  /// Derive recent journeys from existing journey history
+  /// Filters out active journeys and takes the first [limit] items
+  void _deriveRecentJourneysFromHistory(int limit) {
+    _recentJourneys = _journeyHistory
+        .where((journey) => journey.status != JourneyStatus.ACTIVE)
+        .take(limit)
+        .toList();
+    
+    print('✅ Derived ${_recentJourneys.length} recent journeys from ${_journeyHistory.length} total journeys (excluding active)');
+    notifyListeners();
+  }
+
   /// Load complete journey history (for history screen)
-  Future<void> loadJourneyHistory({int limit = 100}) async {
+  /// Also automatically derives recent journeys from the loaded data
+  Future<void> loadJourneyHistory({int limit = 20}) async {
+    print('🔄 Loading journey history with limit: $limit');
     _setLoading(true);
     _clearError();
 
@@ -56,14 +90,22 @@ class AnalyticsProvider extends ChangeNotifier {
 
       if (result.data != null) {
         _journeyHistory = result.data!;
+        print('✅ Loaded ${_journeyHistory.length} journey history items');
+        
+        // Automatically derive recent journeys from the loaded history
+        _deriveRecentJourneysFromHistory(4);
       } else {
         final errorMessage = result.failure?.message ?? 'Failed to load journey history';
+        print('❌ Failed to load journey history: $errorMessage');
         _setError(errorMessage);
         _journeyHistory = [];
+        _recentJourneys = []; // Clear recent journeys too
       }
     } catch (e) {
+      print('❌ Exception loading journey history: $e');
       _setError('Failed to load journey history: $e');
       _journeyHistory = [];
+      _recentJourneys = []; // Clear recent journeys too
     }
 
     _setLoading(false);
