@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Application configuration and environment management
@@ -65,6 +64,15 @@ class AppConfig {
   
   // Mapbox Configuration
   static String get mapboxAccessToken => dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '';
+  
+  // WebSocket Configuration
+  static String get webSocketUrl {
+    switch (_environment) {
+      case 'development':
+      default:
+        return 'https://api.dev.tulink.xyz';
+    }
+  }
   
   // Debug Configuration
   static bool get showDebugBanner => isDevelopment;

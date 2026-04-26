@@ -559,3 +559,90 @@ class TokenFailure extends Failure {
     );
   }
 }
+
+/// Failure related to convoy coordination and real-time location tracking
+class ConvoyFailure extends Failure {
+  const ConvoyFailure({
+    required super.message,
+    super.details,
+    super.timestamp,
+    this.isRetryable = false,
+  });
+
+  final bool isRetryable;
+
+  /// Location permission denied
+  static ConvoyFailure locationPermissionDenied = ConvoyFailure(
+    message: 'Location permission denied',
+    details: 'Please enable location permissions to participate in convoy coordination.',
+    timestamp: DateTime.now(),
+  );
+
+  /// Location service disabled
+  static ConvoyFailure locationServiceDisabled = ConvoyFailure(
+    message: 'Location service disabled',
+    details: 'Please enable location services to share your position with the convoy.',
+    timestamp: DateTime.now(),
+  );
+
+  /// GPS accuracy too low
+  static ConvoyFailure gpsAccuracyLow = ConvoyFailure(
+    message: 'GPS signal too weak',
+    details: 'Cannot get accurate location. Please move to an area with better GPS signal.',
+    timestamp: DateTime.now(),
+    isRetryable: true,
+  );
+
+  /// Real-time database connection failed
+  static ConvoyFailure rtdbConnectionFailed = ConvoyFailure(
+    message: 'Failed to connect to convoy coordination',
+    details: 'Cannot connect to real-time database. Please check your internet connection.',
+    timestamp: DateTime.now(),
+    isRetryable: true,
+  );
+
+  /// Publishing location update failed
+  static ConvoyFailure publishLocationFailed = ConvoyFailure(
+    message: 'Failed to update location',
+    details: 'Could not share your location with the convoy. Will retry automatically.',
+    timestamp: DateTime.now(),
+    isRetryable: true,
+  );
+
+  /// Rate limit exceeded
+  static ConvoyFailure rateLimitExceeded = ConvoyFailure(
+    message: 'Too many location updates',
+    details: 'Location updates are being sent too frequently. Please wait a moment.',
+    timestamp: DateTime.now(),
+    isRetryable: true,
+  );
+
+  /// Journey not active
+  static ConvoyFailure journeyNotActive = ConvoyFailure(
+    message: 'Journey not active',
+    details: 'This journey is not currently active for convoy coordination.',
+    timestamp: DateTime.now(),
+  );
+
+  /// Not a journey member
+  static ConvoyFailure notJourneyMember = ConvoyFailure(
+    message: 'Not authorized for this journey',
+    details: 'You are not a member of this journey convoy.',
+    timestamp: DateTime.now(),
+  );
+
+  @override
+  ConvoyFailure copyWith({
+    String? message,
+    int? statusCode,
+    String? details,
+    DateTime? timestamp,
+  }) {
+    return ConvoyFailure(
+      message: message ?? this.message,
+      details: details ?? this.details,
+      timestamp: timestamp ?? this.timestamp,
+      isRetryable: isRetryable,
+    );
+  }
+}

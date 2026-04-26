@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
 import '../widgets/journey_preview_map.dart';
+import '../../../convoy/presentation/providers/convoy_provider.dart';
 
 class JourneyPreviewScreen extends StatefulWidget {
   final String journeyId;
@@ -19,27 +22,62 @@ class JourneyPreviewScreen extends StatefulWidget {
   State<JourneyPreviewScreen> createState() => _JourneyPreviewScreenState();
 }
 
-class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
+class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> 
+    with TickerProviderStateMixin {
   bool _showCountdown = false;
   bool _isStartingJourney = false;
+  int _countdownValue = 5;
+  Timer? _countdownTimer;
+  late AnimationController _countdownAnimationController;
+  late Animation<double> _countdownScale;
+  bool _showGoMessage = false;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation controller
+    _countdownAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    
+    _countdownScale = Tween<double>(
+      begin: 0.5,
+      end: 1.2,
+    ).animate(CurvedAnimation(
+      parent: _countdownAnimationController,
+      curve: Curves.elasticOut,
+    ));
+    
     // Load journey details and initialize invitation provider when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JourneyProvider>().fetchJourneyById(widget.journeyId);
     });
   }
 
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _countdownAnimationController.dispose();
+    super.dispose();
+  }
+
 
   Future<void> _startJourneyCountdown() async {
     setState(() {
       _showCountdown = true;
+      _countdownValue = 5;
+      _showGoMessage = false;
     });
+    
+    // Start the animated countdown
+    _startCountdownTimer();
   }
 
   Future<void> _onCountdownComplete() async {
+    if (!mounted) return;
+    
     setState(() {
       _isStartingJourney = true;
     });
@@ -49,47 +87,106 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
       final success = await context.read<JourneyProvider>().startJourney(widget.journeyId);
       
       if (success && mounted) {
-        // Navigate to convoy map screen
-        Navigator.of(context).pushReplacementNamed(
-          '/convoy-map',
-          arguments: widget.journeyId,
-        );
-      } else {
-        // Handle start journey failure
-        setState(() {
-          _isStartingJourney = false;
-          _showCountdown = false;
-        });
+        // Start convoy coordination in the background
+        final convoyProvider = context.read<ConvoyProvider>();
+        
+        // Initialize convoy coordination for real-time tracking
+        print('🚀 Starting convoy coordination for journey: ${widget.journeyId}');
+        convoyProvider.startCoordination(widget.journeyId);
+        
+        // Small delay to ensure convoy starts properly
+        await Future.delayed(const Duration(milliseconds: 500));
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to start journey. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
+          // Navigate to convoy map screen (main map with convoy UI)
+          Navigator.of(context).pushReplacementNamed(
+            '/mapview', // Use main map screen which shows convoy UI when journey is active
+            arguments: widget.journeyId,
           );
         }
+      } else {
+        // Handle start journey failure
+        _handleJourneyStartFailure('Failed to start journey. Please try again.');
       }
     } catch (e) {
-      setState(() {
-        _isStartingJourney = false;
-        _showCountdown = false;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error starting journey: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      print('❌ Error starting journey: $e');
+      _handleJourneyStartFailure('Error starting journey: ${e.toString()}');
     }
   }
 
+  void _handleJourneyStartFailure(String message) {
+    if (!mounted) return;
+    
+    setState(() {
+      _isStartingJourney = false;
+      _showCountdown = false;
+      _showGoMessage = false;
+      _countdownValue = 5;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _startCountdownTimer() {
+    _countdownAnimationController.forward();
+    
+    // Haptic feedback for countdown start
+    HapticFeedback.mediumImpact();
+    
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_countdownValue > 1) {
+        setState(() {
+          _countdownValue--;
+        });
+        
+        // Different haptic feedback for each countdown number
+        if (_countdownValue == 1) {
+          HapticFeedback.heavyImpact(); // Strong vibration for final number
+        } else {
+          HapticFeedback.lightImpact(); // Light vibration for other numbers
+        }
+        
+        // Reset and restart animation for each number
+        _countdownAnimationController.reset();
+        _countdownAnimationController.forward();
+      } else {
+        // Show GO! message
+        timer.cancel();
+        setState(() {
+          _showGoMessage = true;
+        });
+        
+        // Double haptic feedback for GO!
+        HapticFeedback.heavyImpact();
+        Future.delayed(const Duration(milliseconds: 100), () {
+          HapticFeedback.heavyImpact();
+        });
+        
+        // Animate GO! message
+        _countdownAnimationController.reset();
+        _countdownAnimationController.forward();
+        
+        // Start journey after showing GO! for 1 second
+        Future.delayed(const Duration(seconds: 1), () {
+          _onCountdownComplete();
+        });
+      }
+    });
+  }
+
   void _onCancelCountdown() {
+    _countdownTimer?.cancel();
+    _countdownAnimationController.stop();
     setState(() {
       _showCountdown = false;
+      _showGoMessage = false;
+      _countdownValue = 5;
     });
   }
 
@@ -527,10 +624,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
                           ),
                         ),
                         child: _isStartingJourney
-                            ? Row(
+                            ? const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const SizedBox(
+                                   SizedBox(
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
@@ -538,8 +635,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
                                       strokeWidth: 2,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  const Text(
+                                   SizedBox(width: 12),
+                                   Text(
                                     'STARTING CONVOY...',
                                     style: TextStyle(
                                       fontSize: 16,
@@ -549,12 +646,12 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
                                   ),
                                 ],
                               )
-                            : Row(
+                            : const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.play_arrow, size: 24),
-                                  const SizedBox(width: 8),
-                                  const Text(
+                                   Icon(Icons.play_arrow, size: 24),
+                                   SizedBox(width: 8),
+                                   Text(
                                     'Start Convoy',
                                     style: TextStyle(
                                       fontSize: 16,
@@ -573,33 +670,136 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
               // Countdown Overlay
               if (_showCountdown)
                 Container(
-                  color: colors.carbonBlack.withOpacity(0.9),
+                  color: colors.carbonBlack.withOpacity(0.95),
                   child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.timer,
-                          color: colors.electricRed,
-                          size: 64,
+                        // Animated countdown number or GO! message
+                        AnimatedBuilder(
+                          animation: _countdownScale,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _countdownScale.value,
+                              child: Container(
+                                width: 200,
+                                height: 200,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: colors.electricRed,
+                                    width: 4,
+                                  ),
+                                  color: colors.electricRed.withOpacity(0.1),
+                                ),
+                                child: Center(
+                                  child: _showGoMessage
+                                      ? Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              'GO!',
+                                              style: TextStyle(
+                                                color: colors.electricRed,
+                                                fontSize: 48,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 2.0,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Icon(
+                                              Icons.rocket_launch,
+                                              color: colors.electricRed,
+                                              size: 32,
+                                            ),
+                                          ],
+                                        )
+                                      : Text(
+                                          '$_countdownValue',
+                                          style: TextStyle(
+                                            color: colors.electricRed,
+                                            fontSize: 72,
+                                            fontWeight: FontWeight.w900,
+                                            fontFamily: 'Rajdhani',
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Starting convoy in 3...',
-                          style: TextStyle(
-                            color: colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                        const SizedBox(height: 40),
+                        if (!_showGoMessage) ...[
+                          Text(
+                            'CONVOY STARTING IN',
+                            style: TextStyle(
+                              color: colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2.0,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 32),
-                        ElevatedButton(
-                          onPressed: _onCancelCountdown,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: colors.silver,
+                          const SizedBox(height: 8),
+                          Text(
+                            'Get ready for real-time coordination',
+                            style: TextStyle(
+                              color: colors.silver,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
-                          child: const Text('Cancel'),
-                        ),
+                          const SizedBox(height: 48),
+                          ElevatedButton(
+                            onPressed: _onCancelCountdown,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colors.silver.withOpacity(0.8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 32,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ] else ...[
+                          Text(
+                            'CONVOY ACTIVATED',
+                            style: TextStyle(
+                              color: colors.electricRed,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 2.0,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(colors.electricRed),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                'Initializing real-time tracking...',
+                                style: TextStyle(
+                                  color: colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

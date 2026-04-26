@@ -77,6 +77,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(
           value: serviceLocator.analyticsProvider,
         ),
+        // Convoy Provider
+        ChangeNotifierProvider.value(
+          value: serviceLocator.convoyProvider,
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {

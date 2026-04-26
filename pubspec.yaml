@@ -64,6 +64,16 @@ dependencies:
   flutter_dotenv: ^6.0.0
   flutter_svg: ^2.2.4
   shimmer: ^3.0.0
+  
+  # WebSocket for real-time coordination
+  socket_io_client: ^2.0.3+1
+  
+  # Location services
+  geolocator: ^13.0.1
+  permission_handler: ^11.3.1
+  
+  # Battery info for convoy metadata
+  battery_plus: ^6.0.2
 
 dev_dependencies:
   flutter_test:
