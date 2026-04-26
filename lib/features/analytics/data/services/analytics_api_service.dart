@@ -13,30 +13,31 @@ class AnalyticsApiService {
 
   final Dio _dio;
 
-  /// Get user analytics data with optional limit
+  /// Get user analytics data with optional limit (recent journeys)
   /// Returns standardized response with user journey data
-  Future<Map<String, dynamic>> getUserAnalytics({int? limit}) {
-    final queryParams = <String, dynamic>{};
-    if (limit != null) {
-      queryParams['limit'] = limit;
-    }
+  // Future<Map<String, dynamic>> getUserAnalytics({int? limit}) {
+  //   final queryParams = <String, dynamic>{};
+  //   if (limit != null) {
+  //     queryParams['limit'] = limit;
+  //   }
 
-    return ApiHandler.performApiCall<Map<String, dynamic>>(
-      () => _dio.get<Map<String, dynamic>>(
-        ApiRoutes.userAnalytics,
-        queryParameters: queryParams,
-      ),
-      (data) => data,
-    );
-  }
+  //   return ApiHandler.performApiCall<Map<String, dynamic>>(
+  //     () => _dio.get<Map<String, dynamic>>(
+  //       ApiRoutes.userAnalytics,
+  //       queryParameters: queryParams,
+  //     ),
+  //     (data) => data,
+  //   );
+  // }
 
   /// Get user journey history with pagination
   Future<Map<String, dynamic>> getUserJourneyHistory({
     int? limit,
   }) async {
-    final queryParams = <String, dynamic>{
-      'limit': limit,
-    };
+    final queryParams = <String, dynamic>{};
+    if (limit != null) {
+      queryParams['limit'] = limit;
+    }
     
     return ApiHandler.performApiCall<Map<String, dynamic>>(
       () => _dio.get<Map<String, dynamic>>(

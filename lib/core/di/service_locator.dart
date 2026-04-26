@@ -73,7 +73,6 @@ class ServiceLocator {
   late AnalyticsApiService _analyticsApiService;
   late AnalyticsRemoteDataSource _analyticsRemoteDataSource;
   late AnalyticsRepository _analyticsRepository;
-  late GetRecentJourneysUseCase _getRecentJourneysUseCase;
   late GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
   late GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
   late AnalyticsProvider _analyticsProvider;
@@ -168,7 +167,6 @@ class ServiceLocator {
 
     // Initialize use cases
     _searchPlacesUseCase = SearchPlacesUseCase(repository: _mapRepository);
-    _getRecentJourneysUseCase = GetRecentJourneysUseCase(_analyticsRepository);
     _getJourneyHistoryUseCase = GetJourneyHistoryUseCase(_analyticsRepository);
     _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(_analyticsRepository);
     _streamConvoyPositions = StreamConvoyPositions(_convoyRepository);
@@ -189,7 +187,6 @@ class ServiceLocator {
       endJourneyUseCase: EndJourney(_journeyRepository),
     );
     _analyticsProvider = AnalyticsProvider(
-      _getRecentJourneysUseCase,
       _getJourneyHistoryUseCase,
       _getJourneyAnalyticsUseCase,
     );

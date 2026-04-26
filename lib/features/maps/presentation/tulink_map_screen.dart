@@ -14,6 +14,7 @@ import '../../convoy/presentation/widgets/convoy_route_line.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/member_position.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
+import '../../analytics/presentation/screens/journey_details_screen.dart';
 import 'widgets/map_journey_overlay.dart';
 import 'widgets/map_header_overlay.dart';
 
@@ -39,14 +40,36 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     _pointAnnotationManager = 
         await mapboxMap.annotations.createPointAnnotationManager();
     
-    // Enable user location
-    await mapboxMap.location.updateSettings(LocationComponentSettings(
-      enabled: true,
-      pulsingEnabled: true,
-    ));
+    // Enable user location with defensive guards
+    await _enableUserLocation(mapboxMap);
 
     await _updateMarkers();
     _checkAndStartConvoyCoordination();
+  }
+
+  /// Enable user location with proper permission and auth checks
+  Future<void> _enableUserLocation(MapboxMap mapboxMap) async {
+    try {
+      // Check if user is authenticated
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.user;
+      
+      if (currentUser == null) {
+        print('⚠️ User not authenticated, skipping user location');
+        return;
+      }
+      
+      // Enable user location component (blue dot)
+      await mapboxMap.location.updateSettings(LocationComponentSettings(
+        enabled: true,
+        pulsingEnabled: true,
+      ));
+      
+      print('✅ User location component enabled for ${currentUser.id}');
+    } catch (e) {
+      print('❌ Failed to enable user location: $e');
+      // Continue without user location rather than crashing
+    }
   }
 
   Future<void> _updateMarkers() async {
@@ -150,9 +173,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.user?.id;
     
+    // For bottom sheet member list, show filtered snapshot (others only)
     final snapshot = currentUserId != null 
         ? convoyProvider.getDisplaySnapshot(currentUserId)
-        : convoyProvider.snapshot;
+        : convoyProvider.getFullSnapshot();
 
     if (snapshot != null) {
       showModalBottomSheet(
@@ -241,12 +265,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   }
 
   /// End the journey and stop convoy coordination
-  void _endJourney() {
+  Future<void> _endJourney() async {
     final convoyProvider = context.read<ConvoyProvider>();
     final journeyProvider = context.read<JourneyProvider>();
-     context.read<AnalyticsProvider>().loadRecentJourneys();
-     context.read<JourneyProvider>().fetchActiveJourneys();
-     context.read<AnalyticsProvider>().loadJourneyHistory();
     
     // Stop convoy coordination
     convoyProvider.stopCoordination();
@@ -254,15 +275,38 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     // End the journey (set status to completed)
     final currentJourney = journeyProvider.currentJourney;
     if (currentJourney != null) {
-      journeyProvider.endJourney(currentJourney.id);
+      final success = await journeyProvider.endJourney(currentJourney.id);
+      
+      if (success && context.mounted) {
+        // Get the updated journey with completed status
+        final completedJourney = journeyProvider.currentJourney;
+        
+        if (completedJourney != null) {
+          // Navigate to journey details screen with Done button
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => JourneyDetailsScreen(
+                journey: completedJourney,
+                showDoneButton: true,
+              ),
+            ),
+          );
+        } else {
+          // Fallback: navigate to home if no journey data
+          Navigator.of(context).pop();
+        }
+      } else {
+        // Show error message
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to end journey. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Journey ended. Convoy coordination stopped.')),
-    );
-    
-    // Navigate back to home
-    Navigator.of(context).pop();
   }
 
   /// Show confirmation dialog for ending journey
@@ -301,9 +345,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final currentUserId = authProvider.user?.id;
     final currentJourney = journeyProvider.currentJourney;
     
-    final snapshot = currentUserId != null 
-        ? convoyProvider.getDisplaySnapshot(currentUserId)
-        : convoyProvider.snapshot;
+    // For metrics, use full snapshot to include all members for distance calculations
+    final snapshot = convoyProvider.getFullSnapshot();
 
     if (snapshot != null && currentJourney != null) {
       showModalBottomSheet(

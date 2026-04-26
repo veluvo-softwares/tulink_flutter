@@ -6,7 +6,6 @@ import '../services/analytics_api_service.dart';
 /// Zero hardcoded strings - all endpoints are defined in AnalyticsApiService
 abstract class AnalyticsRemoteDataSource {
   /// Get recent journeys with optional limit
-  Future<List<JourneyModel>> getRecentJourneys({int? limit});
 
   /// Get user journey history with pagination
   Future<List<JourneyModel>> getJourneyHistory({int limit = 20});
@@ -23,46 +22,37 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
 
   AnalyticsRemoteDataSourceImpl(this._analyticsApiService);
 
-  @override
-  Future<List<JourneyModel>> getRecentJourneys({int? limit}) async {
-    // Execute API call through service - this now uses standardized response
-    final responseData = await _analyticsApiService.getUserAnalytics(limit: limit);
-    
-    // Since API service returns Map<String, dynamic>, check for 'data' field
-    List<dynamic> journeysData;
-    if (responseData.containsKey('data')) {
-      final data = responseData['data'];
-      if (data is List) {
-        journeysData = data;
-      } else {
-        return [];
-      }
-    } else {
-      return [];
-    }
-    
-    return journeysData
-        .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))
-        .toList();
-  }
 
   @override
   Future<List<JourneyModel>> getJourneyHistory({int limit = 20}) async {
+    print('📡 Fetching journey history from API with limit: $limit');
+    
     // Execute API call using standardized response
     final responseData = await _analyticsApiService.getUserJourneyHistory(limit: limit);
     
-    // Since API service returns Map<String, dynamic>, check for 'data' field
+    print('📡 Journey history API response type: ${responseData.runtimeType}');
+    print('📡 Journey history API response: $responseData');
+    
+    // responseData IS the data (ApiHandler.performStandardApiCall already extracted it)
+    // Handle if the response is directly a list or has a 'data' field
     List<dynamic> journeysData;
-    if (responseData.containsKey('data')) {
+    
+    if (responseData is List) {
+      journeysData = responseData as List<dynamic>;
+    } else if (responseData is Map<String, dynamic> && responseData.containsKey('data')) {
       final data = responseData['data'];
       if (data is List) {
-        journeysData = data;
+        journeysData = data as List<dynamic>;
       } else {
+        print('❌ Data field is not a list: ${data.runtimeType}');
         return [];
       }
     } else {
+      print('❌ Response is neither List nor Map with data field');
       return [];
     }
+    
+    print('✅ Parsed ${journeysData.length} journey items from history API');
     
     return journeysData
         .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))

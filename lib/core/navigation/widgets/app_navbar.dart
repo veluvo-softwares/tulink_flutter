@@ -38,20 +38,16 @@ class AppNavbar extends StatelessWidget {
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard_rounded),
-            label: 'DASHBOARD',
+            icon: Icon(Icons.home),
+            label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.explore_rounded),
-            label: 'EXPLORE',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.emoji_events_rounded),
-            label: 'REWARDS',
+            icon: Icon(Icons.route_outlined),
+            label: 'Journeys',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_rounded),
-            label: 'PROFILE',
+            label: 'Profile',
           ),
         ],
       ),

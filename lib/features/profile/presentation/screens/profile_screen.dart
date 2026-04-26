@@ -139,29 +139,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               
               const SizedBox(height: 32),
-              
-              // My Journeys Section
-                     Container(
-                decoration: BoxDecoration(
-                  color: colors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: colors.brushedSteel.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    SettingsMenuItem(
-                      icon: Icons.route_outlined,
-                      title: 'My journeys',
-                      onTap: () => Navigator.of(context).pushNamed(JourneyHistoryScreen.routeName),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
               // Settings Section
               Container(
                 width: double.infinity,
