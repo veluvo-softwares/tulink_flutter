@@ -97,6 +97,8 @@ class ConvoyProvider extends ChangeNotifier {
   /// Stop convoy coordination
   /// Cancels GPS publishing and real-time streaming
   Future<void> stopCoordination() async {
+    print('🛑 ConvoyProvider: Stopping coordination...');
+    
     // Stop location publishing
     await _locationSubscription?.cancel();
     _locationSubscription = null;
@@ -115,6 +117,14 @@ class ConvoyProvider extends ChangeNotifier {
     await _connectionSubscription?.cancel();
     _connectionSubscription = null;
     
+    // Stop the repository coordination (WebSocket, etc.)
+    try {
+      await _repository.stopCoordination();
+      print('✅ ConvoyProvider: Repository coordination stopped');
+    } catch (e) {
+      print('⚠️ ConvoyProvider: Failed to stop repository coordination: $e');
+    }
+    
     _isSubscribed = false;
     
     // Reset state
@@ -122,7 +132,9 @@ class ConvoyProvider extends ChangeNotifier {
     _connectionState = ConvoyConnectionState.disconnected;
     _lastPublishTime = null;
     _lastMovementTime = null;
+    _clearError();
     
+    print('✅ ConvoyProvider: Coordination stopped completely');
     notifyListeners();
   }
 

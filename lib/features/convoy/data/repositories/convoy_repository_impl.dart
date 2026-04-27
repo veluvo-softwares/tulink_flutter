@@ -48,6 +48,20 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   /// Start convoy coordination with WebSocket + REST fallback
   Future<void> _startCoordination(String journeyId) async {
     try {
+      // Verify we have valid authentication before starting
+      final token = await _tokenManager.getValidAuthToken();
+      if (token == null) {
+        print('❌ Cannot start convoy coordination - no valid auth token');
+        final failure = ConvoyFailure(
+          message: 'Authentication required',
+          details: 'Please log in to join convoy coordination',
+          timestamp: DateTime.now(),
+          isRetryable: true,
+        );
+        _snapshotController.add((snapshot: null, failure: failure));
+        return;
+      }
+
       // First: Get immediate snapshot via REST (cold start)
       _fetchInitialSnapshot(journeyId);
       
@@ -246,10 +260,13 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   @override
   Future<void> stopCoordination() async {
+    print('🛑 Stopping convoy coordination...');
+    
     // Leave journey room if active
     if (_currentJourneyId != null) {
       try {
         await _webSocketDataSource.leaveJourney(_currentJourneyId!);
+        print('✅ Left journey room: $_currentJourneyId');
       } catch (e) {
         print('⚠️ Failed to leave journey: $e');
       }
@@ -264,14 +281,12 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     
     // Disconnect WebSocket
     await _webSocketDataSource.disconnect();
+    print('✅ WebSocket disconnected');
     
     // Reset state
     _isWebSocketConnected = false;
     _currentJourneyId = null;
     
-    // Close local stream controller
-    if (!_snapshotController.isClosed) {
-      await _snapshotController.close();
-    }
+    print('✅ Convoy coordination stopped completely');
   }
 }
