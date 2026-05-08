@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
+import '../providers/convoy_provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
 
 /// Bottom sheet showing convoy metrics: distance, time, pace
@@ -173,17 +175,18 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
 
   /// Build metrics row with distance, time, and pace
   Widget _buildMetricsRow(TulinkColors colors) {
+    final convoyProvider = context.watch<ConvoyProvider>();
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: Row(
         children: [
           // Distance
           Expanded(
-            child: _buildMetricItem(
+            child: _buildMetricItemWithFullValue(
               colors,
               'DISTANCE',
-              _getFormattedDistance(),
-              'KM',
+              convoyProvider.formatJourneyDistance(),
             ),
           ),
           
@@ -196,11 +199,10 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
           
           // Time
           Expanded(
-            child: _buildMetricItem(
+            child: _buildMetricItemWithFullValue(
               colors,
               'TIME',
-              _getFormattedTime(),
-              'MIN',
+              convoyProvider.formatJourneyDuration(),
             ),
           ),
           
@@ -213,11 +215,10 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
           
           // Pace
           Expanded(
-            child: _buildMetricItem(
+            child: _buildMetricItemWithFullValue(
               colors,
               'PACE',
-              _getFormattedPace(),
-              '/KM',
+              convoyProvider.formatJourneyPace(),
             ),
           ),
         ],
@@ -225,8 +226,8 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
     );
   }
 
-  /// Build individual metric item
-  Widget _buildMetricItem(TulinkColors colors, String label, String value, String unit) {
+  /// Build individual metric item with full formatted value (no separate unit)
+  Widget _buildMetricItemWithFullValue(TulinkColors colors, String label, String fullValue) {
     return Column(
       children: [
         Text(
@@ -239,31 +240,18 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
           ),
         ),
         const SizedBox(height: 8),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: value,
-                style: GoogleFonts.rajdhani(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: colors.white,
-                ),
-              ),
-              TextSpan(
-                text: ' $unit',
-                style: GoogleFonts.rajdhani(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: colors.silver,
-                ),
-              ),
-            ],
+        Text(
+          fullValue,
+          style: GoogleFonts.rajdhani(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: colors.white,
           ),
         ),
       ],
     );
   }
+
 
   /// Build action section with active status and end journey button
   Widget _buildActionSection(TulinkColors colors) {
@@ -322,37 +310,6 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
     );
   }
 
-  /// Calculate and format journey distance
-  String _getFormattedDistance() {
-    final totalDistance = widget.snapshot.totalDistance;
-    if (totalDistance < 1.0) {
-      // Show in meters if less than 1km
-      return '${(totalDistance * 1000).toStringAsFixed(0)}m';
-    }
-    return totalDistance.toStringAsFixed(1);
-  }
-
-  /// Calculate and format journey time
-  String _getFormattedTime() {
-    final duration = widget.snapshot.journeyDuration;
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes % 60;
-    
-    if (hours > 0) {
-      return '${hours}h ${minutes}m';
-    }
-    return '${minutes}';
-  }
-
-  /// Calculate and format journey pace
-  String _getFormattedPace() {
-    final pace = widget.snapshot.averagePace;
-    if (pace == 0) return '0:00';
-    
-    final minutes = pace.floor();
-    final seconds = ((pace - minutes) * 60).round();
-    return '${minutes}:${seconds.toString().padLeft(2, '0')}';
-  }
 }
 
 /// Extension for convoy metrics calculations

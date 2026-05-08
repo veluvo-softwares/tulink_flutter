@@ -82,6 +82,9 @@ dev_dependencies:
   # Linting
   very_good_analysis: ^6.0.0
   
+  # Testing & Mocking
+  mockito: ^5.4.4
+  
   # Code Generation
   build_runner: ^2.4.13
   hive_generator: ^2.0.1

@@ -39,6 +39,9 @@ class ConvoyProvider extends ChangeNotifier {
   bool _isSubscribed = false;
   ConvoyConnectionState _connectionState = ConvoyConnectionState.disconnected;
   String? _errorMessage;
+  DateTime? _journeyStartTime; // Track when THIS user's journey started
+  double _distanceTraveled = 0.0; // Track accumulated distance in meters
+  Position? _lastPosition; // Track last GPS position for distance calculation
 
   // GPS and location publishing
   StreamSubscription<Position>? _locationSubscription;
@@ -60,12 +63,18 @@ class ConvoyProvider extends ChangeNotifier {
   bool get isSubscribed => _isSubscribed;
   ConvoyConnectionState get connectionState => _connectionState;
   String? get errorMessage => _errorMessage;
+  DateTime? get journeyStartTime => _journeyStartTime;
+  double get distanceTraveled => _distanceTraveled; // Distance in meters
 
   /// Start convoy coordination for a journey
   /// Begins both GPS publishing and real-time position streaming
   Future<void> startCoordination(String journeyId) async {
     try {
       _clearError();
+      
+      // Record journey start time immediately
+      _journeyStartTime = DateTime.now();
+      print('✅ Journey start time recorded: $_journeyStartTime');
       
       // Check permissions first
       final permissionResult = await LocationPermissionService.requestLocationPermission();
@@ -132,6 +141,9 @@ class ConvoyProvider extends ChangeNotifier {
     _connectionState = ConvoyConnectionState.disconnected;
     _lastPublishTime = null;
     _lastMovementTime = null;
+    _journeyStartTime = null; // Clear journey start time
+    _distanceTraveled = 0.0; // Reset distance
+    _lastPosition = null; // Reset position tracking
     _clearError();
     
     print('✅ ConvoyProvider: Coordination stopped completely');
@@ -171,6 +183,21 @@ class ConvoyProvider extends ChangeNotifier {
     final now = DateTime.now();
     final speed = position.speed ?? 0.0;
     final isMoving = speed > 0.5; // Moving if speed > 0.5 m/s
+
+    // Accumulate distance if we have a previous position
+    if (_lastPosition != null && position.accuracy <= 50) { // Only if accuracy is good
+      final distance = Geolocator.distanceBetween(
+        _lastPosition!.latitude,
+        _lastPosition!.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      // Only accumulate reasonable distance changes (filter GPS jitter)
+      if (distance > 0 && distance < 100) { // Ignore jumps > 100m (likely GPS error)
+        _distanceTraveled += distance;
+      }
+    }
+    _lastPosition = position;
 
     // Update movement tracking
     if (isMoving) {
@@ -346,11 +373,55 @@ class ConvoyProvider extends ChangeNotifier {
     _clearError();
   }
 
+  /// Format journey duration from start time
+  String formatJourneyDuration([DateTime? now]) {
+    if (_journeyStartTime == null) return '0m';
+    final end = now ?? DateTime.now();
+    if (!end.isAfter(_journeyStartTime!)) return '0m';
+    final diff = end.difference(_journeyStartTime!);
+    final hours = diff.inHours;
+    final minutes = diff.inMinutes.remainder(60);
+    if (hours == 0) return '${minutes}m';
+    return '${hours}h ${minutes}m';
+  }
+
+  /// Format journey distance with correct units
+  String formatJourneyDistance() {
+    if (_distanceTraveled < 0) return '0 m';
+    if (_distanceTraveled < 1000) return '${_distanceTraveled.round()} m';
+    final km = _distanceTraveled / 1000;
+    return '${km.toStringAsFixed(km < 10 ? 2 : 1)} km';
+  }
+
+  /// Format journey pace (min:sec per km)
+  String formatJourneyPace() {
+    if (_journeyStartTime == null || _distanceTraveled < 50) return '--';
+    final elapsed = DateTime.now().difference(_journeyStartTime!);
+    if (elapsed.inSeconds <= 0) return '--';
+    final secondsPerKm = elapsed.inSeconds / (_distanceTraveled / 1000);
+    if (secondsPerKm.isInfinite || secondsPerKm.isNaN || secondsPerKm > 3600) return '--';
+    final mins = secondsPerKm ~/ 60;
+    final secs = (secondsPerKm % 60).round().toString().padLeft(2, '0');
+    return '$mins:$secs /km';
+  }
+
   /// Set snapshot for testing purposes only
   @visibleForTesting
   void setSnapshotForTesting(ConvoySnapshot snapshot) {
     _snapshot = snapshot;
     notifyListeners();
+  }
+
+  /// Set journey start time for testing purposes only
+  @visibleForTesting
+  void setJourneyStartTimeForTesting(DateTime startTime) {
+    _journeyStartTime = startTime;
+  }
+
+  /// Set distance traveled for testing purposes only
+  @visibleForTesting  
+  void setDistanceTraveledForTesting(double distance) {
+    _distanceTraveled = distance;
   }
 
   @override

@@ -94,8 +94,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         print('🚀 Starting convoy coordination for journey: ${widget.journeyId}');
         convoyProvider.startCoordination(widget.journeyId);
         
-        // Small delay to ensure convoy starts properly
-        await Future.delayed(const Duration(milliseconds: 500));
+        // Increase delay from 500ms to 2-3 seconds
+        await Future.delayed(const Duration(seconds: 3));
         
         if (mounted) {
           // Navigate to convoy map screen (main map with convoy UI)
