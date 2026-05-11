@@ -14,6 +14,9 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/stream_convoy_pos
 import 'package:tulink_flutter/features/convoy/domain/usecases/publish_my_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
+import 'package:tulink_flutter/features/navigation/data/services/mapbox_directions_service.dart';
+import 'package:tulink_flutter/features/navigation/data/repositories/navigation_repository_impl.dart';
+import 'package:tulink_flutter/features/navigation/domain/repositories/navigation_repository.dart';
 
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
@@ -34,6 +37,7 @@ import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
 import '../constants/app_constants.dart';
+import '../config/app_config.dart';
 import '../network/dio_client.dart';
 import '../theme/theme_provider.dart';
 import '../auth/token_manager.dart';
@@ -87,6 +91,10 @@ class ServiceLocator {
   late FetchLatestSnapshot _fetchLatestSnapshot;
   late ConvoyProvider _convoyProvider;
 
+  // Navigation Feature
+  late MapboxDirectionsService _mapboxDirectionsService;
+  late NavigationRepository _navigationRepository;
+
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
   Box<dynamic> get authBox => _authBox;
@@ -109,6 +117,9 @@ class ServiceLocator {
 
   // Convoy Feature Getters
   ConvoyProvider get convoyProvider => _convoyProvider;
+
+  // Navigation Feature Getters
+  NavigationRepository get navigationRepository => _navigationRepository;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -134,6 +145,10 @@ class ServiceLocator {
     _authApiService = AuthApiService(_dioClient.dio);
     _analyticsApiService = AnalyticsApiService(_dioClient.dio);
     _convoyApiService = ConvoyApiService(_dioClient.dio);
+    _mapboxDirectionsService = MapboxDirectionsService(
+      dio: _dioClient.dio,
+      accessToken: AppConfig.mapboxAccessToken,
+    );
 
     // Initialize data sources
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
@@ -164,6 +179,7 @@ class ServiceLocator {
       webSocketDataSource: _convoyWebSocketDataSource,
       tokenManager: TokenManager(),
     );
+    _navigationRepository = NavigationRepositoryImpl(_mapboxDirectionsService);
 
     // Initialize use cases
     _searchPlacesUseCase = SearchPlacesUseCase(repository: _mapRepository);
@@ -185,6 +201,7 @@ class ServiceLocator {
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
       mapboxSearchDataSource: _mapboxSearchDataSource, 
       endJourneyUseCase: EndJourney(_journeyRepository),
+      navigationRepository: _navigationRepository,
     );
     _analyticsProvider = AnalyticsProvider(
       _getJourneyHistoryUseCase,

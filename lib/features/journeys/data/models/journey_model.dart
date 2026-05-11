@@ -15,6 +15,11 @@ class JourneyModel extends Journey {
     super.participants,
     super.startedAt,
     super.completedAt,
+    super.routeGeometry,
+    super.estimatedDuration,
+    super.estimatedDistance,
+    super.routeCalculatedAt,
+    super.navigationSteps,
   });
 
   factory JourneyModel.fromJson(Map<String, dynamic> json) {
@@ -34,6 +39,17 @@ class JourneyModel extends Journey {
       completedAt: json['completedAt'] != null ? DateTime.tryParse(json['completedAt'].toString()) : null,
       participants: json['participants'] != null
           ? (json['participants'] as List<dynamic>).map((p) => ParticipantModel.fromJson(p as Map<String, dynamic>)).toList()
+          : null,
+      routeGeometry: json['routeGeometry'] as String?,
+      estimatedDuration: (json['estimatedDuration'] as num?)?.toDouble(),
+      estimatedDistance: (json['estimatedDistance'] as num?)?.toDouble(),
+      routeCalculatedAt: json['routeCalculatedAt'] != null 
+          ? DateTime.tryParse(json['routeCalculatedAt'].toString()) 
+          : null,
+      navigationSteps: json['navigationSteps'] != null
+          ? (json['navigationSteps'] as List<dynamic>)
+              .map((step) => NavigationStepData.fromJson(step as Map<String, dynamic>))
+              .toList()
           : null,
     );
   }
@@ -107,6 +123,11 @@ class JourneyModel extends Journey {
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
       'startTime': startTime?.toIso8601String(),
+      'routeGeometry': routeGeometry,
+      'estimatedDuration': estimatedDuration,
+      'estimatedDistance': estimatedDistance,
+      'routeCalculatedAt': routeCalculatedAt?.toIso8601String(),
+      'navigationSteps': navigationSteps?.map((step) => step.toJson()).toList(),
     };
   }
 }

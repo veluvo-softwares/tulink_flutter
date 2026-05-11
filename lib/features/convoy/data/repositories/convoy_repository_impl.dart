@@ -34,6 +34,8 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Timer? _fallbackPollingTimer;
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
+  int _fallbackPollingAttempts = 0;
+  DateTime? _lastWebSocketDisconnection;
 
   @override
   Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(String journeyId) {
@@ -169,13 +171,40 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   /// Start REST fallback polling when WebSocket is disconnected
   void _startRestFallbackPolling(String journeyId) {
     if (_fallbackPollingTimer != null) return; // Already polling
+    if (_currentJourneyId == null) {
+      print('⚠️ Cannot start REST polling: no active journey');
+      return;
+    }
     
-    print('🔄 Starting REST fallback polling');
+    _lastWebSocketDisconnection = DateTime.now();
+    _fallbackPollingAttempts = 0;
     
-    _fallbackPollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    print('🔄 Starting REST fallback polling for journey: $journeyId');
+    
+    _fallbackPollingTimer = Timer.periodic(_getPollingInterval(), (timer) async {
+      // Stop polling if coordination has been stopped
+      if (_currentJourneyId == null) {
+        print('🛑 Stopping REST polling: coordination stopped');
+        timer.cancel();
+        _fallbackPollingTimer = null;
+        return;
+      }
+      
+      _fallbackPollingAttempts++;
+      
+      // Increase interval over time to reduce server load
+      if (_fallbackPollingAttempts % 10 == 0) {
+        timer.cancel();
+        _fallbackPollingTimer = null;
+        _startRestFallbackPolling(journeyId); // Restart with new interval
+        return;
+      }
+      
+      print('🔄 REST fallback polling tick #$_fallbackPollingAttempts for journey: $journeyId');
       try {
         final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
         _snapshotController.add((snapshot: snapshot, failure: null));
+        print('📍 REST fallback got ${snapshot.members.length} members');
       } catch (e) {
         print('⚠️ REST fallback polling failed: $e');
         // Continue polling even on failure
@@ -185,9 +214,35 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   /// Stop REST fallback polling
   void _stopRestFallbackPolling() {
-    _fallbackPollingTimer?.cancel();
-    _fallbackPollingTimer = null;
-    print('✅ Stopped REST fallback polling');
+    if (_fallbackPollingTimer != null) {
+      print('🔄 Cancelling REST fallback polling timer...');
+      _fallbackPollingTimer?.cancel();
+      _fallbackPollingTimer = null;
+      _fallbackPollingAttempts = 0;
+      print('✅ Stopped REST fallback polling');
+    } else {
+      print('ℹ️ No REST fallback polling timer to cancel');
+    }
+  }
+  
+  /// Get polling interval based on duration since WebSocket disconnection
+  Duration _getPollingInterval() {
+    if (_lastWebSocketDisconnection == null) {
+      return const Duration(seconds: 5); // Initial interval
+    }
+    
+    final timeSinceDisconnection = DateTime.now().difference(_lastWebSocketDisconnection!);
+    
+    // Progressive intervals to reduce server load over time
+    if (timeSinceDisconnection.inMinutes < 2) {
+      return const Duration(seconds: 5); // First 2 minutes: 5s interval
+    } else if (timeSinceDisconnection.inMinutes < 5) {
+      return const Duration(seconds: 10); // 2-5 minutes: 10s interval
+    } else if (timeSinceDisconnection.inMinutes < 10) {
+      return const Duration(seconds: 20); // 5-10 minutes: 20s interval
+    } else {
+      return const Duration(seconds: 30); // After 10 minutes: 30s interval
+    }
   }
 
   @override
@@ -260,7 +315,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   @override
   Future<void> stopCoordination() async {
-    print('🛑 Stopping convoy coordination...');
+    print('🛑 ConvoyRepositoryImpl: Stopping coordination for journey: $_currentJourneyId');
     
     // Leave journey room if active
     if (_currentJourneyId != null) {
@@ -286,7 +341,9 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     // Reset state
     _isWebSocketConnected = false;
     _currentJourneyId = null;
+    _fallbackPollingAttempts = 0;
+    _lastWebSocketDisconnection = null;
     
-    print('✅ Convoy coordination stopped completely');
+    print('✅ ConvoyRepositoryImpl: Coordination stopped completely');
   }
 }

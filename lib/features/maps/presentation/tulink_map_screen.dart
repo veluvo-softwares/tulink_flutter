@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
 import '../../journeys/domain/entities/journey.dart';
@@ -15,6 +16,10 @@ import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/member_position.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
 import '../../analytics/presentation/screens/journey_details_screen.dart';
+import '../../navigation/presentation/widgets/route_polyline_overlay.dart';
+import '../../navigation/presentation/widgets/navigation_instruction_banner.dart';
+import '../../navigation/presentation/widgets/route_alternatives_sheet.dart';
+import '../../navigation/domain/entities/directions_route.dart';
 import 'widgets/map_journey_overlay.dart';
 import 'widgets/map_header_overlay.dart';
 
@@ -35,6 +40,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   ConvoySnapshot? _lastSnapshot;
   int _lastUpdateHash = 0;
 
+  // Navigation state
+  DirectionsRoute? _currentRoute;
+  bool _isNavigationActive = false;
+  bool _showNavigationInstructions = false;
+
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
     _pointAnnotationManager = 
@@ -45,6 +55,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
     await _updateMarkers();
     _checkAndStartConvoyCoordination();
+    _checkAndStartNavigation();
   }
 
   /// Enable user location with proper permission and auth checks
@@ -368,6 +379,196 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     }
   }
 
+  // Navigation Methods
+
+  /// Check if navigation should be started for the current journey
+  void _checkAndStartNavigation() {
+    final journeyProvider = context.read<JourneyProvider>();
+    final currentJourney = journeyProvider.currentJourney;
+
+    if (currentJourney != null && 
+        currentJourney.status == JourneyStatus.ACTIVE &&
+        !_isNavigationActive) {
+      _startNavigation(currentJourney);
+    }
+  }
+
+  /// Start navigation for a journey
+  Future<void> _startNavigation(Journey journey) async {
+    if (_mapboxMap == null) return;
+
+    _isNavigationActive = true;
+
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    // Check if journey already has a route
+    if (journey.hasRoute && journey.routeGeometry != null) {
+      // Use existing route
+      _currentRoute = DirectionsRoute(
+        geometry: journey.routeGeometry!,
+        duration: journey.estimatedDuration ?? 0.0,
+        distance: journey.estimatedDistance ?? 0.0,
+        steps: [], // Steps can be reconstructed if needed
+      );
+      
+      await _displayRoute(_currentRoute!);
+    } else {
+      // Calculate new route
+      await _calculateAndDisplayRoute(journey);
+    }
+
+    setState(() {
+      _showNavigationInstructions = true;
+    });
+  }
+
+  /// Calculate and display route for journey
+  Future<void> _calculateAndDisplayRoute(Journey journey) async {
+    if (_mapboxMap == null) return;
+
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    try {
+      // Show loading state
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Calculating route...')),
+      );
+
+      // Calculate route using JourneyProvider
+      await journeyProvider.calculateRouteForJourney(includeAlternatives: true);
+
+      // Get the calculated route
+      final route = journeyProvider.currentRoute;
+      if (route != null) {
+        _currentRoute = route;
+        await _displayRoute(route);
+        
+        // Fit camera to route
+        await RoutePolylineOverlay.fitCameraToRoute(_mapboxMap!, route);
+      } else {
+        // Show error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(journeyProvider.routeError ?? 'Failed to calculate route'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error calculating route: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Display route on map
+  Future<void> _displayRoute(DirectionsRoute route) async {
+    if (_mapboxMap == null) return;
+
+    await RoutePolylineOverlay.addPrimaryRoute(_mapboxMap!, route);
+    print('✅ Route displayed on map');
+  }
+
+  /// Show route alternatives bottom sheet
+  void _showRouteAlternatives() {
+    final journeyProvider = context.read<JourneyProvider>();
+    final alternatives = journeyProvider.routeAlternatives;
+
+    if (alternatives.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No route alternatives available')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => RouteAlternativesSheet(
+        routes: alternatives,
+        onRouteSelected: (route, index) async {
+          Navigator.pop(context);
+          await _selectAlternativeRoute(route);
+        },
+        onClose: () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  /// Select an alternative route
+  Future<void> _selectAlternativeRoute(DirectionsRoute route) async {
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    // Update the journey provider
+    await journeyProvider.selectAlternativeRoute(route);
+    
+    // Update map display
+    _currentRoute = route;
+    await _displayRoute(route);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Route updated')),
+    );
+  }
+
+  /// Recalculate route (for rerouting)
+  Future<void> _recalculateRoute() async {
+    final journeyProvider = context.read<JourneyProvider>();
+    
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recalculating route...')),
+      );
+
+      await journeyProvider.recalculateRoute(forceUpdate: true);
+
+      final route = journeyProvider.currentRoute;
+      if (route != null) {
+        _currentRoute = route;
+        await _displayRoute(route);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Route updated with current traffic')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to recalculate route: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Stop navigation
+  Future<void> _stopNavigation() async {
+    if (_mapboxMap == null) return;
+
+    _isNavigationActive = false;
+    _showNavigationInstructions = false;
+    _currentRoute = null;
+
+    // Remove route from map
+    await RoutePolylineOverlay.removeAllRoutes(_mapboxMap!);
+
+    final journeyProvider = context.read<JourneyProvider>();
+    journeyProvider.clearRoute();
+
+    setState(() {});
+  }
+
+  /// Toggle navigation instructions
+  void _toggleNavigationInstructions() {
+    setState(() {
+      _showNavigationInstructions = !_showNavigationInstructions;
+    });
+  }
+
   @override
   void dispose() {
     // Don't stop convoy coordination when leaving map screen
@@ -384,6 +585,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final convoyConnectionState = context.watch<ConvoyProvider>().connectionState;
     final convoyError = context.watch<ConvoyProvider>().errorMessage;
     
+    // Listen to navigation changes
+    final journeyProvider = context.watch<JourneyProvider>();
+    final isCalculatingRoute = journeyProvider.isCalculatingRoute;
+    final routeError = journeyProvider.routeError;
+    
     // Update markers when convoy state changes
     if (_mapboxMap != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _updateMarkers());
@@ -391,6 +597,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
     // Check convoy coordination state
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndStartConvoyCoordination());
+    
+    // Check navigation state
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndStartNavigation());
 
     return Scaffold(
       body: Stack(
@@ -409,6 +618,23 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               ),
             ),
           ),
+          
+          // Navigation Instructions Banner - Show when navigation is active
+          if (_isNavigationActive && 
+              _showNavigationInstructions && 
+              _currentRoute != null &&
+              _currentRoute!.steps.isNotEmpty)
+            Positioned(
+              top: 100,
+              left: 0,
+              right: 0,
+              child: CompactNavigationBanner(
+                instruction: _currentRoute!.steps.first.instruction,
+                distance: _currentRoute!.steps.first.distance,
+                iconName: _currentRoute!.steps.first.maneuver.iconName,
+                onTap: _toggleNavigationInstructions,
+              ),
+            ),
           
           // Convoy Status Bar - Show when active journey exists
           if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
@@ -508,6 +734,95 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                       onPressed: _showConvoyManagementOptions,
                       icon: const Icon(Icons.settings, color: Colors.white, size: 20),
                       tooltip: 'Convoy Management',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Navigation Controls - Show when journey is active
+          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+            Positioned(
+              bottom: 120,
+              right: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Route alternatives button
+                  if (_isNavigationActive && journeyProvider.routeAlternatives.length > 1)
+                    FloatingActionButton.small(
+                      onPressed: _showRouteAlternatives,
+                      backgroundColor: Colors.blue.withOpacity(0.9),
+                      child: const Icon(Icons.alt_route, color: Colors.white),
+                    ),
+                    
+                  const SizedBox(height: 8),
+                  
+                  // Recalculate route button
+                  if (_isNavigationActive)
+                    FloatingActionButton.small(
+                      onPressed: isCalculatingRoute ? null : _recalculateRoute,
+                      backgroundColor: Colors.orange.withOpacity(0.9),
+                      child: isCalculatingRoute
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.refresh, color: Colors.white),
+                    ),
+                    
+                  const SizedBox(height: 8),
+                  
+                  // Start/Stop navigation button
+                  FloatingActionButton.small(
+                    onPressed: () {
+                      if (_isNavigationActive) {
+                        _stopNavigation();
+                      } else {
+                        _startNavigation(currentJourney);
+                      }
+                    },
+                    backgroundColor: _isNavigationActive
+                        ? Colors.red.withOpacity(0.9)
+                        : Colors.green.withOpacity(0.9),
+                    child: Icon(
+                      _isNavigationActive ? Icons.navigation_outlined : Icons.navigation,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+          // Route error banner
+          if (routeError != null && routeError.isNotEmpty)
+            Positioned(
+              top: _isNavigationActive ? 160 : 120,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        routeError,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => journeyProvider.clearRouteError(),
+                      icon: const Icon(Icons.close, color: Colors.white, size: 20),
                     ),
                   ],
                 ),

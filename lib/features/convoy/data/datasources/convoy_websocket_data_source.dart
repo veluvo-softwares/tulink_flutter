@@ -9,6 +9,7 @@ import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
+import '../../../../core/auth/token_manager.dart';
 
 /// Abstract interface for convoy WebSocket operations
 abstract class ConvoyWebSocketDataSource {
@@ -51,8 +52,9 @@ abstract class ConvoyWebSocketDataSource {
 
 /// Implementation of convoy WebSocket data source using Socket.IO
 class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
-  ConvoyWebSocketDataSourceImpl();
+  ConvoyWebSocketDataSourceImpl({TokenManager? tokenManager}) : _tokenManager = tokenManager ?? TokenManager();
 
+  final TokenManager _tokenManager;
   io.Socket? _socket;
   String? _currentJourneyId;
   ConvoyConnectionState _connectionState = ConvoyConnectionState.disconnected;
@@ -69,10 +71,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   // Connection management
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
+  Timer? _tokenRefreshTimer;
   int _reconnectAttempts = 0;
   bool _intentionalDisconnect = false; // Flag to prevent reconnection on intentional disconnect
-  static const int _maxReconnectAttempts = 10;
-  static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
+  static const int _maxReconnectAttempts = 5;
+  static const List<int> _reconnectDelays = [2, 5, 10, 20, 30]; // seconds
+  static const Duration _connectionTimeout = Duration(seconds: 15);
+  static const Duration _heartbeatInterval = Duration(seconds: 25);
+  static const Duration _tokenRefreshInterval = Duration(minutes: 45); // Refresh token before expiry
 
   @override
   Stream<ConvoySnapshot> get convoyUpdatesStream => _convoyController.stream;
@@ -114,6 +120,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
       _reconnectAttempts = 0; // Reset on successful connection
       _startHeartbeat();
+      _startTokenRefreshTimer();
 
     } catch (e) {
       print('❌ WebSocket connection failed: $e');
@@ -132,6 +139,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _intentionalDisconnect = true; // Set flag to prevent reconnection
     _stopHeartbeat();
     _stopReconnectTimer();
+    _stopTokenRefreshTimer();
     
     if (_socket != null) {
       if (_currentJourneyId != null) {
@@ -465,10 +473,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   /// Wait for WebSocket connection with timeout
   Future<void> _waitForConnection() async {
-    const timeout = Duration(seconds: 10);
     final completer = Completer<void>();
     
-    Timer(timeout, () {
+    Timer(_connectionTimeout, () {
       if (!completer.isCompleted) {
         completer.completeError('Connection timeout');
       }
@@ -493,7 +500,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// Start heartbeat timer
   void _startHeartbeat() {
     _stopHeartbeat();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
       sendHeartbeat();
     });
   }
@@ -512,6 +519,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     }
     
     if (_reconnectAttempts >= _maxReconnectAttempts) {
+      print('❌ Max reconnection attempts reached. Stopping retries.');
       _updateConnectionState(ConvoyConnectionState.error);
       return;
     }
@@ -540,11 +548,32 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     if (isConnected || _intentionalDisconnect) return;
 
     try {
-      print('🔄 Attempting reconnect...');
+      print('🔄 Attempting reconnect (attempt ${_reconnectAttempts + 1})...');
       _updateConnectionState(ConvoyConnectionState.reconnecting);
       
-      // Try to reconnect
-      _socket?.connect();
+      // Get fresh token for reconnection
+      final token = await _tokenManager.getValidAuthToken();
+      if (token == null) {
+        print('❌ No valid token for reconnection');
+        _updateConnectionState(ConvoyConnectionState.error);
+        return;
+      }
+      
+      // Dispose old socket and create new one with fresh token
+      _socket?.disconnect();
+      _socket?.dispose();
+      
+      _socket = io.io(
+        '${AppConfig.webSocketUrl}/location',
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .disableAutoConnect()
+            .setAuth({'token': token})
+            .build(),
+      );
+      
+      _setupEventListeners();
+      _socket!.connect();
       await _waitForConnection();
       
       // Rejoin journey if we were in one
@@ -553,6 +582,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
       
       _reconnectAttempts = 0;
+      _startHeartbeat();
+      _startTokenRefreshTimer();
+      
     } catch (e) {
       print('❌ Reconnect failed: $e');
       _scheduleReconnect();
@@ -565,6 +597,78 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       _connectionState = newState;
       _connectionController.add(newState);
       print('🔌 Connection state: $newState');
+    }
+  }
+
+  /// Start token refresh timer to prevent expiry disconnections
+  void _startTokenRefreshTimer() {
+    _stopTokenRefreshTimer();
+    _tokenRefreshTimer = Timer.periodic(_tokenRefreshInterval, (_) {
+      _refreshTokenIfNeeded();
+    });
+  }
+
+  /// Stop token refresh timer
+  void _stopTokenRefreshTimer() {
+    _tokenRefreshTimer?.cancel();
+    _tokenRefreshTimer = null;
+  }
+
+  /// Refresh WebSocket connection if token will expire soon
+  Future<void> _refreshTokenIfNeeded() async {
+    if (!isConnected || _intentionalDisconnect) return;
+    
+    try {
+      final willExpireSoon = await _tokenManager.willTokenExpireSoon();
+      if (willExpireSoon) {
+        print('🔄 Token will expire soon, refreshing WebSocket connection...');
+        
+        final newToken = await _tokenManager.getValidAuthToken();
+        if (newToken != null) {
+          // Gracefully reconnect with new token
+          await _reconnectWithNewToken(newToken);
+        }
+      }
+    } catch (e) {
+      print('⚠️ Token refresh check failed: $e');
+    }
+  }
+
+  /// Reconnect WebSocket with new token
+  Future<void> _reconnectWithNewToken(String newToken) async {
+    try {
+      final currentJourneyId = _currentJourneyId;
+      
+      // Disconnect current socket
+      if (_socket != null) {
+        _socket!.disconnect();
+        _socket!.dispose();
+        _socket = null;
+      }
+      
+      // Create new connection with fresh token
+      _socket = io.io(
+        '${AppConfig.webSocketUrl}/location',
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .disableAutoConnect()
+            .setAuth({'token': newToken})
+            .build(),
+      );
+      
+      _setupEventListeners();
+      _socket!.connect();
+      await _waitForConnection();
+      
+      // Rejoin journey if we were in one
+      if (currentJourneyId != null) {
+        await joinJourney(currentJourneyId);
+      }
+      
+      print('✅ WebSocket connection refreshed with new token');
+    } catch (e) {
+      print('❌ Failed to refresh WebSocket connection: $e');
+      _updateConnectionState(ConvoyConnectionState.error);
     }
   }
 

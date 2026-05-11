@@ -426,7 +426,10 @@ class ConvoyProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopCoordination();
+    // Stop coordination without waiting to prevent blocking disposal
+    stopCoordination().catchError((e) {
+      print('⚠️ Error during convoy coordination cleanup: $e');
+    });
     super.dispose();
   }
 }
