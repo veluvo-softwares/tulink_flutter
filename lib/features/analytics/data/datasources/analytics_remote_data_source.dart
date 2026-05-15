@@ -1,4 +1,5 @@
 import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart';
+import '../models/journey_summary_model.dart';
 import '../services/analytics_api_service.dart';
 
 /// Remote data source for analytics
@@ -12,6 +13,9 @@ abstract class AnalyticsRemoteDataSource {
 
   /// Get analytics for a specific journey
   Future<JourneyModel> getJourneyAnalytics(String journeyId);
+
+  /// Get summary statistics for a specific journey
+  Future<JourneySummaryModel?> getJourneySummary(String journeyId);
 }
 
 /// Implementation of AnalyticsRemoteDataSource using AnalyticsApiService
@@ -66,5 +70,17 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
     
     // responseData IS the data (ApiHandler already extracted it from response.data)
     return JourneyModel.fromJson(responseData);
+  }
+
+  @override
+  Future<JourneySummaryModel?> getJourneySummary(String journeyId) async {
+    try {
+      final responseData =
+          await _analyticsApiService.getJourneySummary(journeyId);
+      return JourneySummaryModel.fromJson(responseData);
+    } catch (e) {
+      print('⚠️ Failed to fetch journey summary: $e');
+      return null;
+    }
   }
 }

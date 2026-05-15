@@ -7,7 +7,11 @@ class SearchPlacesUseCase {
 
   SearchPlacesUseCase({required this.repository});
 
-  Future<Result<List<PlaceSearchResult>>> call(String query) async {
-    return await repository.searchPlaces(query);
+  Future<Result<List<PlaceSearchResult>>> call(
+    String query, {
+    double? lat,
+    double? lng,
+  }) async {
+    return await repository.searchPlaces(query, lat: lat, lng: lng);
   }
 }

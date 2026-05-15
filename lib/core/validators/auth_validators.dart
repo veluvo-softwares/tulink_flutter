@@ -18,6 +18,9 @@ class AuthValidators {
   /// Name validation regex (allows letters, spaces, hyphens, and apostrophes)
   static final RegExp _nameRegex = RegExp(r"^[a-zA-Z\s\-']+$");
 
+  /// Phone number validation regex (E.164: optional '+' followed by 7-15 digits)
+  static final RegExp _phoneRegex = RegExp(r'^\+?[1-9]\d{6,14}$');
+
   /// Validates email format
   static ValidationFailure? validateEmail(String? email) {
     if (email == null || email.trim().isEmpty) {
@@ -193,6 +196,31 @@ class AuthValidators {
       return ValidationFailure(
         message: 'Invalid name format',
         details: 'Name should not start or end with spaces or special characters.',
+        timestamp: DateTime.now(),
+      );
+    }
+
+    return null;
+  }
+
+  /// Validates a phone number in E.164 format.
+  ///
+  /// Strips spaces, hyphens, and parentheses before checking, so common
+  /// human-entered formats like `+1 (555) 123-4567` are accepted.
+  static ValidationFailure? validatePhoneNumber(String? phone) {
+    if (phone == null || phone.trim().isEmpty) {
+      return ValidationFailure.requiredField.copyWith(
+        message: 'Phone number is required',
+        details: 'Please enter your phone number.',
+      );
+    }
+
+    final normalized = phone.replaceAll(RegExp(r'[\s\-()]'), '');
+
+    if (!_phoneRegex.hasMatch(normalized)) {
+      return ValidationFailure(
+        message: 'Invalid phone number',
+        details: 'Please enter a valid phone number in international format.',
         timestamp: DateTime.now(),
       );
     }

@@ -7,7 +7,7 @@ import '../../../journeys/presentation/widgets/journey_preview_map.dart';
 import '../../../journeys/presentation/providers/journey_provider.dart';
 import '../providers/analytics_provider.dart';
 
-class JourneyDetailsScreen extends StatelessWidget {
+class JourneyDetailsScreen extends StatefulWidget {
   final Journey journey;
   final bool showDoneButton;
 
@@ -20,8 +20,30 @@ class JourneyDetailsScreen extends StatelessWidget {
   static const String routeName = '/journey-details';
 
   @override
+  State<JourneyDetailsScreen> createState() => _JourneyDetailsScreenState();
+}
+
+class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Post-trip screen — load summary statistics for the completed journey
+    if (widget.showDoneButton) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context
+              .read<AnalyticsProvider>()
+              .loadJourneySummary(widget.journey.id);
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final journey = widget.journey;
+    final showDoneButton = widget.showDoneButton;
 
     return Scaffold(
       backgroundColor: colors.carbonBlack,
@@ -208,6 +230,74 @@ class JourneyDetailsScreen extends StatelessWidget {
               ),
             ),
 
+            // Journey Stats Section — only shown on post-trip summary
+            if (showDoneButton) ...[
+              const SizedBox(height: 16),
+              Consumer<AnalyticsProvider>(
+                builder: (context, analytics, _) {
+                  if (analytics.isSummaryLoading) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+                  final summary = analytics.currentSummary;
+                  if (summary == null) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'TRIP STATS',
+                          style: TextStyle(
+                            color: colors.silver,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(colors, 'DISTANCE',
+                                  summary.distanceDisplay, Icons.straighten),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildStatCard(colors, 'DURATION',
+                                  summary.durationDisplay, Icons.timer),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(colors, 'AVG SPEED',
+                                  summary.avgSpeedDisplay, Icons.speed),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildStatCard(
+                                  colors,
+                                  'LAG ALERTS',
+                                  summary.lagAlertCount.toString(),
+                                  Icons.warning_amber),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+
             const SizedBox(height: 20),
 
             // Done Button (for completed journeys)
@@ -269,6 +359,47 @@ class JourneyDetailsScreen extends StatelessWidget {
               color: colors.white,
               fontSize: 12,
               fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard(
+    TulinkColors colors,
+    String label,
+    String value,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.cardDark,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.brushedSteel.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: colors.electricRed, size: 18),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: colors.silver,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.0,
             ),
           ),
         ],

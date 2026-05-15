@@ -20,6 +20,13 @@ class ConvoyRouteLine {
     ConvoySnapshot snapshot,
     String currentUserId,
   ) async {
+    // Bail if destination coordinates are invalid (0,0 fallback)
+    if (snapshot.destination.latitude == 0.0 &&
+        snapshot.destination.longitude == 0.0) {
+      print('⚠️ Skipping convoy rendering — destination coordinates are (0,0)');
+      return;
+    }
+
     try {
       // Remove existing route if any
       await removeConvoyRoute(mapboxMap);
@@ -244,6 +251,13 @@ class ConvoyRouteLine {
     ConvoySnapshot snapshot,
     String currentUserId,
   ) async {
+    // Bail if destination coordinates are invalid (0,0 fallback)
+    if (snapshot.destination.latitude == 0.0 &&
+        snapshot.destination.longitude == 0.0) {
+      print('⚠️ Skipping convoy rendering — destination coordinates are (0,0)');
+      return;
+    }
+
     try {
       // Remove existing markers
       await removeConvoyMarkers(mapboxMap);

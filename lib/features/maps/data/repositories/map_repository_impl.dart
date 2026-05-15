@@ -21,14 +21,22 @@ class MapRepositoryImpl implements MapRepository {
   }
 
   @override
-  Future<Result<List<PlaceSearchResult>>> searchPlaces(String query) async {
+  Future<Result<List<PlaceSearchResult>>> searchPlaces(
+    String query, {
+    double? lat,
+    double? lng,
+  }) async {
     try {
       final trimmedQuery = query.trim();
       if (trimmedQuery.isEmpty || trimmedQuery.length < 2) {
         return ResultHelper.success(<PlaceSearchResult>[]);
       }
 
-      final response = await placeSearchRemoteDataSource.searchPlaces(trimmedQuery);
+      final response = await placeSearchRemoteDataSource.searchPlaces(
+        trimmedQuery,
+        lat: lat,
+        lng: lng,
+      );
       
       if (response.success) {
         final places = response.data.results

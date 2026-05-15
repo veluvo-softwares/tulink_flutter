@@ -22,13 +22,13 @@ import '../../features/auth/data/services/auth_api_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/journeys/data/datasources/journey_remote_data_source.dart';
-import '../../features/journeys/data/datasources/mapbox_search_datasource.dart';
 import '../../features/journeys/data/repositories/journey_repository_impl.dart';
 import '../../features/journeys/domain/repositories/journey_repository.dart';
 import '../../features/journeys/domain/usecases/journey_usecases.dart';
 import '../../features/journeys/presentation/providers/journey_provider.dart';
 import '../../features/maps/data/datasources/map_local_data_source.dart';
 import '../../features/maps/data/datasources/place_search_remote_data_source.dart';
+import '../../features/maps/data/datasources/route_remote_data_source.dart';
 import '../../features/maps/data/repositories/map_repository_impl.dart';
 import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
@@ -58,13 +58,13 @@ class ServiceLocator {
   // Map Feature
   late MapLocalDataSource _mapLocalDataSource;
   late PlaceSearchRemoteDataSource _placeSearchRemoteDataSource;
+  late RouteRemoteDataSource _routeRemoteDataSource;
   late MapRepository _mapRepository;
   late SearchPlacesUseCase _searchPlacesUseCase;
   late MapProvider _mapProvider;
 
   // Journey Feature
   late JourneyRemoteDataSource _journeyRemoteDataSource;
-  late MapboxSearchDataSource _mapboxSearchDataSource;
   late JourneyRepository _journeyRepository;
   late JourneyProvider _journeyProvider;
 
@@ -75,6 +75,7 @@ class ServiceLocator {
   late AnalyticsRepository _analyticsRepository;
   late GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
   late GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
+  late GetJourneySummaryUseCase _getJourneySummaryUseCase;
   late AnalyticsProvider _analyticsProvider;
 
   // Convoy Feature
@@ -99,6 +100,7 @@ class ServiceLocator {
   
   // Map Feature Getters
   MapProvider get mapProvider => _mapProvider;
+  RouteRemoteDataSource get routeRemoteDataSource => _routeRemoteDataSource;
 
   // Journey Feature Getters
   JourneyProvider get journeyProvider => _journeyProvider;
@@ -140,8 +142,8 @@ class ServiceLocator {
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
     _mapLocalDataSource = MapLocalDataSourceImpl();
     _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(dio: _dioClient.dio);
+    _routeRemoteDataSource = RouteRemoteDataSourceImpl(dio: _dioClient.dio);
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
-    _mapboxSearchDataSource = MapboxSearchDataSource(dio: _dioClient.dio);
     _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(_analyticsApiService);
     _convoyRemoteDataSource = ConvoyRemoteDataSourceImpl(_convoyApiService);
     _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl();
@@ -169,6 +171,7 @@ class ServiceLocator {
     _searchPlacesUseCase = SearchPlacesUseCase(repository: _mapRepository);
     _getJourneyHistoryUseCase = GetJourneyHistoryUseCase(_analyticsRepository);
     _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(_analyticsRepository);
+    _getJourneySummaryUseCase = GetJourneySummaryUseCase(_analyticsRepository);
     _streamConvoyPositions = StreamConvoyPositions(_convoyRepository);
     _publishMyPosition = PublishMyPosition(_convoyRepository);
     _fetchLatestSnapshot = FetchLatestSnapshot(_convoyRepository);
@@ -176,19 +179,23 @@ class ServiceLocator {
     // Initialize providers
     _authProvider = AuthProvider(_authRepository);
     _themeProvider = ThemeProvider();
-    _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
+    _mapProvider = MapProvider(
+      _mapRepository,
+      _searchPlacesUseCase,
+      _routeRemoteDataSource,
+    );
     _journeyProvider = JourneyProvider(
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
       getActiveJourneysUseCase: GetActiveJourneys(_journeyRepository),
       startJourneyUseCase: StartJourney(_journeyRepository),
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
-      mapboxSearchDataSource: _mapboxSearchDataSource, 
       endJourneyUseCase: EndJourney(_journeyRepository),
     );
     _analyticsProvider = AnalyticsProvider(
       _getJourneyHistoryUseCase,
       _getJourneyAnalyticsUseCase,
+      _getJourneySummaryUseCase,
     );
     _convoyProvider = ConvoyProvider(
       streamConvoyPositions: _streamConvoyPositions,

@@ -1,15 +1,48 @@
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
 import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
 import '../../domain/repositories/map_repository.dart';
 import '../../domain/usecases/search_places_usecase.dart';
+import '../../data/datasources/route_remote_data_source.dart';
+import '../../data/models/route_result_model.dart';
 
 class MapProvider with ChangeNotifier {
   final MapRepository _repository;
   final SearchPlacesUseCase _searchPlacesUseCase;
+  final RouteRemoteDataSource _routeDataSource;
 
-  MapProvider(this._repository, this._searchPlacesUseCase);
+  MapProvider(
+    this._repository,
+    this._searchPlacesUseCase,
+    this._routeDataSource,
+  );
+
+  RouteResultModel? _currentRoute;
+  RouteResultModel? get currentRoute => _currentRoute;
+
+  Future<RouteResultModel?> fetchRoute({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    final result = await _routeDataSource.getRoute(
+      originLat: originLat,
+      originLng: originLng,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    _currentRoute = result;
+    notifyListeners();
+    return result;
+  }
+
+  void clearRoute() {
+    _currentRoute = null;
+    notifyListeners();
+  }
 
   RaceRoute? _marathonRoute;
   bool _isLoading = false;
@@ -49,8 +82,24 @@ class MapProvider with ChangeNotifier {
     _searchError = null;
     notifyListeners();
 
-    final result = await _searchPlacesUseCase(trimmedQuery);
-    
+    // Acquire current position for location bias — fail silently
+    geo.Position? pos;
+    try {
+      pos = await geo.Geolocator.getCurrentPosition(
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.low, // Low accuracy is fine for bias
+        ),
+      ).timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // No coordinates — search still works, just unbiased
+    }
+
+    final result = await _searchPlacesUseCase(
+      trimmedQuery,
+      lat: pos?.latitude,
+      lng: pos?.longitude,
+    );
+
     _isSearching = false;
     
     if (result.isSuccess && result.data != null) {

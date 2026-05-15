@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
@@ -65,13 +66,45 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
 
 
   Future<void> _startJourneyCountdown() async {
+    // Ensure location permission is granted BEFORE the countdown begins —
+    // the convoy goes ACTIVE on the backend once the countdown completes.
+    final hasPermission =
+        await LocationPermissionService.hasLocationPermission();
+
+    if (!hasPermission) {
+      final result =
+          await LocationPermissionService.requestLocationPermission();
+
+      if (!result.granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result.failure?.message ??
+                    'Location access is required to start a convoy.',
+              ),
+              backgroundColor: Colors.red,
+              action: SnackBarAction(
+                label: 'Settings',
+                textColor: Colors.white,
+                onPressed: LocationPermissionService.openAppSettings,
+              ),
+            ),
+          );
+        }
+        return; // Do not start countdown
+      }
+    }
+
+    if (!mounted) return;
+
+    // Permission confirmed — start the animated countdown
     setState(() {
       _showCountdown = true;
       _countdownValue = 5;
       _showGoMessage = false;
     });
-    
-    // Start the animated countdown
+
     _startCountdownTimer();
   }
 

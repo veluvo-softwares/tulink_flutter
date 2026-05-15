@@ -57,4 +57,14 @@ class AnalyticsApiService {
       (data) => data,
     );
   }
+
+  /// Get journey summary statistics by ID
+  Future<Map<String, dynamic>> getJourneySummary(String journeyId) {
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
+      () => _dio.get<Map<String, dynamic>>(
+        ApiRoutes.journeySummary(journeyId),
+      ),
+      (data) => data,
+    );
+  }
 }
