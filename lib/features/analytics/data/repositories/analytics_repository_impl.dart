@@ -4,6 +4,7 @@ import 'package:tulink_flutter/core/errors/failure.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import '../../domain/repositories/analytics_repository.dart';
 import '../datasources/analytics_remote_data_source.dart';
+import '../models/journey_summary_model.dart';
 
 class AnalyticsRepositoryImpl implements AnalyticsRepository {
   final AnalyticsRemoteDataSource remoteDataSource;
@@ -38,13 +39,42 @@ class AnalyticsRepositoryImpl implements AnalyticsRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message: e.response?.data?['message']?.toString() ??
               'Failed to get journey analytics',
         ),
       );
     } catch (e) {
       return (
-        data: null, 
+        data: null,
+        failure: ServerFailure(message: e.toString()),
+      );
+    }
+  }
+
+  @override
+  Future<Result<JourneySummaryModel>> getJourneySummary(
+    String journeyId,
+  ) async {
+    try {
+      final summary = await remoteDataSource.getJourneySummary(journeyId);
+      if (summary == null) {
+        return (
+          data: null,
+          failure: ServerFailure(message: 'Journey summary not available'),
+        );
+      }
+      return (data: summary, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message: e.response?.data?['message']?.toString() ??
+              'Failed to get journey summary',
+        ),
+      );
+    } catch (e) {
+      return (
+        data: null,
         failure: ServerFailure(message: e.toString()),
       );
     }

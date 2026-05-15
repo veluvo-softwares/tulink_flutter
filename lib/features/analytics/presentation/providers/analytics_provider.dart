@@ -2,16 +2,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tulink_flutter/core/utils/logger.dart';
 import 'package:tulink_flutter/features/analytics/domain/usecases/analytics_usecases.dart';
+import '../../data/models/journey_summary_model.dart';
 import '../../../journeys/domain/entities/journey.dart';
 
 
 class AnalyticsProvider extends ChangeNotifier {
   final GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
   final GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
+  final GetJourneySummaryUseCase _getJourneySummaryUseCase;
 
   AnalyticsProvider(
     this._getJourneyHistoryUseCase,
     this._getJourneyAnalyticsUseCase,
+    this._getJourneySummaryUseCase,
   );
 
   // State
@@ -20,11 +23,35 @@ class AnalyticsProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  JourneySummaryModel? _currentSummary;
+  bool _isSummaryLoading = false;
+
   // Getters
   List<Journey> get recentJourneys => _recentJourneys;
   List<Journey> get journeyHistory => _journeyHistory;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  JourneySummaryModel? get currentSummary => _currentSummary;
+  bool get isSummaryLoading => _isSummaryLoading;
+
+  /// Load summary statistics for a completed journey
+  Future<void> loadJourneySummary(String journeyId) async {
+    _isSummaryLoading = true;
+    notifyListeners();
+
+    final result = await _getJourneySummaryUseCase(journeyId);
+    if (result.data != null) {
+      _currentSummary = result.data;
+    } else {
+      _currentSummary = null;
+      print('⚠️ Failed to load journey summary: '
+          '${result.failure?.message ?? 'unknown error'}');
+    }
+
+    _isSummaryLoading = false;
+    notifyListeners();
+  }
 
 
   /// Load recent journeys (derived from journey history, limited to 4 for home screen)

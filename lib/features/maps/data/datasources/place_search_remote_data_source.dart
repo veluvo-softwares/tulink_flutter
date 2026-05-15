@@ -2,7 +2,11 @@ import 'package:dio/dio.dart';
 import '../models/place_search_response_model.dart';
 
 abstract class PlaceSearchRemoteDataSource {
-  Future<PlaceSearchResponseModel> searchPlaces(String query);
+  Future<PlaceSearchResponseModel> searchPlaces(
+    String query, {
+    double? lat,
+    double? lng,
+  });
 }
 
 class PlaceSearchRemoteDataSourceImpl implements PlaceSearchRemoteDataSource {
@@ -11,11 +15,19 @@ class PlaceSearchRemoteDataSourceImpl implements PlaceSearchRemoteDataSource {
   PlaceSearchRemoteDataSourceImpl({required this.dio});
 
   @override
-  Future<PlaceSearchResponseModel> searchPlaces(String query) async {
+  Future<PlaceSearchResponseModel> searchPlaces(
+    String query, {
+    double? lat,
+    double? lng,
+  }) async {
     try {
+      final queryParams = <String, dynamic>{'query': query};
+      if (lat != null) queryParams['lat'] = lat;
+      if (lng != null) queryParams['lng'] = lng;
+
       final response = await dio.get<Map<String, dynamic>>(
         '/maps/search',
-        queryParameters: {'query': query},
+        queryParameters: queryParams,
       );
 
       if (response.statusCode == 200 && response.data != null) {

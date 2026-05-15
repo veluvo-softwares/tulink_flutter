@@ -12,11 +12,13 @@ class ConvoyStatusBar extends StatefulWidget {
     required this.snapshot,
     required this.connectionState,
     this.onTap,
+    this.onBack,
   });
 
   final ConvoySnapshot? snapshot;
   final ConvoyConnectionState connectionState;
   final VoidCallback? onTap;
+  final VoidCallback? onBack;
 
   @override
   State<ConvoyStatusBar> createState() => _ConvoyStatusBarState();
@@ -77,8 +79,23 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
         ),
         child: Row(
           children: [
+            if (widget.onBack != null) ...[
+              GestureDetector(
+                onTap: widget.onBack,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    color: colors.brushedSteel.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.arrow_back, color: colors.white, size: 18),
+                ),
+              ),
+            ],
             _buildStatusIndicator(colors),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: _buildStatusInfo(colors),
             ),

@@ -65,6 +65,8 @@ class ApiRoutes {
   
   // Dynamic Analytics Routes
   static String journeyAnalytics(String id) => '/analytics/journeys/$id';
+  static String journeySummary(String id) =>
+      '/analytics/journeys/$id/summary';
 
   // Admin Routes (if user has admin privileges)
   static const String adminUsers = '/admin/users';

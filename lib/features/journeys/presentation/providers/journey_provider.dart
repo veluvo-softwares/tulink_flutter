@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:tulink_flutter/core/common/result.dart';
-import 'package:tulink_flutter/features/journeys/data/datasources/mapbox_search_datasource.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
 
@@ -11,7 +10,6 @@ class JourneyProvider extends ChangeNotifier {
   final StartJourney startJourneyUseCase;
   final UpdateJourney updateJourneyUseCase;
   final EndJourney endJourneyUseCase;
-  final MapboxSearchDataSource mapboxSearchDataSource;
 
   JourneyProvider({
     required this.createJourneyUseCase,
@@ -20,7 +18,6 @@ class JourneyProvider extends ChangeNotifier {
     required this.startJourneyUseCase,
     required this.updateJourneyUseCase,
     required this.endJourneyUseCase,
-    required this.mapboxSearchDataSource,
   });
 
   bool _isLoading = false;
@@ -35,8 +32,6 @@ class JourneyProvider extends ChangeNotifier {
   List<Journey> _activeJourneys = [];
   List<Journey> get activeJourneys => _activeJourneys;
 
-  List<MapboxSearchResult> _searchResults = [];
-  List<MapboxSearchResult> get searchResults => _searchResults;
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -145,22 +140,6 @@ class JourneyProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     }
-  }
-
-  Future<void> searchLocations(String query) async {
-    if (query.isEmpty) {
-      _searchResults = [];
-      notifyListeners();
-      return;
-    }
-
-    _searchResults = await mapboxSearchDataSource.search(query);
-    notifyListeners();
-  }
-
-  void clearSearchResults() {
-    _searchResults = [];
-    notifyListeners();
   }
 
   /// Set the current journey (used for continuing active journeys)
