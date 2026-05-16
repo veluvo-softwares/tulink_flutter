@@ -1,6 +1,6 @@
 import '../entities/convoy_snapshot.dart';
 import '../entities/journey_ended_event.dart';
-import '../entities/member_position.dart';
+import '../entities/participant_arrived_event.dart';
 import '../../../../core/errors/failure.dart';
 
 /// Abstract repository interface for convoy coordination
@@ -38,4 +38,9 @@ abstract class ConvoyRepository {
   /// Server-driven journey termination events.
   /// Fires when the backend emits `journey-ended` for the current journey.
   Stream<JourneyEndedEvent> get journeyEndedStream;
+
+  /// Per-participant arrival events. Fires whenever any participant reaches
+  /// the destination; clients use these to update arrival UI and to stop
+  /// publishing GPS when [ParticipantArrivedEvent.allArrived] is true.
+  Stream<ParticipantArrivedEvent> get participantArrivedStream;
 }

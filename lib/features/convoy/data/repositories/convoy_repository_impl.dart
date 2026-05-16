@@ -5,6 +5,7 @@ import '../datasources/convoy_websocket_data_source.dart';
 import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
+import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/auth/token_manager.dart';
@@ -170,18 +171,35 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   /// Start REST fallback polling when WebSocket is disconnected
   void _startRestFallbackPolling(String journeyId) {
     if (_fallbackPollingTimer != null) return; // Already polling
-    
+
     print('🔄 Starting REST fallback polling');
-    
+
     _fallbackPollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
       try {
         final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
         _snapshotController.add((snapshot: snapshot, failure: null));
       } catch (e) {
         print('⚠️ REST fallback polling failed: $e');
-        // Continue polling even on failure
+        if (_isTerminalPollingFailure(e)) {
+          print('🛑 Terminal polling failure — cancelling fallback timer');
+          _stopRestFallbackPolling();
+          if (!_snapshotController.isClosed) {
+            _snapshotController.add(
+              (snapshot: null, failure: e is Failure ? e : ConvoyFailure.publishLocationFailed),
+            );
+          }
+        }
       }
     });
+  }
+
+  /// Whether this error means the polling loop should stop entirely (vs.
+  /// transient network blip we should keep retrying through).
+  bool _isTerminalPollingFailure(Object error) {
+    if (error is! ConvoyFailure) return false;
+    return error == ConvoyFailure.notJourneyMember ||
+        error == ConvoyFailure.journeyNotActive ||
+        error == ConvoyFailure.stopPolling;
   }
 
   /// Stop REST fallback polling
@@ -262,6 +280,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   @override
   Stream<JourneyEndedEvent> get journeyEndedStream =>
       _webSocketDataSource.journeyEndedStream;
+
+  @override
+  Stream<ParticipantArrivedEvent> get participantArrivedStream =>
+      _webSocketDataSource.participantArrivedStream;
 
   @override
   Future<void> stopCoordination() async {

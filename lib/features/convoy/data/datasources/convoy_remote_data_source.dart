@@ -36,14 +36,15 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
       } else if (e.response?.statusCode == 404) {
         throw ConvoyFailure.journeyNotActive;
       } else if (e.response?.statusCode == 400) {
-        // Backend returns 400 "Journey is not active" when the journey
-        // has been ended/cancelled. Treat as a terminal failure for this
-        // journey — caller should stopCoordination, not retry.
-        final message = e.response?.data is Map
-            ? (e.response!.data['message']?.toString() ?? '')
-            : '';
-        if (message.toLowerCase().contains('not active')) {
-          throw ConvoyFailure.journeyNotActive;
+        final body = e.response?.data;
+        if (body is Map) {
+          if (body['stopPolling'] == true) {
+            throw ConvoyFailure.stopPolling;
+          }
+          final message = body['message']?.toString() ?? '';
+          if (message.toLowerCase().contains('not active')) {
+            throw ConvoyFailure.journeyNotActive;
+          }
         }
         throw ConvoyFailure.publishLocationFailed;
       } else if (e.type == DioExceptionType.connectionTimeout ||

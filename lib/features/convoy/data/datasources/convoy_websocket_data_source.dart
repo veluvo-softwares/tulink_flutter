@@ -8,6 +8,7 @@ import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/member_position.dart';
+import '../../domain/entities/participant_arrived_event.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
 
@@ -38,6 +39,12 @@ abstract class ConvoyWebSocketDataSource {
   /// Clients MUST stop coordinating the named journey on receiving this.
   Stream<JourneyEndedEvent> get journeyEndedStream;
 
+  /// Stream of `participant-arrived` events. Fires whenever any participant
+  /// (current user or someone else) reaches the destination. When
+  /// `allArrived` is true the backend auto-completes the journey and a
+  /// `journey-ended` event follows immediately.
+  Stream<ParticipantArrivedEvent> get participantArrivedStream;
+
   /// Send acknowledgment for received location update
   Future<void> acknowledgeUpdate(int sequenceNumber);
 
@@ -66,6 +73,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   final StreamController<ConvoySnapshot> _convoyController = StreamController.broadcast();
   final StreamController<ConvoyConnectionState> _connectionController = StreamController.broadcast();
   final StreamController<JourneyEndedEvent> _journeyEndedController = StreamController.broadcast();
+  final StreamController<ParticipantArrivedEvent> _participantArrivedController = StreamController.broadcast();
   
   // Convoy state
   final Map<String, MemberPosition> _members = {};
@@ -104,6 +112,10 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   @override
   Stream<JourneyEndedEvent> get journeyEndedStream => _journeyEndedController.stream;
+
+  @override
+  Stream<ParticipantArrivedEvent> get participantArrivedStream =>
+      _participantArrivedController.stream;
 
   @override
   ConvoyConnectionState get connectionState => _connectionState;
@@ -400,15 +412,24 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
     });
 
-    _socket!.on('arrival-detected', (data) {
-      final userId = data['userId'] as String?;
-      print('🎯 Arrival detected for: $userId');
-      
-      // Update member status if exists
-      if (userId != null && _members.containsKey(userId)) {
-        final member = _members[userId]!;
-        _members[userId] = member.copyWith(statusChange: 'ARRIVED');
+    _socket!.on('participant-arrived', (data) {
+      if (data is! Map) return;
+      final event = ParticipantArrivedEvent.fromJson(
+        data.cast<String, dynamic>(),
+      );
+      print(
+        '🎯 Participant arrived: ${event.userId} '
+        '(${event.arrivedCount}/${event.totalCount}, allArrived=${event.allArrived})',
+      );
+
+      final existing = _members[event.userId];
+      if (existing != null) {
+        _members[event.userId] = existing.copyWith(statusChange: 'ARRIVED');
         _emitConvoySnapshot();
+      }
+
+      if (!_participantArrivedController.isClosed) {
+        _participantArrivedController.add(event);
       }
     });
 
@@ -672,6 +693,10 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     if (!_journeyEndedController.isClosed) {
       await _journeyEndedController.close();
+    }
+
+    if (!_participantArrivedController.isClosed) {
+      await _participantArrivedController.close();
     }
   }
 }

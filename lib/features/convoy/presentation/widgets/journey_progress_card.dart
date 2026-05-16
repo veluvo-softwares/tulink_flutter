@@ -12,12 +12,32 @@ class JourneyProgressCard extends StatelessWidget {
     super.key,
     required this.journey,
     required this.convoySnapshot,
+    required this.currentUserId,
+    required this.isLeader,
     this.onEndJourney,
   });
 
   final Journey journey;
   final ConvoySnapshot? convoySnapshot;
+  final String currentUserId;
+  final bool isLeader;
   final VoidCallback? onEndJourney;
+
+  /// Whether the current user is one of the members marked ARRIVED.
+  bool get _currentUserArrived {
+    final member = convoySnapshot?.members[currentUserId];
+    return member?.hasArrived ?? false;
+  }
+
+  /// Total participant count used for arrival progress. Falls back to the
+  /// snapshot's member map only when there's no event-driven count yet.
+  int get _totalCount =>
+      convoySnapshot?.totalMembers ?? 1;
+
+  int get _arrivedCount =>
+      convoySnapshot?.arrivedMembers.length ?? 0;
+
+  bool get _anyArrived => _arrivedCount > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -48,12 +68,17 @@ class JourneyProgressCard extends StatelessWidget {
             _buildStats(colors),
             const SizedBox(height: 16),
             _buildParticipants(colors),
-            if (convoySnapshot != null && convoySnapshot!.laggingMembers.isNotEmpty) ...[
+            if (_shouldShowWaitingBanner) ...[
+              const SizedBox(height: 12),
+              _buildWaitingBanner(colors),
+            ] else if (convoySnapshot != null && convoySnapshot!.laggingMembers.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildStatusMessage(colors),
             ],
-            const SizedBox(height: 20),
-            _buildEndJourneyButton(colors),
+            if (_shouldShowActionButton) ...[
+              const SizedBox(height: 20),
+              _buildEndJourneyButton(colors),
+            ],
           ],
         ),
       ),
@@ -109,22 +134,46 @@ class JourneyProgressCard extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: colors.brushedSteel.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            '${convoySnapshot?.activeMemberCount ?? 1}/${convoySnapshot?.totalMembers ?? 1}',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: colors.white,
-            ),
-          ),
-        ),
+        _buildProgressBadge(colors),
       ],
+    );
+  }
+
+  /// Right-side badge: shows arrival progress in amber/green once any member
+  /// has arrived, falls back to active-member ratio otherwise.
+  Widget _buildProgressBadge(TulinkColors colors) {
+    final showArrival = _anyArrived;
+    final allArrived = convoySnapshot?.allMembersArrived ?? false;
+
+    final bg = showArrival
+        ? (allArrived ? Colors.green : Colors.amber).withOpacity(0.18)
+        : colors.brushedSteel.withOpacity(0.3);
+    final border = showArrival
+        ? (allArrived ? Colors.green : Colors.amber).withOpacity(0.45)
+        : Colors.transparent;
+    final textColor = showArrival
+        ? (allArrived ? Colors.green : Colors.amber)
+        : colors.white;
+
+    final label = showArrival
+        ? '$_arrivedCount/$_totalCount arrived'
+        : '${convoySnapshot?.activeMemberCount ?? 1}/$_totalCount';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
     );
   }
 
@@ -155,34 +204,63 @@ class JourneyProgressCard extends StatelessWidget {
     );
   }
 
-  /// Build member avatar circle
+  /// Build member avatar circle. Arrived members get a green checkmark
+  /// overlay on the bottom-right; everyone else uses the existing initial.
   Widget _buildMemberAvatar(MemberPosition member, int index, TulinkColors colors) {
     final initials = _getMemberInitials(member.userId);
     final avatarColors = [
       const Color(0xFFE53E3E), // Red
-      const Color(0xFF3182CE), // Blue  
+      const Color(0xFF3182CE), // Blue
       const Color(0xFF38A169), // Green
       const Color(0xFFDD6B20), // Orange
       const Color(0xFF805AD5), // Purple
     ];
-    
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: avatarColors[index % avatarColors.length],
-        shape: BoxShape.circle,
-        border: Border.all(color: colors.carbonBlack, width: 2),
-      ),
-      child: Center(
-        child: Text(
-          initials,
-          style: GoogleFonts.rajdhani(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: avatarColors[index % avatarColors.length],
+              shape: BoxShape.circle,
+              border: Border.all(color: colors.carbonBlack, width: 2),
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: GoogleFonts.rajdhani(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
-        ),
+          if (member.hasArrived)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: colors.carbonBlack, width: 1.5),
+                ),
+                child: const Icon(
+                  Icons.check,
+                  size: 9,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -250,7 +328,36 @@ class JourneyProgressCard extends StatelessWidget {
     );
   }
 
-  /// Build red end journey button
+  /// Subtle banner shown when the current user has arrived but others are
+  /// still en route. Hidden for solo journeys per spec.
+  bool get _shouldShowWaitingBanner {
+    if (_totalCount <= 1) return false;
+    if (!_currentUserArrived) return false;
+    return _arrivedCount < _totalCount;
+  }
+
+  /// Action button visibility: leaders always see it (END JOURNEY).
+  /// Followers see it only after they've arrived (LEAVE JOURNEY). Followers
+  /// still en route get no button — they can't end the journey for others
+  /// and there's no useful action to expose.
+  bool get _shouldShowActionButton => isLeader || _currentUserArrived;
+
+  String get _actionButtonLabel =>
+      isLeader ? 'END JOURNEY' : 'LEAVE JOURNEY';
+
+  Widget _buildWaitingBanner(TulinkColors colors) {
+    final remaining = _totalCount - _arrivedCount;
+    return Text(
+      "You've arrived — waiting for $remaining more",
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: colors.silver,
+      ),
+    );
+  }
+
+  /// Build red end-journey / leave-journey button
   Widget _buildEndJourneyButton(TulinkColors colors) {
     return SizedBox(
       width: double.infinity,
@@ -264,7 +371,7 @@ class JourneyProgressCard extends StatelessWidget {
           ),
         ),
         child: Text(
-          'END JOURNEY',
+          _actionButtonLabel,
           style: GoogleFonts.rajdhani(
             fontSize: 16,
             fontWeight: FontWeight.w700,

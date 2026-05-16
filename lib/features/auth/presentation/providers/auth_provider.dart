@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/auth/token_manager.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/services/car_toast_service.dart';
 import '../../domain/entities/user_entity.dart';
@@ -7,7 +8,9 @@ import '../../domain/repositories/auth_repository.dart';
 
 /// Authentication state management using ChangeNotifier
 class AuthProvider extends ChangeNotifier {
-  AuthProvider(this._authRepository);
+  AuthProvider(this._authRepository) {
+    TokenManager().onAuthLost = _handleAuthLost;
+  }
 
   final AuthRepository _authRepository;
 
@@ -163,6 +166,16 @@ class AuthProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     }
+  }
+
+  /// Called by TokenManager when an unrecoverable auth failure clears the
+  /// stored tokens (refresh expired, token revoked). Resets local user state
+  /// so the UI flips to AuthScreen on the next rebuild.
+  void _handleAuthLost() {
+    if (!_isSignedIn && _user == null) return;
+    _user = null;
+    _isSignedIn = false;
+    notifyListeners();
   }
 
   /// Refresh authentication token

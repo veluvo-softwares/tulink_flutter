@@ -1,24 +1,19 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
-import '../config/app_config.dart';
-import '../constants/storage_keys.dart';
 import '../auth/token_manager.dart';
+import '../config/app_config.dart';
 import '../errors/failure.dart';
-import 'api_routes.dart';
 
 /// A singleton Dio client with centralized configuration
 class DioClient {
   DioClient._internal();
-  
+
   static final DioClient _instance = DioClient._internal();
   factory DioClient() => _instance;
 
   late Dio _dio;
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final TokenManager _tokenManager = TokenManager();
-  bool _isRefreshing = false;
   int _retryCount = 0;
 
   Dio get dio => _dio;
@@ -52,96 +47,88 @@ class DioClient {
     });
   }
 
-  /// Creates the authentication interceptor with enhanced token management
+  /// Authentication interceptor. Queued so that simultaneous 401s don't race
+  /// to refresh — only the first triggers a refresh, the rest wait for it
+  /// via the Completer guard in TokenManager and retry with the new token.
   Interceptor _createAuthInterceptor() {
-    return InterceptorsWrapper(
+    return QueuedInterceptorsWrapper(
       onRequest: (options, handler) async {
         try {
-          // Check if token will expire soon and refresh if needed
-          if (await _tokenManager.willTokenExpireSoon()) {
-            final refreshToken = await _tokenManager.getValidRefreshToken();
-            if (refreshToken != null && !_isRefreshing) {
-              try {
-                await _performTokenRefresh();
-              } catch (e) {
-                // If preemptive refresh fails, continue with current token
-                print('🔄 Preemptive token refresh failed: $e');
-              }
-            }
-          }
-
-          // Add auth token to requests if available
           final token = await _tokenManager.getValidAuthToken();
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
-          
           handler.next(options);
-        } catch (e) {
-          if (e is TokenFailure && e.requiresReauth) {
-            // Clear all tokens and let the request proceed without auth
-            await _tokenManager.clearAllTokens();
+        } on TokenFailure catch (failure) {
+          if (failure == TokenFailure.accessTokenExpired) {
+            try {
+              final fresh = await _tokenManager.refreshAuthToken();
+              options.headers['Authorization'] = 'Bearer $fresh';
+              handler.next(options);
+              return;
+            } on TokenFailure {
+              handler.reject(
+                DioException(
+                  requestOptions: options,
+                  type: DioExceptionType.badResponse,
+                  error: AuthFailure.refreshTokenExpired,
+                ),
+              );
+              return;
+            }
           }
           handler.next(options);
         }
       },
       onError: (error, handler) async {
-        // Handle token expiration (401 Unauthorized)
-        if (error.response?.statusCode == 401 && !_isRefreshing) {
-          try {
-            final refreshToken = await _tokenManager.getValidRefreshToken();
-            
-            // Only attempt refresh if we have a refresh token and aren't already refreshing
-            if (refreshToken != null && refreshToken.isNotEmpty) {
-              _isRefreshing = true;
-              
-              try {
-                // Attempt to refresh the token
-                await _performTokenRefresh();
-                
-                // Retry the original request with new token
-                final newToken = await _tokenManager.getValidAuthToken();
-                if (newToken != null) {
-                  final requestOptions = error.requestOptions;
-                  requestOptions.headers['Authorization'] = 'Bearer $newToken';
-                  
-                  final response = await _dio.fetch(requestOptions);
-                  handler.resolve(response);
-                  return;
-                }
-              } catch (refreshError) {
-                print('🔄 Token refresh failed: $refreshError');
-                // Refresh failed, clear tokens and logout user
-                await _tokenManager.clearAllTokens();
-                
-                // Convert to auth failure and pass through
-                final authFailure = refreshError is TokenFailure 
-                    ? AuthFailure.refreshTokenExpired
-                    : AuthFailure.tokenExpired;
-                
-                // Create a new DioException with auth failure details
-                final authError = DioException(
-                  requestOptions: error.requestOptions,
-                  response: error.response,
-                  type: DioExceptionType.badResponse,
-                  error: authFailure.message,
-                );
-                
-                handler.reject(authError);
-                return;
-              } finally {
-                _isRefreshing = false;
-              }
-            } else {
-              // No refresh token, clear tokens and logout
-              await _tokenManager.clearAllTokens();
-            }
-          } catch (e) {
-            print('🔄 Auth error handling failed: $e');
+        final status = error.response?.statusCode;
+        if (status != 401) {
+          handler.next(error);
+          return;
+        }
+
+        final body = error.response?.data;
+        // Backend nests the code under `error` in some paths and at the top
+        // level in others — accept both shapes so we don't miss a refresh.
+        String? code;
+        if (body is Map) {
+          code = body['code']?.toString();
+          if (code == null && body['error'] is Map) {
+            code = (body['error'] as Map)['code']?.toString();
           }
         }
-        
-        handler.next(error);
+
+        if (code == 'TOKEN_EXPIRED') {
+          try {
+            final fresh = await _tokenManager.refreshAuthToken();
+            final retryOptions = error.requestOptions;
+            retryOptions.headers['Authorization'] = 'Bearer $fresh';
+            final response = await _dio.fetch<dynamic>(retryOptions);
+            handler.resolve(response);
+            return;
+          } on TokenFailure {
+            handler.reject(
+              DioException(
+                requestOptions: error.requestOptions,
+                response: error.response,
+                type: DioExceptionType.badResponse,
+                error: AuthFailure.refreshTokenExpired,
+              ),
+            );
+            return;
+          }
+        }
+
+        await _tokenManager.clearAllTokens();
+        _tokenManager.onAuthLost?.call();
+        handler.reject(
+          DioException(
+            requestOptions: error.requestOptions,
+            response: error.response,
+            type: DioExceptionType.badResponse,
+            error: AuthFailure.tokenInvalid,
+          ),
+        );
       },
     );
   }
@@ -157,11 +144,11 @@ class DioClient {
           
           // Wait before retrying (exponential backoff)
           final delay = Duration(seconds: _retryCount * 2);
-          await Future.delayed(delay);
-          
+          await Future<void>.delayed(delay);
+
           try {
             print('🔄 Retrying request (attempt $_retryCount)...');
-            final response = await _dio.fetch(error.requestOptions);
+            final response = await _dio.fetch<dynamic>(error.requestOptions);
             _retryCount = 0; // Reset retry count on success
             handler.resolve(response);
             return;
@@ -236,90 +223,6 @@ class DioClient {
     return await _tokenManager.getTokenMetadata();
   }
 
-  /// Refresh authentication token using refresh token
-  Future<void> _performTokenRefresh() async {
-    try {
-      final refreshToken = await _tokenManager.getValidRefreshToken();
-      if (refreshToken == null || refreshToken.isEmpty) {
-        throw TokenFailure.tokenMissing.copyWith(
-          details: 'No valid refresh token available for refresh operation.',
-        );
-      }
-
-      // Create a temporary Dio instance without interceptors to avoid recursion
-      final tempDio = Dio(BaseOptions(baseUrl: AppConfig.baseUrl));
-      
-      // Add refresh token to request
-      tempDio.options.headers['Authorization'] = 'Bearer $refreshToken';
-      
-      final response = await tempDio.post<Map<String, dynamic>>(
-        ApiRoutes.refreshToken,
-      );
-      
-      if (response.statusCode == 200 && response.data != null) {
-        final responseData = response.data!;
-        
-        // Handle both direct token response and wrapped response
-        Map<String, dynamic> tokens;
-        if (responseData.containsKey('data')) {
-          tokens = responseData['data']['tokens'] as Map<String, dynamic>;
-        } else if (responseData.containsKey('tokens')) {
-          tokens = responseData['tokens'] as Map<String, dynamic>;
-        } else {
-          throw TokenFailure(
-            message: 'Invalid refresh response format',
-            details: 'Token refresh response does not contain expected token data.',
-            timestamp: DateTime.now(),
-          );
-        }
-        
-        final newToken = tokens['idToken'] as String?;
-        final newRefreshToken = tokens['refreshToken'] as String?;
-        
-        if (newToken == null) {
-          throw TokenFailure(
-            message: 'Invalid token refresh response',
-            details: 'No access token received in refresh response.',
-            timestamp: DateTime.now(),
-          );
-        }
-        
-        // Save new tokens
-        await _tokenManager.saveAuthToken(newToken);
-        if (newRefreshToken != null) {
-          await _tokenManager.saveRefreshToken(newRefreshToken);
-        }
-        
-        print('✅ Token refreshed successfully');
-      } else {
-        throw TokenFailure(
-          message: 'Token refresh failed',
-          details: 'Server responded with status ${response.statusCode}',
-          timestamp: DateTime.now(),
-        );
-      }
-    } catch (e) {
-      if (e is DioException) {
-        if (e.response?.statusCode == 401) {
-          throw TokenFailure.refreshTokenExpired;
-        }
-        throw TokenFailure(
-          message: 'Token refresh network error',
-          details: 'Failed to connect to server for token refresh.',
-          timestamp: DateTime.now(),
-        );
-      }
-      
-      if (e is TokenFailure) rethrow;
-      
-      throw TokenFailure(
-        message: 'Token refresh failed',
-        details: 'An unexpected error occurred during token refresh: ${e.toString()}',
-        timestamp: DateTime.now(),
-      );
-    }
-  }
-
   /// Determine if a request should be retried
   bool _shouldRetryRequest(DioException error) {
     // Don't retry auth errors or client errors
@@ -339,14 +242,7 @@ class DioClient {
 
   /// Force refresh token for testing purposes
   Future<void> forceTokenRefresh() async {
-    if (_isRefreshing) return;
-    
-    _isRefreshing = true;
-    try {
-      await _performTokenRefresh();
-    } finally {
-      _isRefreshing = false;
-    }
+    await _tokenManager.refreshAuthToken();
   }
 
   /// Check if token will expire soon
