@@ -1,4 +1,5 @@
 import '../entities/convoy_snapshot.dart';
+import '../entities/journey_ended_event.dart';
 import '../entities/member_position.dart';
 import '../../../../core/errors/failure.dart';
 
@@ -33,4 +34,8 @@ abstract class ConvoyRepository {
 
   /// Get current connection state to RTDB
   Stream<ConvoyConnectionState> get connectionStateStream;
+
+  /// Server-driven journey termination events.
+  /// Fires when the backend emits `journey-ended` for the current journey.
+  Stream<JourneyEndedEvent> get journeyEndedStream;
 }

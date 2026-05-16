@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
+import '../../../journeys/presentation/utils/journey_navigation.dart';
 import '../../../journeys/presentation/widgets/journey_info_card.dart';
 import '../providers/analytics_provider.dart';
 
@@ -140,10 +141,7 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
   }
 
   void _navigateToJourneyDetails(Journey journey) {
-    Navigator.of(context).pushNamed(
-      '/journey-details',
-      arguments: journey,
-    );
+    JourneyNavigation.open(context, journey);
   }
 }
 

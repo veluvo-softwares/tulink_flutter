@@ -8,6 +8,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
+import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/usecases/stream_convoy_positions.dart';
 import '../../domain/usecases/publish_my_position.dart';
 import '../../domain/usecases/fetch_latest_snapshot.dart';
@@ -40,6 +41,18 @@ class ConvoyProvider extends ChangeNotifier {
   ConvoyConnectionState _connectionState = ConvoyConnectionState.disconnected;
   String? _errorMessage;
 
+  /// The journey we're currently coordinating for, or null if stopped.
+  /// Used to prevent dual-journey leaks: starting a new journey without
+  /// first stopping the previous one was causing GPS publishes for journey A
+  /// while the WebSocket was still subscribed to journey B.
+  String? _currentJourneyId;
+
+  /// Tracks consecutive publish failures — used to bail out on a backend
+  /// that's permanently refusing publishes (journey ended, auth dead, etc.)
+  /// rather than spinning forever.
+  int _consecutivePublishFailures = 0;
+  static const int _maxConsecutivePublishFailures = 5;
+
   // GPS and location publishing
   StreamSubscription<Position>? _locationSubscription;
   DateTime? _lastPublishTime;
@@ -50,6 +63,12 @@ class ConvoyProvider extends ChangeNotifier {
   // Convoy stream subscriptions
   StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>? _convoySubscription;
   StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
+  StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
+
+  /// Last journey-ended event received. Surfaced to the UI so screens can
+  /// react (toast, navigate away) and clear after handling.
+  JourneyEndedEvent? _lastJourneyEndedEvent;
+  JourneyEndedEvent? get lastJourneyEndedEvent => _lastJourneyEndedEvent;
 
   // Dependencies
   final Battery _battery = Battery();
@@ -60,31 +79,53 @@ class ConvoyProvider extends ChangeNotifier {
   bool get isSubscribed => _isSubscribed;
   ConvoyConnectionState get connectionState => _connectionState;
   String? get errorMessage => _errorMessage;
+  String? get currentJourneyId => _currentJourneyId;
 
-  /// Start convoy coordination for a journey
-  /// Begins both GPS publishing and real-time position streaming
+  /// Start convoy coordination for a journey.
+  /// Begins both GPS publishing and real-time position streaming.
+  ///
+  /// Idempotent: if we're already coordinating the same journey, this is a
+  /// no-op. If we're coordinating a *different* journey, that one is stopped
+  /// first to avoid leaking subscriptions / GPS streams across journeys.
   Future<void> startCoordination(String journeyId) async {
+    // Already coordinating this journey — nothing to do.
+    if (_currentJourneyId == journeyId && _isSubscribed) {
+      return;
+    }
+
+    // Switching journeys — tear down the previous one cleanly.
+    if (_currentJourneyId != null && _currentJourneyId != journeyId) {
+      print(
+        '🔀 ConvoyProvider: switching from $_currentJourneyId to $journeyId, '
+        'stopping previous coordination first',
+      );
+      await stopCoordination();
+    }
+
     try {
       _clearError();
-      
+      _currentJourneyId = journeyId;
+
       // Check permissions first
       final permissionResult = await LocationPermissionService.requestLocationPermission();
       if (!permissionResult.granted) {
         _setError(permissionResult.failure?.message ?? 'Location permissions required for convoy coordination');
+        _currentJourneyId = null;
         throw permissionResult.failure ?? ConvoyFailure.locationPermissionDenied;
       }
 
       // Start location publishing
       await _startLocationPublishing(journeyId);
-      
+
       // Start convoy position streaming
       _startConvoyStream(journeyId);
-      
+
       _isSubscribed = true;
       notifyListeners();
-      
+
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
+      _currentJourneyId = null;
       final failure = e is Failure ? e : ConvoyFailure(
         message: 'Failed to start convoy coordination',
         details: 'An unexpected error occurred: $e',
@@ -116,6 +157,10 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop connection state monitoring
     await _connectionSubscription?.cancel();
     _connectionSubscription = null;
+
+    // Stop journey-ended monitoring
+    await _journeyEndedSubscription?.cancel();
+    _journeyEndedSubscription = null;
     
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -126,14 +171,16 @@ class ConvoyProvider extends ChangeNotifier {
     }
     
     _isSubscribed = false;
-    
+
     // Reset state
     _snapshot = null;
     _connectionState = ConvoyConnectionState.disconnected;
     _lastPublishTime = null;
     _lastMovementTime = null;
+    _currentJourneyId = null;
+    _consecutivePublishFailures = 0;
     _clearError();
-    
+
     print('✅ ConvoyProvider: Coordination stopped completely');
     notifyListeners();
   }
@@ -228,8 +275,19 @@ class ConvoyProvider extends ChangeNotifier {
     _heartbeatTimer = null;
   }
 
-  /// Publish location to backend
+  /// Publish location to backend.
+  ///
+  /// Bails out (calls [stopCoordination]) on terminal failures:
+  ///  - Journey is no longer active (backend rejects publish)
+  ///  - Auth is dead (user is no longer authorized for this journey)
+  ///  - Too many consecutive failures (circuit breaker)
+  ///
+  /// Transient failures (network, rate limit) are logged and retried on the
+  /// next GPS tick.
   Future<void> _publishLocation(String journeyId, Position position, bool isMoving) async {
+    // Guard against stale callbacks after stopCoordination.
+    if (_currentJourneyId != journeyId) return;
+
     try {
       // Get battery level
       int? batteryLevel;
@@ -254,15 +312,73 @@ class ConvoyProvider extends ChangeNotifier {
 
       if (result.success) {
         _lastPublishTime = DateTime.now();
-      } else {
-        print('⚠️ Failed to publish location: ${result.failure?.message}');
-        // Don't show error to user for failed publishes - just log and continue
+        _consecutivePublishFailures = 0;
+        return;
       }
-      
+
+      // We got a structured failure — decide whether to bail or keep trying.
+      await _handlePublishFailure(result.failure);
     } catch (e) {
+      // Unexpected (shouldn't happen — repository normalizes errors), but
+      // count it so a sustained crash loop still trips the circuit breaker.
       print('⚠️ Location publish error: $e');
-      // Don't show error to user for failed publishes - just log and continue
+      await _handlePublishFailure(
+        e is Failure
+            ? e
+            : ConvoyFailure(
+                message: 'Location publish failed',
+                details: e.toString(),
+                timestamp: DateTime.now(),
+              ),
+      );
     }
+  }
+
+  /// Decide whether a publish failure is terminal (stop) or transient (retry).
+  Future<void> _handlePublishFailure(Failure? failure) async {
+    if (failure == null) return;
+
+    final isTerminal = _isTerminalPublishFailure(failure);
+    if (isTerminal) {
+      print('🛑 Terminal publish failure (${failure.message}) — stopping coordination');
+      _setError(failure.message);
+      await stopCoordination();
+      return;
+    }
+
+    _consecutivePublishFailures++;
+    print(
+      '⚠️ Transient publish failure ($_consecutivePublishFailures/$_maxConsecutivePublishFailures): '
+      '${failure.message}',
+    );
+
+    if (_consecutivePublishFailures >= _maxConsecutivePublishFailures) {
+      print('🛑 Publish failure circuit breaker tripped — stopping coordination');
+      _setError('Connection lost. Tap to reconnect.');
+      await stopCoordination();
+    }
+  }
+
+  /// Whether a failure means the journey/auth is gone for good and we should
+  /// stop the publish loop entirely (vs. a transient network blip).
+  bool _isTerminalPublishFailure(Failure failure) {
+    if (failure is ConvoyFailure) {
+      // journeyNotActive: backend says the journey is ended/cancelled.
+      // notJourneyMember: 401/403 — auth is dead or we've been kicked out.
+      return failure == ConvoyFailure.journeyNotActive ||
+          failure == ConvoyFailure.notJourneyMember ||
+          failure.message.toLowerCase().contains('not active') ||
+          failure.message.toLowerCase().contains('not authorized') ||
+          failure.message.toLowerCase().contains('not a member');
+    }
+    if (failure is AuthFailure || failure is TokenFailure) {
+      return true;
+    }
+    if (failure is ServerFailure) {
+      final code = failure.statusCode ?? 0;
+      return code == 401 || code == 403;
+    }
+    return false;
   }
 
   /// Start streaming convoy positions and connection state
@@ -298,6 +414,32 @@ class ConvoyProvider extends ChangeNotifier {
         notifyListeners();
       },
     );
+
+    // Listen for server-driven journey-ended events. When the backend ends
+    // a journey it emits this; we must stop coordinating that journey so we
+    // don't keep hammering the now-invalid room.
+    _journeyEndedSubscription = _repository.journeyEndedStream.listen(
+      (event) async {
+        // Ignore stale events from a previous journey.
+        if (event.journeyId != _currentJourneyId) return;
+
+        print('🏁 ConvoyProvider: journey-ended received for ${event.journeyId}');
+        _lastJourneyEndedEvent = event;
+        _setError('Journey ended');
+        await stopCoordination();
+        notifyListeners();
+      },
+      onError: (error) {
+        print('❌ journey-ended stream error: $error');
+      },
+    );
+  }
+
+  /// Consume the last journey-ended event. The UI calls this after it has
+  /// reacted (shown a toast, navigated) so the same event isn't acted on twice.
+  void consumeJourneyEndedEvent() {
+    _lastJourneyEndedEvent = null;
+    notifyListeners();
   }
 
   /// Fetch latest snapshot manually (for refresh)

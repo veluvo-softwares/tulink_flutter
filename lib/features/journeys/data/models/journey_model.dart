@@ -121,6 +121,7 @@ class ParticipantModel extends Participant {
     super.invitedBy,
     super.connectionStatus,
     super.joinedAt,
+    super.displayName,
   });
 
   factory ParticipantModel.fromJson(Map<String, dynamic> json) {
@@ -133,6 +134,7 @@ class ParticipantModel extends Participant {
       invitedBy: json['invitedBy']?.toString(),
       connectionStatus: json['connectionStatus']?.toString(),
       joinedAt: json['joinedAt'] != null ? DateTime.tryParse(json['joinedAt'].toString()) : null,
+      displayName: json['displayName']?.toString(),
     );
   }
 }

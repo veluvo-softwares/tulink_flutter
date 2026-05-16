@@ -8,6 +8,7 @@ import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
 import '../widgets/journey_preview_map.dart';
 import '../../../convoy/presentation/providers/convoy_provider.dart';
+import 'invite_participants_screen.dart';
 
 class JourneyPreviewScreen extends StatefulWidget {
   final String journeyId;
@@ -281,6 +282,186 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     } else {
       return 'JUST NOW';
     }
+  }
+
+  Widget _buildParticipantsSection(Journey journey, TulinkColors colors) {
+    final participants = journey.participants ?? [];
+    final isPending = journey.status == JourneyStatus.PENDING;
+    final isLeader = true; // The preview screen is always shown to the journey leader
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'CONVOY PARTICIPANTS',
+                style: TextStyle(
+                  color: colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (isPending && isLeader)
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed(
+                    InviteParticipantsScreen.routeName,
+                    arguments: journey.id,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: colors.electricRed,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_add, color: colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Invite',
+                          style: TextStyle(
+                            color: colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (participants.isEmpty)
+            Text(
+              'No participants yet',
+              style: TextStyle(
+                color: colors.silver,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            ...participants.map((p) => _buildParticipantRow(p, colors)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParticipantRow(Participant p, TulinkColors colors) {
+    final isLeader = p.role.toUpperCase() == 'LEADER';
+    final displayName = p.displayName ?? p.userId;
+
+    Color statusColor;
+    switch (p.status.toUpperCase()) {
+      case 'ACTIVE':
+        statusColor = Colors.green;
+        break;
+      case 'ACCEPTED':
+        statusColor = colors.tulinkBlue;
+        break;
+      case 'INVITED':
+        statusColor = Colors.orange;
+        break;
+      default:
+        statusColor = colors.silver;
+    }
+
+    String initials;
+    final parts = displayName.trim().split(' ');
+    if (parts.length >= 2) {
+      initials = '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    } else if (displayName.isNotEmpty) {
+      initials = displayName[0].toUpperCase();
+    } else {
+      initials = '?';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: isLeader
+                  ? colors.electricRed.withOpacity(0.15)
+                  : colors.brushedSteel,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isLeader
+                    ? colors.electricRed.withOpacity(0.4)
+                    : colors.silver.withOpacity(0.2),
+              ),
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: TextStyle(
+                  color: isLeader ? colors.electricRed : colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: TextStyle(
+                    color: colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  p.role.toUpperCase(),
+                  style: TextStyle(
+                    color: isLeader ? colors.electricRed : colors.silver,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: statusColor.withOpacity(0.4)),
+            ),
+            child: Text(
+              p.status.toUpperCase(),
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildInfoCard(TulinkColors colors, String title, String value, IconData icon) {
@@ -593,49 +774,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                   const SizedBox(height: 20),
 
                   // Participants Section
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: colors.cardDark,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'CONVOY PARTICIPANTS',
-                              style: TextStyle(
-                                color: colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${journey.participants?.length ?? 1} participants',
-                              style: TextStyle(
-                                color: colors.silver,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Participant management feature coming soon',
-                          style: TextStyle(
-                            color: colors.silver,
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildParticipantsSection(journey, colors),
 
                   const SizedBox(height: 16),
 
