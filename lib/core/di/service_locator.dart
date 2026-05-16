@@ -1,4 +1,11 @@
+import 'dart:async';
+
 import 'package:hive/hive.dart';
+import 'package:tulink_flutter/features/invites/data/datasources/invite_remote_data_source.dart';
+import 'package:tulink_flutter/features/invites/data/repositories/invite_repository_impl.dart';
+import 'package:tulink_flutter/features/invites/domain/repositories/invite_repository.dart';
+import 'package:tulink_flutter/features/invites/domain/usecases/invite_usecases.dart';
+import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/analytics/data/services/analytics_api_service.dart';
 import 'package:tulink_flutter/features/analytics/data/datasources/analytics_remote_data_source.dart';
 import 'package:tulink_flutter/features/analytics/data/repositories/analytics_repository_impl.dart';
@@ -78,6 +85,11 @@ class ServiceLocator {
   late GetJourneySummaryUseCase _getJourneySummaryUseCase;
   late AnalyticsProvider _analyticsProvider;
 
+  // Invite Feature
+  late InviteRemoteDataSource _inviteRemoteDataSource;
+  late InviteRepository _inviteRepository;
+  late InviteProvider _inviteProvider;
+
   // Convoy Feature
   late ConvoyApiService _convoyApiService;
   late ConvoyRemoteDataSource _convoyRemoteDataSource;
@@ -108,6 +120,9 @@ class ServiceLocator {
 
   // Analytics Feature Getters
   AnalyticsProvider get analyticsProvider => _analyticsProvider;
+
+  // Invite Feature Getters
+  InviteProvider get inviteProvider => _inviteProvider;
 
   // Convoy Feature Getters
   ConvoyProvider get convoyProvider => _convoyProvider;
@@ -144,6 +159,7 @@ class ServiceLocator {
     _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(dio: _dioClient.dio);
     _routeRemoteDataSource = RouteRemoteDataSourceImpl(dio: _dioClient.dio);
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
+    _inviteRemoteDataSource = InviteRemoteDataSourceImpl(dio: _dioClient.dio);
     _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(_analyticsApiService);
     _convoyRemoteDataSource = ConvoyRemoteDataSourceImpl(_convoyApiService);
     _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl();
@@ -160,6 +176,7 @@ class ServiceLocator {
       placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
     );
     _journeyRepository = JourneyRepositoryImpl(remoteDataSource: _journeyRemoteDataSource);
+    _inviteRepository = InviteRepositoryImpl(remoteDataSource: _inviteRemoteDataSource);
     _analyticsRepository = AnalyticsRepositoryImpl(remoteDataSource: _analyticsRemoteDataSource);
     _convoyRepository = ConvoyRepositoryImpl(
       remoteDataSource: _convoyRemoteDataSource,
@@ -177,6 +194,12 @@ class ServiceLocator {
     _fetchLatestSnapshot = FetchLatestSnapshot(_convoyRepository);
 
     // Initialize providers
+    _inviteProvider = InviteProvider(
+      searchUsersUseCase: SearchUsers(_inviteRepository),
+      sendInviteUseCase: SendInvite(_inviteRepository),
+      getInvitationsUseCase: GetInvitations(_inviteRepository),
+      acceptInvitationUseCase: AcceptInvitation(_inviteRepository),
+    );
     _authProvider = AuthProvider(_authRepository);
     _themeProvider = ThemeProvider();
     _mapProvider = MapProvider(
@@ -204,8 +227,11 @@ class ServiceLocator {
       repository: _convoyRepository,
     );
 
-    // Initialize auth provider
-    await _authProvider.initialize();
+    // Kick off auth initialization in the background. The first synchronous
+    // line of AuthProvider.initialize() flips isLoading=true and notifies
+    // listeners, so HomePage's spinner covers the auth check while the rest
+    // of the app paints immediately.
+    unawaited(_authProvider.initialize());
   }
 
   /// Dispose resources when app is closing

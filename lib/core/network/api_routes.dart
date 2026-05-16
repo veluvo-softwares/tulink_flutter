@@ -14,6 +14,12 @@ class ApiRoutes {
   static const String verifyEmail = '/auth/verify-email';
   static const String updateProfile = '/auth/profile';
   static const String deleteAccount = '/auth/account';
+  static const String searchUser = '/auth/searchUser';
+
+  // Journey Invite Routes
+  static String journeyInvite(String journeyId) => '/journeys/$journeyId/invite';
+  static const String journeyInvitations = '/journeys/invitations';
+  static String acceptInvitation(String journeyId) => '/journeys/$journeyId/accept';
 
   // User Management Routes
   static const String users = '/users';

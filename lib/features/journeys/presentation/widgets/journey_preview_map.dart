@@ -18,23 +18,40 @@ class JourneyPreviewMap extends StatefulWidget {
 
 class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
   MapboxMap? _mapboxMap;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _mapboxMap = null;
+    super.dispose();
+  }
+
+  /// Whether it's safe to call into the native Mapbox channel.
+  /// The platform channel is torn down on dispose, so any call after that
+  /// throws PlatformException("Unable to establish connection on channel").
+  bool get _canUseMap => !_disposed && mounted && _mapboxMap != null;
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    if (_disposed) return;
     _mapboxMap = mapboxMap;
-    // No point annotation manager needed — using style layers instead
     await _addJourneyDestinationPin();
+    if (!_canUseMap) return;
     await _fitToJourney();
   }
 
   Future<void> _addJourneyDestinationPin() async {
-    if (_mapboxMap == null) return;
+    if (!_canUseMap) return;
     const sourceId = 'preview-dest-source';
     const ringId = 'preview-dest-ring';
     const dotId = 'preview-dest-dot';
 
     try { await _mapboxMap!.style.removeStyleLayer(ringId); } catch (_) {}
+    if (!_canUseMap) return;
     try { await _mapboxMap!.style.removeStyleLayer(dotId); } catch (_) {}
+    if (!_canUseMap) return;
     try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
+    if (!_canUseMap) return;
 
     try {
       final geoJson = jsonEncode({
@@ -52,6 +69,7 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
       await _mapboxMap!.style.addSource(
         GeoJsonSource(id: sourceId, data: geoJson),
       );
+      if (!_canUseMap) return;
 
       await _mapboxMap!.style.addLayer(CircleLayer(
         id: ringId,
@@ -62,6 +80,7 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
         circleStrokeWidth: 2.5,
         circleOpacity: 1.0,
       ));
+      if (!_canUseMap) return;
 
       await _mapboxMap!.style.addLayer(CircleLayer(
         id: dotId,
@@ -72,24 +91,28 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
         circleStrokeWidth: 2.0,
         circleOpacity: 1.0,
       ));
-
-      print('✅ Journey preview destination pin rendered');
     } catch (e) {
-      print('⚠️ Failed to render journey preview destination pin: $e');
+      if (_disposed) return;
+      debugPrint('⚠️ Failed to render journey preview destination pin: $e');
     }
   }
 
   Future<void> _fitToJourney() async {
-    if (_mapboxMap == null) return;
-    await _mapboxMap!.setCamera(CameraOptions(
-      center: Point(
-        coordinates: Position(
-          widget.journey.destination.longitude,
-          widget.journey.destination.latitude,
+    if (!_canUseMap) return;
+    try {
+      await _mapboxMap!.setCamera(CameraOptions(
+        center: Point(
+          coordinates: Position(
+            widget.journey.destination.longitude,
+            widget.journey.destination.latitude,
+          ),
         ),
-      ),
-      zoom: 13.0, // bumped for 180px container
-    ));
+        zoom: 13.0,
+      ));
+    } catch (e) {
+      if (_disposed) return;
+      debugPrint('⚠️ Failed to fit journey preview camera: $e');
+    }
   }
 
   @override

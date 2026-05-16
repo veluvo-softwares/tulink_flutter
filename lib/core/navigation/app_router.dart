@@ -11,6 +11,7 @@ import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_details_screen.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
+import 'package:tulink_flutter/features/invites/presentation/pages/invitations_screen.dart';
 import 'main_navigation_screen.dart';
 import 'undefined_route_screen.dart';
 
@@ -104,6 +105,9 @@ class AppRouter {
           InviteParticipantsScreen(journeyId: journeyId),
           settings,
         );
+
+      case InvitationsScreen.routeName:
+        return _createRoute(const InvitationsScreen(), settings);
 
       case JourneyHistoryScreen.routeName:
         return _createRoute(

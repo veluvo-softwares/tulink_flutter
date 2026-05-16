@@ -3,9 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
+import 'package:tulink_flutter/features/invites/presentation/pages/invitations_screen.dart';
+import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
+import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import '../widgets/journey_card.dart';
@@ -34,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<AnalyticsProvider>().loadRecentJourneys(),
       context.read<JourneyProvider>().fetchActiveJourneys(),
       context.read<AnalyticsProvider>().loadJourneyHistory(),
+      context.read<InviteProvider>().fetchInvitations(),
     ]);
   }
 
@@ -82,7 +86,65 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  GestureDetector(
+                  Row(
+                    children: [
+                      // Invitations bell
+                      Consumer<InviteProvider>(
+                        builder: (context, inviteProvider, _) {
+                          final count = inviteProvider.pendingInvitationCount;
+                          return GestureDetector(
+                            onTap: () => Navigator.of(context)
+                                .pushNamed(InvitationsScreen.routeName),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: colors.cardDark,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: colors.brushedSteel.withOpacity(0.4),
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.mail_outline,
+                                    color: colors.silver,
+                                    size: 20,
+                                  ),
+                                ),
+                                if (count > 0)
+                                  Positioned(
+                                    top: -4,
+                                    right: -4,
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        color: colors.electricRed,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          count > 9 ? '9+' : '$count',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      // Profile avatar
+                      GestureDetector(
                     onTap: _navigateToProfile,
                     child: SizedBox(
                       width: 54,
@@ -162,6 +224,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
+                    ],  // inner Row children (bell + avatar)
+                  ),  // inner Row
                 ],
               ),
               
@@ -312,7 +376,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateToJourneyDetails(dynamic journey) {
-    Navigator.of(context).pushNamed('/journey-details', arguments: journey);
+    if (journey is Journey) {
+      JourneyNavigation.open(context, journey);
+    }
   }
 
   void _navigateToJourneyPreview(String journeyId) {

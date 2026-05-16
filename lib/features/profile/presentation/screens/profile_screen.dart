@@ -7,6 +7,7 @@ import '../../../../core/widgets/status_indicator.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../analytics/presentation/providers/analytics_provider.dart';
 import '../../../journeys/domain/entities/journey.dart';
+import '../../../journeys/presentation/utils/journey_navigation.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_stats_grid.dart';
 import '../widgets/settings_menu_item.dart';
@@ -421,10 +422,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _navigateToJourneyDetails(Journey journey) {
-    Navigator.of(context).pushNamed(
-      '/journey-details',
-      arguments: journey,
-    );
+    JourneyNavigation.open(context, journey);
   }
 
   Widget _buildDivider(TulinkColors colors) {

@@ -4,6 +4,7 @@ import '../datasources/convoy_remote_data_source.dart';
 import '../datasources/convoy_websocket_data_source.dart';
 import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
+import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/auth/token_manager.dart';
@@ -255,8 +256,12 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   }
 
   @override
-  Stream<ConvoyConnectionState> get connectionStateStream => 
+  Stream<ConvoyConnectionState> get connectionStateStream =>
       _webSocketDataSource.connectionStateStream;
+
+  @override
+  Stream<JourneyEndedEvent> get journeyEndedStream =>
+      _webSocketDataSource.journeyEndedStream;
 
   @override
   Future<void> stopCoordination() async {

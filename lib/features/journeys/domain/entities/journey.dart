@@ -77,6 +77,7 @@ class Participant extends Equatable {
   final String? invitedBy;
   final String? connectionStatus;
   final DateTime? joinedAt;
+  final String? displayName;
 
   const Participant({
     required this.id,
@@ -87,6 +88,7 @@ class Participant extends Equatable {
     this.invitedBy,
     this.connectionStatus,
     this.joinedAt,
+    this.displayName,
   });
 
   @override
@@ -99,5 +101,6 @@ class Participant extends Equatable {
         invitedBy,
         connectionStatus,
         joinedAt,
+        displayName,
       ];
 }

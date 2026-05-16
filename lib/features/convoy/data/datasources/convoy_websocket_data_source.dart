@@ -6,6 +6,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../models/member_position_model.dart';
 import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
+import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
@@ -32,6 +33,10 @@ abstract class ConvoyWebSocketDataSource {
 
   /// Stream of connection state changes
   Stream<ConvoyConnectionState> get connectionStateStream;
+
+  /// Stream of `journey-ended` events from the backend.
+  /// Clients MUST stop coordinating the named journey on receiving this.
+  Stream<JourneyEndedEvent> get journeyEndedStream;
 
   /// Send acknowledgment for received location update
   Future<void> acknowledgeUpdate(int sequenceNumber);
@@ -60,6 +65,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   // Stream controllers
   final StreamController<ConvoySnapshot> _convoyController = StreamController.broadcast();
   final StreamController<ConvoyConnectionState> _connectionController = StreamController.broadcast();
+  final StreamController<JourneyEndedEvent> _journeyEndedController = StreamController.broadcast();
   
   // Convoy state
   final Map<String, MemberPosition> _members = {};
@@ -74,11 +80,30 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   static const int _maxReconnectAttempts = 10;
   static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
 
+  /// Wall-clock time when the current socket successfully connected.
+  /// Used to distinguish a healthy long-lived connection (resets failure
+  /// counters) from a "connect → immediately drop" loop (trips a separate
+  /// short-lived-connection circuit breaker).
+  DateTime? _connectedAt;
+
+  /// Number of consecutive connections that died within
+  /// [_shortLivedConnectionThreshold] of being established. If this exceeds
+  /// [_maxShortLivedConnections] we stop trying — the regular
+  /// `_reconnectAttempts` counter won't catch this loop because it resets
+  /// every time the TCP handshake succeeds, even if the heartbeat
+  /// immediately times out.
+  int _shortLivedConnections = 0;
+  static const int _maxShortLivedConnections = 3;
+  static const Duration _shortLivedConnectionThreshold = Duration(seconds: 20);
+
   @override
   Stream<ConvoySnapshot> get convoyUpdatesStream => _convoyController.stream;
 
   @override
   Stream<ConvoyConnectionState> get connectionStateStream => _connectionController.stream;
+
+  @override
+  Stream<JourneyEndedEvent> get journeyEndedStream => _journeyEndedController.stream;
 
   @override
   ConvoyConnectionState get connectionState => _connectionState;
@@ -92,6 +117,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     try {
       _intentionalDisconnect = false; // Reset flag when starting new connection
+      // Fresh user-initiated connection — clear the short-lived counter so a
+      // prior bad session doesn't immediately kill this one.
+      _shortLivedConnections = 0;
       _updateConnectionState(ConvoyConnectionState.connecting);
 
       // Create Socket.IO client with authentication
@@ -234,18 +262,35 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     // Connection events
     _socket!.onConnect((_) {
       print('✅ WebSocket connected');
+      _connectedAt = DateTime.now();
       _updateConnectionState(ConvoyConnectionState.connected);
     });
 
     _socket!.onDisconnect((_) {
       print('❌ WebSocket disconnected');
+      _recordConnectionLifetime();
+
       if (_intentionalDisconnect) {
         print('🔌 Intentional disconnect - not attempting to reconnect');
         _updateConnectionState(ConvoyConnectionState.disconnected);
-      } else {
-        _updateConnectionState(ConvoyConnectionState.reconnecting);
-        _scheduleReconnect();
+        return;
       }
+
+      // Give up if too many recent connections died in their crib — this is
+      // the connect→heartbeat-timeout→reconnect loop. The regular attempt
+      // counter doesn't catch it because the TCP handshake itself succeeds.
+      if (_shortLivedConnections >= _maxShortLivedConnections) {
+        print(
+          '🛑 Giving up reconnect: $_shortLivedConnections consecutive '
+          'short-lived connections (auth or journey state is bad)',
+        );
+        _intentionalDisconnect = true;
+        _updateConnectionState(ConvoyConnectionState.error);
+        return;
+      }
+
+      _updateConnectionState(ConvoyConnectionState.reconnecting);
+      _scheduleReconnect();
     });
 
     // Connection status event
@@ -273,7 +318,25 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     });
 
     _socket!.on('journey-ended', (data) {
-      print('🏁 Journey ended: ${data['journey']}');
+      print('🏁 Journey ended: $data');
+
+      // Notify listeners so ConvoyProvider can stop publishing and surface UI.
+      // The journeyId we care about is whichever one we're currently in —
+      // the backend emits this event to that journey's room only.
+      final journeyId = _currentJourneyId;
+      if (journeyId != null) {
+        final payload = data is Map<String, dynamic> ? data : <String, dynamic>{};
+        if (!_journeyEndedController.isClosed) {
+          _journeyEndedController.add(
+            JourneyEndedEvent.fromJson(journeyId, payload),
+          );
+        }
+      }
+
+      // Server will close the socket immediately after — treat that close as
+      // intentional so we don't kick off the reconnect loop.
+      _intentionalDisconnect = true;
+
       // Clear convoy state and notify listeners
       _members.clear();
       _emitConvoySnapshot();
@@ -568,16 +631,47 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     }
   }
 
+  /// Inspect how long the connection that just dropped lasted. A healthy
+  /// connection (>[_shortLivedConnectionThreshold]) resets the short-lived
+  /// counter. A connection that died quickly increments it — three of those
+  /// in a row trips the circuit breaker in onDisconnect.
+  void _recordConnectionLifetime() {
+    final connectedAt = _connectedAt;
+    _connectedAt = null;
+
+    if (connectedAt == null) {
+      // We dropped before ever connecting — count as a failure.
+      _shortLivedConnections++;
+      return;
+    }
+
+    final lifetime = DateTime.now().difference(connectedAt);
+    if (lifetime >= _shortLivedConnectionThreshold) {
+      // Healthy connection — reset.
+      _shortLivedConnections = 0;
+    } else {
+      _shortLivedConnections++;
+      print(
+        '⚠️ Short-lived WebSocket connection ($lifetime, '
+        '$_shortLivedConnections/$_maxShortLivedConnections)',
+      );
+    }
+  }
+
   /// Dispose resources
   Future<void> dispose() async {
     await disconnect();
-    
+
     if (!_convoyController.isClosed) {
       await _convoyController.close();
     }
-    
+
     if (!_connectionController.isClosed) {
       await _connectionController.close();
+    }
+
+    if (!_journeyEndedController.isClosed) {
+      await _journeyEndedController.close();
     }
   }
 }
