@@ -285,6 +285,13 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       print('✅ WebSocket connected');
       _connectedAt = DateTime.now();
       _updateConnectionState(ConvoyConnectionState.connected);
+      // Re-join the journey room on every (re)connect so that a TIMEOUT
+      // disconnect followed by automatic reconnect doesn't leave the client
+      // connected to the server but outside the room.
+      if (_currentJourneyId != null) {
+        print('🔌 Re-joining journey room after reconnect: $_currentJourneyId');
+        _socket!.emit('join-journey', {'journeyId': _currentJourneyId});
+      }
     });
 
     _socket!.onDisconnect((_) {
