@@ -43,4 +43,9 @@ abstract class ConvoyRepository {
   /// the destination; clients use these to update arrival UI and to stop
   /// publishing GPS when [ParticipantArrivedEvent.allArrived] is true.
   Stream<ParticipantArrivedEvent> get participantArrivedStream;
+
+  /// Fires when the backend emits `journey-started` for the current journey.
+  /// Members waiting on the home screen should navigate to the map on
+  /// receiving this.
+  Stream<String> get journeyStartedStream;
 }

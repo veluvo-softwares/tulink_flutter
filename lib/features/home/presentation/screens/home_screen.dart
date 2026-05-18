@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
+import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/pages/invitations_screen.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
@@ -23,13 +26,72 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  Timer? _invitePollingTimer;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refreshData();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _refreshData();
+      // After refresh, if the server has no active journeys but _currentJourney
+      // is still set (e.g. from a previous session), clear it.
+      if (mounted) {
+        final journeyProvider = context.read<JourneyProvider>();
+        if (journeyProvider.currentJourney != null &&
+            journeyProvider.currentJourney!.status == JourneyStatus.ACTIVE &&
+            journeyProvider.activeJourneys.isEmpty) {
+          journeyProvider.clearCurrentJourney();
+        }
+      }
+      _startInvitePolling();
     });
+  }
+
+  @override
+  void dispose() {
+    _invitePollingTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      context.read<InviteProvider>().refreshInvitationsSilently();
+    }
+  }
+
+  void _startInvitePolling() {
+    _invitePollingTimer?.cancel();
+    _invitePollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) {
+        context.read<InviteProvider>().refreshInvitationsSilently();
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final convoyProvider = context.watch<ConvoyProvider>();
+    if (convoyProvider.pendingJourneyStartedId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final journeyId = convoyProvider.pendingJourneyStartedId;
+        if (journeyId == null) return;
+        convoyProvider.consumeJourneyStartedEvent();
+        context
+            .read<JourneyProvider>()
+            .fetchJourneyById(journeyId)
+            .then((_) {
+          if (!mounted) return;
+          context.read<ConvoyProvider>().startCoordination(journeyId);
+          Navigator.of(context).pushNamed('/mapview');
+        });
+      });
+    }
   }
 
   Future<void> _refreshData() async {
@@ -39,6 +101,25 @@ class _HomeScreenState extends State<HomeScreen> {
       context.read<AnalyticsProvider>().loadJourneyHistory(),
       context.read<InviteProvider>().fetchInvitations(),
     ]);
+
+    // Pre-join WebSocket room for any active journey we're a member of so
+    // we receive the journey-started event while waiting on the home screen.
+    _preJoinActiveJourneyRoom();
+  }
+
+  void _preJoinActiveJourneyRoom() {
+    final journeyProvider = context.read<JourneyProvider>();
+    final convoyProvider = context.read<ConvoyProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final userId = authProvider.user?.id;
+    if (userId == null) return;
+
+    for (final journey in journeyProvider.activeJourneys) {
+      if (journey.leaderId != userId) {
+        convoyProvider.joinJourneyRoom(journey.id);
+        break;
+      }
+    }
   }
 
   @override
@@ -241,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   
                   if (hasActiveJourney) {
                     return _buildActiveJourneyCard(
-                        colors, journeyProvider.currentJourney!);
+                        colors, journeyProvider.currentJourney);
                   } else {
                     return Column(
                       children: [
@@ -403,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Build the active journey in progress card
-  Widget _buildActiveJourneyCard(TulinkColors colors, dynamic journey) {
+  Widget _buildActiveJourneyCard(TulinkColors colors, Journey? journey) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(

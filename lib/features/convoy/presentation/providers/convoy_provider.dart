@@ -66,11 +66,17 @@ class ConvoyProvider extends ChangeNotifier {
   StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
   StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
   StreamSubscription<ParticipantArrivedEvent>? _participantArrivedSubscription;
+  StreamSubscription<String>? _journeyStartedSubscription;
 
   /// Last journey-ended event received. Surfaced to the UI so screens can
   /// react (toast, navigate away) and clear after handling.
   JourneyEndedEvent? _lastJourneyEndedEvent;
   JourneyEndedEvent? get lastJourneyEndedEvent => _lastJourneyEndedEvent;
+
+  /// Set when the backend emits `journey-started`. Home screen watches this
+  /// to auto-navigate members to the map. Cleared by [consumeJourneyStartedEvent].
+  String? _pendingJourneyStartedId;
+  String? get pendingJourneyStartedId => _pendingJourneyStartedId;
 
   /// Rolling arrival progress. Updated by the server's `participant-arrived`
   /// events. `_totalMemberCount` here comes from the server payload (the
@@ -149,6 +155,26 @@ class ConvoyProvider extends ChangeNotifier {
     }
   }
 
+  /// Join a journey room to receive real-time events without starting GPS.
+  /// Used by members waiting on the home screen for the leader to start.
+  Future<void> joinJourneyRoom(String journeyId) async {
+    if (_currentJourneyId == journeyId && _isSubscribed) return;
+
+    try {
+      _clearError();
+      _currentJourneyId = journeyId;
+
+      _startConvoyStream(journeyId);
+
+      _isSubscribed = true;
+      notifyListeners();
+      print('✅ ConvoyProvider: joined journey room $journeyId (listener mode)');
+    } catch (e) {
+      print('❌ ConvoyProvider: failed to join room: $e');
+      _currentJourneyId = null;
+    }
+  }
+
   /// Stop convoy coordination
   /// Cancels GPS publishing and real-time streaming
   Future<void> stopCoordination() async {
@@ -179,6 +205,11 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop participant-arrived monitoring
     await _participantArrivedSubscription?.cancel();
     _participantArrivedSubscription = null;
+
+    // Stop journey-started monitoring
+    await _journeyStartedSubscription?.cancel();
+    _journeyStartedSubscription = null;
+    _pendingJourneyStartedId = null;
     
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -464,6 +495,7 @@ class ConvoyProvider extends ChangeNotifier {
       },
     );
 
+
     // Per-participant arrival updates. On allArrived we stop publishing GPS
     // immediately — the backend auto-completes the journey and the
     // journey-ended subscription above handles the navigation/teardown.
@@ -482,6 +514,19 @@ class ConvoyProvider extends ChangeNotifier {
       },
       onError: (Object error) {
         print('❌ participant-arrived stream error: $error');
+      },
+    );
+
+    _journeyStartedSubscription = _repository.journeyStartedStream.listen(
+      (journeyId) {
+        if (journeyId == _currentJourneyId) {
+          print('🚀 ConvoyProvider: journey-started for $journeyId');
+          _pendingJourneyStartedId = journeyId;
+          notifyListeners();
+        }
+      },
+      onError: (Object error) {
+        print('❌ journey-started stream error: $error');
       },
     );
   }
@@ -514,6 +559,12 @@ class ConvoyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Consume the pending journey-started event after the UI has navigated.
+  void consumeJourneyStartedEvent() {
+    _pendingJourneyStartedId = null;
+    notifyListeners();
+  }
+
   /// Fetch latest snapshot manually (for refresh)
   Future<void> refreshSnapshot(String journeyId) async {
     try {
@@ -535,8 +586,8 @@ class ConvoyProvider extends ChangeNotifier {
   ConvoySnapshot? getDisplaySnapshot(String currentUserId) {
     if (_snapshot == null) return null;
     
-    // Always filter out current user for marker display to avoid duplicate with built-in user location
-    // The Mapbox built-in location component handles showing the user's own position
+    // Mapbox built-in location component shows the user's own position,
+    // so we exclude them from the convoy markers to avoid a duplicate dot.
     return _snapshot!.filterOutUser(currentUserId);
   }
 
