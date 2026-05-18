@@ -49,6 +49,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TuLink uses your location to coordinate your convoy and keep you connected with other drivers in real time.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>TuLink uses your location to keep tracking your convoy while the app is in the background so the group stays coordinated.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
