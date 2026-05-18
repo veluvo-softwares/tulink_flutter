@@ -134,6 +134,18 @@ class InviteProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Silently refresh invitations in the background without showing the
+  /// loading indicator. Used by the home screen polling timer so the badge
+  /// count updates automatically without causing a full-screen spinner.
+  Future<void> refreshInvitationsSilently() async {
+    if (_isLoadingInvitations) return;
+    final result = await getInvitationsUseCase();
+    if (result.isSuccess && result.data != null) {
+      _invitations = result.data!;
+      notifyListeners();
+    }
+  }
+
   Future<bool> acceptInvitation(String journeyId) async {
     _isAccepting = true;
     _acceptError = null;

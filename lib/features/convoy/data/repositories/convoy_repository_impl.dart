@@ -286,6 +286,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       _webSocketDataSource.participantArrivedStream;
 
   @override
+  Stream<String> get journeyStartedStream =>
+      _webSocketDataSource.journeyStartedStream;
+
+  @override
   Future<void> stopCoordination() async {
     print('🛑 Stopping convoy coordination...');
     

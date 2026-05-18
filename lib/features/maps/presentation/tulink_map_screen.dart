@@ -645,44 +645,40 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   Future<void> _endJourney() async {
     final convoyProvider = context.read<ConvoyProvider>();
     final journeyProvider = context.read<JourneyProvider>();
-    
-    // Stop convoy coordination
-    convoyProvider.stopCoordination();
-    
-    // End the journey (set status to completed)
     final currentJourney = journeyProvider.currentJourney;
-    if (currentJourney != null) {
-      final success = await journeyProvider.endJourney(currentJourney.id);
-      
-      if (success && context.mounted) {
-        // Get the updated journey with completed status
-        final completedJourney = journeyProvider.currentJourney;
-        
-        if (completedJourney != null) {
-          // Navigate to journey details screen with Done button
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => JourneyDetailsScreen(
-                journey: completedJourney,
-                showDoneButton: true,
-              ),
+
+    if (currentJourney == null) return;
+
+    await convoyProvider.stopCoordination();
+
+    final success = await journeyProvider.endJourney(currentJourney.id);
+
+    if (success && context.mounted) {
+      // endJourney() clears _currentJourney and stashes the result here.
+      final completedJourney = journeyProvider.lastCompletedJourney;
+      journeyProvider.consumeLastCompletedJourney();
+
+      if (completedJourney != null) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => JourneyDetailsScreen(
+              journey: completedJourney,
+              showDoneButton: true,
             ),
-          );
-        } else {
-          // Fallback: navigate to home if no journey data
-          Navigator.of(context).pop();
-        }
+          ),
+        );
       } else {
-        // Show error message
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to end journey. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home', (route) => false,
+        );
       }
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to end journey. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

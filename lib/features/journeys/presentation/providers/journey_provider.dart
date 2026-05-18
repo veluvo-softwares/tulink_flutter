@@ -32,6 +32,11 @@ class JourneyProvider extends ChangeNotifier {
   List<Journey> _activeJourneys = [];
   List<Journey> get activeJourneys => _activeJourneys;
 
+  /// Holds the completed journey returned by [endJourney] for one-shot use
+  /// by the map screen. Cleared after consumption via [consumeLastCompletedJourney].
+  Journey? _lastCompletedJourney;
+  Journey? get lastCompletedJourney => _lastCompletedJourney;
+
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -80,6 +85,19 @@ class JourneyProvider extends ChangeNotifier {
 
     if (result.isSuccess && result.data != null) {
       _activeJourneys = result.data!;
+
+      // Reconcile _currentJourney against the server-authoritative list.
+      // If we still have an ACTIVE journey in memory but the server no longer
+      // lists it as active, it was completed/cancelled — clear the stale state
+      // so the home screen banner disappears.
+      if (_currentJourney != null &&
+          _currentJourney!.status == JourneyStatus.ACTIVE) {
+        final stillActive =
+            _activeJourneys.any((j) => j.id == _currentJourney!.id);
+        if (!stillActive) {
+          _currentJourney = null;
+        }
+      }
     } else {
       _setError(result.failure?.message ?? 'Unknown error');
     }
@@ -148,15 +166,24 @@ class JourneyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// End a journey
-    Future<bool> endJourney(String journeyId) async {
+  /// End a journey.
+  ///
+  /// Clears [_currentJourney] immediately so the home screen banner
+  /// disappears. The completed journey is held in [lastCompletedJourney]
+  /// for the map screen to pass to the details screen as an argument.
+  Future<bool> endJourney(String journeyId) async {
     _setLoading(true);
     _setError(null);
 
     final result = await endJourneyUseCase(journeyId);
 
     if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
+      _lastCompletedJourney = result.data;
+
+      // Clear immediately — before notifyListeners — so no rebuild sees ACTIVE.
+      _currentJourney = null;
+      _activeJourneys.removeWhere((j) => j.id == journeyId);
+
       _setLoading(false);
       return true;
     } else {
@@ -165,4 +192,19 @@ class JourneyProvider extends ChangeNotifier {
       return false;
     }
   }
+
+  /// Consume [lastCompletedJourney] after the map screen has passed it to the
+  /// details screen. Prevents the same journey from being re-used on re-entry.
+  void consumeLastCompletedJourney() {
+    _lastCompletedJourney = null;
+    notifyListeners();
+  }
+
+  /// Explicitly clear the current journey (e.g. after app restart when server
+  /// confirms no active journeys remain).
+  void clearCurrentJourney() {
+    _currentJourney = null;
+    notifyListeners();
+  }
 }
+
