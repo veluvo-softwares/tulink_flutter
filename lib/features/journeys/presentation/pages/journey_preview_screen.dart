@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
 import '../widgets/journey_preview_map.dart';
@@ -56,6 +57,25 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JourneyProvider>().fetchJourneyById(widget.journeyId);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Members waiting on this screen receive journey-started when the leader
+    // starts. Navigate to the map immediately without any user action.
+    final convoyProvider = context.watch<ConvoyProvider>();
+    if (convoyProvider.pendingJourneyStartedId == widget.journeyId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        convoyProvider.consumeJourneyStartedEvent();
+        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then((_) {
+          if (!mounted) return;
+          context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+          Navigator.of(context).pushReplacementNamed('/mapview');
+        });
+      });
+    }
   }
 
   @override
@@ -287,7 +307,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   Widget _buildParticipantsSection(Journey journey, TulinkColors colors) {
     final participants = journey.participants ?? [];
     final isPending = journey.status == JourneyStatus.PENDING;
-    final isLeader = true; // The preview screen is always shown to the journey leader
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final isLeader = currentUserId != null && journey.leaderId == currentUserId;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -778,63 +799,88 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
 
                   const SizedBox(height: 16),
 
-                  // Start Convoy Button
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _canStartJourney(journey) && !_showCountdown && !_isStartingJourney
-                            ? _startJourneyCountdown
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colors.electricRed,
-                          disabledBackgroundColor: colors.silver.withOpacity(0.3),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                  // Action Button — context-aware per role and journey status
+                  Builder(builder: (context) {
+                    final currentUserId = context.read<AuthProvider>().user?.id;
+                    final isLeader = currentUserId != null && journey.leaderId == currentUserId;
+                    final isActive = journey.status == JourneyStatus.ACTIVE;
+
+                    // Leader on an already-running journey: resume without re-starting
+                    if (isLeader && isActive) {
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+                              Navigator.of(context).pushReplacementNamed('/mapview');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colors.electricRed,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.navigation, size: 24),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Resume Journey',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        child: _isStartingJourney
-                            ? const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                   SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
+                      );
+                    }
+
+                    // Start Convoy — only for leader on a PENDING journey
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _canStartJourney(journey) && !_showCountdown && !_isStartingJourney
+                              ? _startJourneyCountdown
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: colors.electricRed,
+                            disabledBackgroundColor: colors.silver.withOpacity(0.3),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: _isStartingJourney
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                     ),
-                                  ),
-                                   SizedBox(width: 12),
-                                   Text(
-                                    'STARTING CONVOY...',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                   Icon(Icons.play_arrow, size: 24),
-                                   SizedBox(width: 8),
-                                   Text(
-                                    'Start Convoy',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                    SizedBox(width: 12),
+                                    Text('STARTING CONVOY...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                  ],
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.play_arrow, size: 24),
+                                    SizedBox(width: 8),
+                                    Text('Start Convoy', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                   ],
                 ),
               ),

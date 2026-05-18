@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/journey_invitation.dart';
+import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 
@@ -36,6 +37,12 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (!mounted) return;
 
     if (accepted) {
+      // Pre-join the WebSocket room immediately so we are subscribed to the
+      // journey room before the leader taps Start — the journey is still
+      // PENDING here, so _preJoinActiveJourneyRoom() on the home screen
+      // would not yet pick it up.
+      context.read<ConvoyProvider>().joinJourneyRoom(invitation.journeyId);
+
       context.showSuccessToast('You joined "${invitation.journeyName}"!');
       Navigator.of(context).pushNamed(
         JourneyPreviewScreen.routeName,

@@ -36,6 +36,9 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Timer? _fallbackPollingTimer;
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
+  // Prevents the fallback polling timer from restarting after a terminal
+  // failure (e.g. journey ended, user kicked out). Reset only in stopCoordination().
+  bool _terminalFailureDetected = false;
 
   @override
   Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(String journeyId) {
@@ -168,8 +171,11 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     }
   }
 
-  /// Start REST fallback polling when WebSocket is disconnected
+  /// Start REST fallback polling when WebSocket is disconnected.
+  /// No-ops if a terminal failure was already detected this session —
+  /// WebSocket reconnect cycles must not silently restart a cancelled loop.
   void _startRestFallbackPolling(String journeyId) {
+    if (_terminalFailureDetected) return;
     if (_fallbackPollingTimer != null) return; // Already polling
 
     print('🔄 Starting REST fallback polling');
@@ -182,6 +188,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
         print('⚠️ REST fallback polling failed: $e');
         if (_isTerminalPollingFailure(e)) {
           print('🛑 Terminal polling failure — cancelling fallback timer');
+          _terminalFailureDetected = true;
           _stopRestFallbackPolling();
           if (!_snapshotController.isClosed) {
             _snapshotController.add(
@@ -317,6 +324,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     // Reset state
     _isWebSocketConnected = false;
     _currentJourneyId = null;
+    _terminalFailureDetected = false;
     
     print('✅ Convoy coordination stopped completely');
   }

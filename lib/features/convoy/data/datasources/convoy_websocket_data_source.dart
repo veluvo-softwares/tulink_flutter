@@ -594,7 +594,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// Start heartbeat timer
   void _startHeartbeat() {
     _stopHeartbeat();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // Backend HEARTBEAT_TIMEOUT_MS=7000 — send every 4 s to stay well inside
+    // the 7 s window regardless of network jitter.
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       sendHeartbeat();
     });
   }
