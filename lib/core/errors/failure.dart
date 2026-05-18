@@ -624,6 +624,15 @@ class ConvoyFailure extends Failure {
     timestamp: DateTime.now(),
   );
 
+  /// Backend asked the client to stop polling for this journey (server-side
+  /// terminal: journey completed/cancelled). Terminal — but UI must stay
+  /// silent because this is expected behaviour, not an error.
+  static ConvoyFailure stopPolling = ConvoyFailure(
+    message: 'Server requested stop polling',
+    details: 'Journey is no longer accepting location updates.',
+    timestamp: DateTime.now(),
+  );
+
   /// Not a journey member
   static ConvoyFailure notJourneyMember = ConvoyFailure(
     message: 'Not authorized for this journey',

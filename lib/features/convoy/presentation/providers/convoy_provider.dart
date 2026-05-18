@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
+import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/usecases/stream_convoy_positions.dart';
 import '../../domain/usecases/publish_my_position.dart';
 import '../../domain/usecases/fetch_latest_snapshot.dart';
@@ -64,11 +65,24 @@ class ConvoyProvider extends ChangeNotifier {
   StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>? _convoySubscription;
   StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
   StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
+  StreamSubscription<ParticipantArrivedEvent>? _participantArrivedSubscription;
 
   /// Last journey-ended event received. Surfaced to the UI so screens can
   /// react (toast, navigate away) and clear after handling.
   JourneyEndedEvent? _lastJourneyEndedEvent;
   JourneyEndedEvent? get lastJourneyEndedEvent => _lastJourneyEndedEvent;
+
+  /// Rolling arrival progress. Updated by the server's `participant-arrived`
+  /// events. `_totalMemberCount` here comes from the server payload (the
+  /// authoritative count of journey participants) rather than the snapshot's
+  /// `members` map, which only contains people whose positions we've seen.
+  int _arrivedCount = 0;
+  int _totalMemberCount = 0;
+  ParticipantArrivedEvent? _lastArrivalEvent;
+
+  int get arrivedCount => _arrivedCount;
+  int get totalMemberCount => _totalMemberCount;
+  ParticipantArrivedEvent? get lastArrivalEvent => _lastArrivalEvent;
 
   // Dependencies
   final Battery _battery = Battery();
@@ -161,6 +175,10 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop journey-ended monitoring
     await _journeyEndedSubscription?.cancel();
     _journeyEndedSubscription = null;
+
+    // Stop participant-arrived monitoring
+    await _participantArrivedSubscription?.cancel();
+    _participantArrivedSubscription = null;
     
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -179,6 +197,9 @@ class ConvoyProvider extends ChangeNotifier {
     _lastMovementTime = null;
     _currentJourneyId = null;
     _consecutivePublishFailures = 0;
+    _arrivedCount = 0;
+    _totalMemberCount = 0;
+    _lastArrivalEvent = null;
     _clearError();
 
     print('✅ ConvoyProvider: Coordination stopped completely');
@@ -338,8 +359,13 @@ class ConvoyProvider extends ChangeNotifier {
   Future<void> _handlePublishFailure(Failure? failure) async {
     if (failure == null) return;
 
-    final isTerminal = _isTerminalPublishFailure(failure);
-    if (isTerminal) {
+    if (_isSilentTerminalFailure(failure)) {
+      print('🤫 Silent terminal failure — stopping coordination without UI surface');
+      await stopCoordination();
+      return;
+    }
+
+    if (_isTerminalPublishFailure(failure)) {
       print('🛑 Terminal publish failure (${failure.message}) — stopping coordination');
       _setError(failure.message);
       await stopCoordination();
@@ -359,12 +385,16 @@ class ConvoyProvider extends ChangeNotifier {
     }
   }
 
+  /// Terminal failures the backend signals as "stop, this is expected" —
+  /// no toast, no error banner, just stop the publish loop and clear state.
+  bool _isSilentTerminalFailure(Failure failure) {
+    return failure is ConvoyFailure && failure == ConvoyFailure.stopPolling;
+  }
+
   /// Whether a failure means the journey/auth is gone for good and we should
   /// stop the publish loop entirely (vs. a transient network blip).
   bool _isTerminalPublishFailure(Failure failure) {
     if (failure is ConvoyFailure) {
-      // journeyNotActive: backend says the journey is ended/cancelled.
-      // notJourneyMember: 401/403 — auth is dead or we've been kicked out.
       return failure == ConvoyFailure.journeyNotActive ||
           failure == ConvoyFailure.notJourneyMember ||
           failure.message.toLowerCase().contains('not active') ||
@@ -433,6 +463,48 @@ class ConvoyProvider extends ChangeNotifier {
         print('❌ journey-ended stream error: $error');
       },
     );
+
+    // Per-participant arrival updates. On allArrived we stop publishing GPS
+    // immediately — the backend auto-completes the journey and the
+    // journey-ended subscription above handles the navigation/teardown.
+    _participantArrivedSubscription = _repository.participantArrivedStream.listen(
+      (event) async {
+        _arrivedCount = event.arrivedCount;
+        _totalMemberCount = event.totalCount;
+        _lastArrivalEvent = event;
+
+        if (event.allArrived) {
+          print('🏁 ConvoyProvider: all participants arrived — stopping publishing');
+          await _stopLocationPublishing();
+        }
+
+        notifyListeners();
+      },
+      onError: (Object error) {
+        print('❌ participant-arrived stream error: $error');
+      },
+    );
+  }
+
+  /// Stops just the GPS publishing side (location stream + heartbeat) while
+  /// leaving snapshot/connection subscriptions intact. Used when the backend
+  /// signals allArrived: we want to silence the publish loop but stay in the
+  /// room long enough to receive the journey-ended event that follows.
+  Future<void> _stopLocationPublishing() async {
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    _isPublishing = false;
+
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _isInHeartbeatMode = false;
+  }
+
+  /// Consume the last arrival event after the UI has reacted (toast,
+  /// notification). Prevents the same event from being acted on twice.
+  void consumeArrivalEvent() {
+    _lastArrivalEvent = null;
+    notifyListeners();
   }
 
   /// Consume the last journey-ended event. The UI calls this after it has

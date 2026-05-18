@@ -39,6 +39,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   bool _isConvoyCoordinationActive = false;
   ConvoySnapshot? _lastSnapshot;
   int _lastUpdateHash = 0;
+  bool _disposed = false;
+
+  /// True when it's safe to call the Mapbox channel — set false on dispose
+  /// so async chains that resume after the widget is unmounted bail out
+  /// instead of throwing PlatformException on a dead channel.
+  bool get _canUseMap => !_disposed && mounted && _mapboxMap != null;
 
   // Camera follow mode — active by default once a journey starts
   bool _isFollowMode = true;
@@ -414,21 +420,21 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   }
 
   Future<void> _updateMarkers() async {
-    if (_mapboxMap == null) return;
+    if (!_canUseMap) return;
 
     // Get convoy snapshot and current user
     final convoyProvider = context.read<ConvoyProvider>();
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.user?.id;
-    
+
     // Get convoy snapshot filtered to exclude current user
-    final convoySnapshot = currentUserId != null 
+    final convoySnapshot = currentUserId != null
         ? convoyProvider.getDisplaySnapshot(currentUserId)
         : convoyProvider.snapshot;
 
     // Generate a hash to check if the snapshot has actually changed
     final currentHash = _generateSnapshotHash(convoySnapshot);
-    
+
     // Only update if the snapshot has changed
     if (currentHash != _lastUpdateHash) {
       _lastUpdateHash = currentHash;
@@ -439,29 +445,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       // route so it does not visually conflict with the convoy route.
       if (convoySnapshot != null && convoySnapshot.members.isNotEmpty) {
         try { await _mapboxMap!.style.removeStyleLayer('solo-route-line'); } catch (_) {}
+        if (!_canUseMap) return;
         try { await _mapboxMap!.style.removeStyleLayer('solo-route-bg'); } catch (_) {}
+        if (!_canUseMap) return;
         try { await _mapboxMap!.style.removeStyleSource('solo-route-source'); } catch (_) {}
+        if (!_canUseMap) return;
       }
 
       if (convoySnapshot != null && currentUserId != null) {
         // Update convoy visualization with route line and member markers
         if (isFirstUpdate) {
-          // First time: add convoy visualization
           await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
+          if (!_canUseMap) return;
           await ConvoyRouteLine.addConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
         } else {
-          // Subsequent updates: use update methods for better performance
           await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
+          if (!_canUseMap) return;
           await ConvoyRouteLine.updateConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
         }
-        
+
         print('✅ Updated convoy markers: ${convoySnapshot.members.length} members');
       } else {
-        // Remove convoy visualization when no active convoy
         await ConvoyRouteLine.removeConvoyMarkers(_mapboxMap!);
+        if (!_canUseMap) return;
         await ConvoyRouteLine.removeConvoyRoute(_mapboxMap!);
         print('✅ Removed convoy visualization');
-        _lastSnapshot = null; // Reset for next convoy session
+        _lastSnapshot = null;
       }
     }
   }
@@ -489,6 +498,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
   /// Check if convoy coordination should be started
   void _checkAndStartConvoyCoordination() {
+    if (!mounted) return;
     final journeyProvider = context.read<JourneyProvider>();
     final convoyProvider = context.read<ConvoyProvider>();
     final currentJourney = journeyProvider.currentJourney;
@@ -737,8 +747,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
   @override
   void dispose() {
+    _disposed = true;
+    _mapboxMap = null;
     // Stop the camera-follow GPS stream — independent of convoy coordination
     _cameraFollowSubscription?.cancel();
+    _cameraFollowSubscription = null;
     // Don't stop convoy coordination when leaving map screen
     // The journey should continue in the background
     // Only stop convoy coordination when journey is actually ended
@@ -752,11 +765,21 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final convoySnapshot = context.watch<ConvoyProvider>().snapshot;
     final convoyConnectionState = context.watch<ConvoyProvider>().connectionState;
     final convoyError = context.watch<ConvoyProvider>().errorMessage;
+    final currentUserId = context.watch<AuthProvider>().user?.id ?? '';
+    final isLeader = currentJourney != null &&
+        currentUserId.isNotEmpty &&
+        currentJourney.leaderId == currentUserId;
     
     // Marker updates are driven by didChangeDependencies(), not build().
 
-    // Check convoy coordination state
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndStartConvoyCoordination());
+    // Check convoy coordination state. Guard with mounted because the
+    // callback fires next frame — by then the widget can be disposed
+    // (e.g. AuthProvider.onAuthLost flipped isSignedIn after a token
+    // refresh failed and HomePage swapped MainNavigationScreen for
+    // AuthScreen), and reading context on a defunct State throws.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAndStartConvoyCoordination();
+    });
 
     return Scaffold(
       body: Stack(
@@ -811,6 +834,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               child: JourneyProgressCard(
                 journey: currentJourney,
                 convoySnapshot: convoySnapshot,
+                currentUserId: currentUserId,
+                isLeader: isLeader,
                 onEndJourney: _showEndJourneyConfirmation,
               ),
             ),

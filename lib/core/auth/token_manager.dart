@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../config/app_config.dart';
 import '../constants/storage_keys.dart';
 import '../errors/failure.dart';
-import '../config/app_config.dart';
+import '../network/api_routes.dart';
 
 /// Enhanced token manager with expiry validation and automatic refresh
 class TokenManager {
@@ -13,6 +17,18 @@ class TokenManager {
   factory TokenManager() => _instance;
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  /// In-flight refresh. A second caller arriving while the first is still
+  /// awaiting the network response gets the same future — never two parallel
+  /// POST /auth/refresh requests, which would race-rotate the refresh token
+  /// and lock the user out.
+  Completer<String>? _refreshCompleter;
+
+  /// Hook fired when tokens are cleared due to an unrecoverable auth state
+  /// (refresh failed, token revoked, etc.). AuthProvider wires this to its
+  /// signOut flow so the UI doesn't stay on a "signed in" screen with no
+  /// credentials.
+  void Function()? onAuthLost;
 
   /// Store authentication token with metadata
   Future<void> saveAuthToken(String token) async {
@@ -203,6 +219,97 @@ class TokenManager {
   Future<void> clearAllTokens() async {
     await clearAuthToken();
     await clearRefreshToken();
+  }
+
+  /// Exchange the stored refresh token for a fresh ID token.
+  ///
+  /// Concurrent callers share a single in-flight request via [_refreshCompleter].
+  /// On any failure (network, non-200, bad shape, expired refresh token) all
+  /// tokens are cleared and [onAuthLost] is fired so the app can navigate to
+  /// login. The endpoint uses a bare Dio instance — going through DioClient
+  /// here would re-enter the auth interceptor and deadlock.
+  Future<String> refreshAuthToken() async {
+    final inFlight = _refreshCompleter;
+    if (inFlight != null) {
+      return inFlight.future;
+    }
+
+    final completer = Completer<String>();
+    _refreshCompleter = completer;
+
+    try {
+      final newToken = await _doRefresh();
+      completer.complete(newToken);
+      return newToken;
+    } catch (e, st) {
+      completer.completeError(e, st);
+      rethrow;
+    } finally {
+      _refreshCompleter = null;
+    }
+  }
+
+  Future<String> _doRefresh() async {
+    String? refreshToken;
+    try {
+      refreshToken = await getValidRefreshToken();
+    } on TokenFailure {
+      refreshToken = null;
+    }
+
+    if (refreshToken == null || refreshToken.isEmpty) {
+      await _failRefresh();
+    }
+
+    try {
+      final bareDio = Dio(
+        BaseOptions(
+          baseUrl: AppConfig.baseUrl,
+          connectTimeout: AppConfig.connectTimeout,
+          receiveTimeout: AppConfig.receiveTimeout,
+          headers: const {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      final response = await bareDio.post<Map<String, dynamic>>(
+        ApiRoutes.refreshToken,
+        data: {'refreshToken': refreshToken},
+      );
+
+      if (response.statusCode != 200 || response.data == null) {
+        await _failRefresh();
+      }
+
+      final data = response.data!['data'];
+      if (data is! Map<String, dynamic>) {
+        await _failRefresh();
+      }
+
+      final newIdToken = data['idToken'];
+      final newRefreshToken = data['refreshToken'];
+
+      if (newIdToken is! String || newIdToken.isEmpty ||
+          newRefreshToken is! String || newRefreshToken.isEmpty) {
+        await _failRefresh();
+      }
+
+      await saveAuthToken(newIdToken);
+      await saveRefreshToken(newRefreshToken);
+
+      return newIdToken;
+    } catch (e) {
+      if (e is TokenFailure) rethrow;
+      await _failRefresh();
+    }
+  }
+
+  Future<Never> _failRefresh() async {
+    await clearAllTokens();
+    onAuthLost?.call();
+    throw TokenFailure.refreshTokenExpired;
   }
 
   /// Get token metadata for debugging
