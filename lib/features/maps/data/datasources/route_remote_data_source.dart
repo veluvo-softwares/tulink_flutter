@@ -32,10 +32,32 @@ class RouteRemoteDataSourceImpl implements RouteRemoteDataSource {
         },
       );
 
-      if (response.statusCode == 200 && response.data != null) {
-        return RouteResultModel.fromJson(response.data!);
+      if (response.statusCode != 200 || response.data == null) {
+        print('⚠️ Route fetch returned non-200 or empty body');
+        return null;
       }
-      return null;
+
+      // API envelope: { success, statusCode, message, data: { ... } }
+      final body = response.data!;
+      final dataField = body['data'];
+      if (dataField is! Map<String, dynamic>) {
+        print('⚠️ Route response missing or malformed "data" field');
+        return null;
+      }
+
+      final route = RouteResultModel.fromJson(dataField);
+
+      if (route.coordinates.isEmpty) {
+        print('⚠️ Route response parsed but contains no coordinates');
+        return null;
+      }
+
+      print('✅ Route fetched: '
+          '${route.coordinates.length} coordinates, '
+          '${route.steps.length} steps, '
+          '${route.distanceMetres.toStringAsFixed(0)}m');
+
+      return route;
     } catch (e) {
       print('⚠️ Route fetch failed: $e');
       return null;

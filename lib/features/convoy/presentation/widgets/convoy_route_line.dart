@@ -12,7 +12,6 @@ class ConvoyRouteLine {
   static const String _routeSourceId = 'convoy-route-source';
   static const String _routeLayerId = 'convoy-route-layer';
   static const String _membersSourceId = 'convoy-members-source';
-  static const String _destinationSourceId = 'convoy-destination-source';
 
   /// Add convoy route visualization to the map
   static Future<void> addConvoyRoute(
@@ -58,16 +57,26 @@ class ConvoyRouteLine {
     }
   }
 
-  /// Update convoy route with new snapshot data
+  /// Update convoy route with new snapshot data.
+  ///
+  /// Mapbox requires layers to be removed before their source can be removed,
+  /// so updates go through the full remove → add cycle. [removeConvoyRoute]
+  /// is idempotent — it silently ignores missing layers/sources.
   static Future<void> updateConvoyRoute(
     MapboxMap mapboxMap,
     ConvoySnapshot snapshot,
     String currentUserId,
   ) async {
+    if (snapshot.destination.latitude == 0.0 &&
+        snapshot.destination.longitude == 0.0) {
+      print('⚠️ Skipping convoy route update — destination is (0,0)');
+      return;
+    }
+
     try {
-      // Update route line source data
-      await _updateRouteLineSource(mapboxMap, snapshot, currentUserId);
-      
+      await removeConvoyRoute(mapboxMap);
+      await _addRouteLineSource(mapboxMap, snapshot, currentUserId);
+      await _addRouteLineLayer(mapboxMap);
       print('✅ Convoy route updated with ${snapshot.members.length} members');
     } catch (e) {
       print('❌ Failed to update convoy route: $e');
@@ -103,43 +112,6 @@ class ConvoyRouteLine {
       id: _routeSourceId,
       data: jsonEncode(geoJsonData),
     ));
-  }
-
-  /// Update route line source with new data
-  static Future<void> _updateRouteLineSource(
-    MapboxMap mapboxMap,
-    ConvoySnapshot snapshot,
-    String currentUserId,
-  ) async {
-    // Create route points
-    final routePoints = _createRoutePoints(snapshot, currentUserId);
-    
-    if (routePoints.length < 2) {
-      return;
-    }
-
-    // Create GeoJSON LineString
-    final geoJsonData = {
-      'type': 'Feature',
-      'properties': {},
-      'geometry': {
-        'type': 'LineString',
-        'coordinates': routePoints,
-      },
-    };
-
-    // Update source data
-    try {
-      // Remove existing source and re-add with new data
-      await mapboxMap.style.removeStyleSource(_routeSourceId);
-      await mapboxMap.style.addSource(GeoJsonSource(
-        id: _routeSourceId,
-        data: jsonEncode(geoJsonData),
-      ));
-    } catch (e) {
-      // If source doesn't exist, create it
-      await _addRouteLineSource(mapboxMap, snapshot, currentUserId);
-    }
   }
 
   /// Add route line layer with enhanced Uber-style dotted visualization
@@ -266,11 +238,10 @@ class ConvoyRouteLine {
       await _addMemberMarkersSource(mapboxMap, snapshot, currentUserId);
       await _addMemberMarkersLayer(mapboxMap);
 
-      // Add destination marker
-      await _addDestinationMarkerSource(mapboxMap, snapshot);
-      await _addDestinationMarkerLayer(mapboxMap);
+      // Destination marker is drawn by _drawDestinationPin in tulink_map_screen.dart
+      // from static Journey data — no duplicate destination layer is needed here.
 
-      print('✅ Convoy markers added');
+      print('✅ Convoy member markers added');
     } catch (e) {
       print('❌ Failed to add convoy markers: $e');
     }
@@ -282,10 +253,6 @@ class ConvoyRouteLine {
       // Remove member markers
       await mapboxMap.style.removeStyleLayer('convoy-members-layer');
       await mapboxMap.style.removeStyleSource(_membersSourceId);
-
-      // Remove destination marker
-      await mapboxMap.style.removeStyleLayer('convoy-destination-layer');
-      await mapboxMap.style.removeStyleSource(_destinationSourceId);
     } catch (e) {
       // Ignore errors for non-existent layers/sources
     }
@@ -345,43 +312,4 @@ class ConvoyRouteLine {
     await mapboxMap.style.addLayer(circleLayer);
   }
 
-  /// Add destination marker source
-  static Future<void> _addDestinationMarkerSource(
-    MapboxMap mapboxMap,
-    ConvoySnapshot snapshot,
-  ) async {
-    final geoJsonData = {
-      'type': 'Feature',
-      'properties': {
-        'type': 'destination',
-      },
-      'geometry': {
-        'type': 'Point',
-        'coordinates': [
-          snapshot.destination.longitude,
-          snapshot.destination.latitude,
-        ],
-      },
-    };
-
-    await mapboxMap.style.addSource(GeoJsonSource(
-      id: _destinationSourceId,
-      data: jsonEncode(geoJsonData),
-    ));
-  }
-
-  /// Add destination marker layer
-  static Future<void> _addDestinationMarkerLayer(MapboxMap mapboxMap) async {
-    final circleLayer = CircleLayer(
-      id: 'convoy-destination-layer',
-      sourceId: _destinationSourceId,
-      circleRadius: 16.0,
-      circleColor: 0xFF000000, // Black for destination
-      circleStrokeColor: 0xFFFFFFFF,
-      circleStrokeWidth: 3.0,
-      circleOpacity: 1.0,
-    );
-
-    await mapboxMap.style.addLayer(circleLayer);
-  }
 }

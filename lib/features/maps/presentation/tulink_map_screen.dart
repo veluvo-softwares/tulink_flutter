@@ -3,8 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:google_fonts/google_fonts.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import '../../../core/theme/tulink_colors.dart';
+import '../data/models/route_result_model.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'providers/map_provider.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
@@ -66,8 +69,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           currentJourney.status == JourneyStatus.ACTIVE) {
         await _drawDestinationPin(currentJourney);
         await _fitCameraToJourney(currentJourney);
-        await _drawSoloRouteLine(currentJourney);
-        // Fetch the real road route — placeholder stays until it arrives
+        // Let the camera animation settle before the loading pill appears
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        // Fetch the real road route — loading state shown via HUD indicator
         unawaited(_drawActualRoute(currentJourney));
       }
     }
@@ -132,77 +136,6 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           '${journey.destination.latitude}, ${journey.destination.longitude}');
     } catch (e) {
       print('⚠️ Failed to draw destination pin: $e');
-    }
-  }
-
-  /// Draw a straight-line route from the user's current GPS position to the
-  /// destination. Acts as a visual placeholder for solo journeys until convoy
-  /// members join and [ConvoyRouteLine] takes over.
-  Future<void> _drawSoloRouteLine(Journey journey) async {
-    if (_mapboxMap == null) return;
-    const sourceId = 'solo-route-source';
-    const bgId = 'solo-route-bg';
-    const lineId = 'solo-route-line';
-
-    try { await _mapboxMap!.style.removeStyleLayer(lineId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleLayer(bgId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
-
-    geo.Position? pos;
-    try {
-      pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
-        ),
-      );
-    } catch (e) {
-      print('⚠️ Could not get current position for route line: $e');
-      return;
-    }
-
-    try {
-      final geoJson = jsonEncode({
-        'type': 'Feature',
-        'properties': <String, dynamic>{},
-        'geometry': {
-          'type': 'LineString',
-          'coordinates': [
-            [pos.longitude, pos.latitude],
-            [journey.destination.longitude, journey.destination.latitude],
-          ],
-        },
-      });
-
-      await _mapboxMap!.style.addSource(
-        GeoJsonSource(id: sourceId, data: geoJson),
-      );
-
-      // Shadow line
-      await _mapboxMap!.style.addLayer(LineLayer(
-        id: bgId,
-        sourceId: sourceId,
-        lineCap: LineCap.ROUND,
-        lineJoin: LineJoin.ROUND,
-        lineWidth: 8.0,
-        lineColor: 0xFF000000,
-        lineOpacity: 0.2,
-      ));
-
-      // Electric Red dashed route
-      await _mapboxMap!.style.addLayer(LineLayer(
-        id: lineId,
-        sourceId: sourceId,
-        lineCap: LineCap.ROUND,
-        lineJoin: LineJoin.ROUND,
-        lineWidth: 4.0,
-        lineColor: 0xFFE8002D,
-        lineOpacity: 0.85,
-        lineDasharray: [2.0, 1.5],
-      ));
-
-      print('✅ Solo route line drawn from current position to destination');
-    } catch (e) {
-      print('⚠️ Failed to draw solo route line: $e');
     }
   }
 
@@ -276,8 +209,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   }
 
   /// Fetch the road-following route from the backend and draw it on the map.
-  /// The straight-line placeholder from [_drawSoloRouteLine] stays visible
-  /// until this succeeds, then is replaced. Fails silently — placeholder stays.
+  /// Fails silently — the destination pin stays visible without a route line.
   Future<void> _drawActualRoute(Journey journey) async {
     if (_mapboxMap == null) return;
 
@@ -294,25 +226,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       return; // Keep the straight-line placeholder
     }
 
-    // Fetch route from backend (NestJS → Mapbox Directions, Redis cached)
     if (!mounted) return;
     final mapProvider = context.read<MapProvider>();
-    final route = await mapProvider.fetchRoute(
-      originLat: pos.latitude,
-      originLng: pos.longitude,
-      destLat: journey.destination.latitude,
-      destLng: journey.destination.longitude,
-    );
+
+    // Use the prefetched route if it matches this destination — no network call.
+    RouteResultModel? route = mapProvider.currentRoute;
+    final isCachedForThisDestination = route != null &&
+        route.coordinates.isNotEmpty &&
+        _coordinatesMatch(
+          route.coordinates.last,
+          journey.destination.longitude,
+          journey.destination.latitude,
+        );
+
+    if (isCachedForThisDestination) {
+      print('✅ Using prefetched route — skipping fetch');
+    } else {
+      print('🌐 No prefetched route — fetching now');
+      route = await mapProvider.fetchRoute(
+        originLat: pos.latitude,
+        originLng: pos.longitude,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+      );
+    }
 
     if (route == null || !mounted || _mapboxMap == null) return;
-
-    // Remove the straight-line placeholder layers
-    const soloSourceId = 'solo-route-source';
-    const soloBgId = 'solo-route-bg';
-    const soloLineId = 'solo-route-line';
-    try { await _mapboxMap!.style.removeStyleLayer(soloLineId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleLayer(soloBgId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleSource(soloSourceId); } catch (_) {}
 
     // Draw the actual road-following route
     const sourceId = 'actual-route-source';
@@ -365,6 +304,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     } catch (e) {
       print('⚠️ Failed to draw actual route: $e');
     }
+  }
+
+  /// True if a route's last coordinate is within ~110 m of the given target.
+  /// Used to detect whether a cached route was generated for the current
+  /// journey's destination. [coord] is [lng, lat].
+  bool _coordinatesMatch(List<double> coord, double destLng, double destLat) {
+    return (coord[0] - destLng).abs() < 0.001 &&
+        (coord[1] - destLat).abs() < 0.001;
   }
 
   /// Track the user's current position with bearing and a 3D driving tilt.
@@ -440,17 +387,6 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       _lastUpdateHash = currentHash;
       final isFirstUpdate = _lastSnapshot == null;
       _lastSnapshot = convoySnapshot;
-
-      // Once real convoy members are present, remove the solo placeholder
-      // route so it does not visually conflict with the convoy route.
-      if (convoySnapshot != null && convoySnapshot.members.isNotEmpty) {
-        try { await _mapboxMap!.style.removeStyleLayer('solo-route-line'); } catch (_) {}
-        if (!_canUseMap) return;
-        try { await _mapboxMap!.style.removeStyleLayer('solo-route-bg'); } catch (_) {}
-        if (!_canUseMap) return;
-        try { await _mapboxMap!.style.removeStyleSource('solo-route-source'); } catch (_) {}
-        if (!_canUseMap) return;
-      }
 
       if (convoySnapshot != null && currentUserId != null) {
         // Update convoy visualization with route line and member markers
@@ -816,6 +752,20 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               ),
             ),
           
+          // Route loading indicator — visible only while POST /maps/route is in flight
+          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 100,
+              left: 0,
+              right: 0,
+              child: Consumer<MapProvider>(
+                builder: (context, mapProvider, _) {
+                  if (!mapProvider.isFetchingRoute) return const SizedBox.shrink();
+                  return const _RouteLoadingPill();
+                },
+              ),
+            ),
+
           // Map Header - Top Overlay (when no active journey)
           if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
             const Align(
@@ -928,6 +878,59 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           )
         : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+class _RouteLoadingPill extends StatelessWidget {
+  const _RouteLoadingPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<TulinkColors>()!;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: colors.carbonBlack.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: colors.electricRed.withOpacity(0.45),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.0,
+                valueColor: AlwaysStoppedAnimation(colors.electricRed),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Calculating route',
+              style: GoogleFonts.rajdhani(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: colors.white,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
