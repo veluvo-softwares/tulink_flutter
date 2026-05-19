@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/convoy_snapshot.dart';
@@ -425,21 +426,22 @@ class JourneyProgressCard extends StatelessWidget {
     return (distance / avgSpeed) * 60; // Convert to minutes
   }
 
-  /// Calculate distance between two points using Haversine formula
-  double _calculateDistanceBetweenPoints(double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371.0; // Earth radius in kilometers
-    
-    final double lat1Rad = lat1 * (3.14159 / 180);
-    final double lat2Rad = lat2 * (3.14159 / 180);
-    final double deltaLatRad = (lat2 - lat1) * (3.14159 / 180);
-    final double deltaLonRad = (lon2 - lon1) * (3.14159 / 180);
-    
-    final double a = (deltaLatRad / 2).abs() * (deltaLatRad / 2).abs() +
-        lat1Rad.abs() * lat2Rad.abs() *
-        (deltaLonRad / 2).abs() * (deltaLonRad / 2).abs();
-    final double c = 2 * (a.abs()).abs();
-    
-    return earthRadius * c;
+  /// Calculate distance in kilometres between two coordinates using the
+  /// Haversine formula. Returns kilometres for direct display in the HUD.
+  double _calculateDistanceBetweenPoints(
+      double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadiusKm = 6371.0;
+    final double dLat = (lat2 - lat1) * math.pi / 180.0;
+    final double dLon = (lon2 - lon1) * math.pi / 180.0;
+    final double lat1Rad = lat1 * math.pi / 180.0;
+    final double lat2Rad = lat2 * math.pi / 180.0;
+
+    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1Rad) * math.cos(lat2Rad) *
+            math.sin(dLon / 2) * math.sin(dLon / 2);
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return earthRadiusKm * c;
   }
 
   /// Get distance a member is behind the convoy leader

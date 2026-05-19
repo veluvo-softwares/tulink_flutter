@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:provider/provider.dart';
 import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../maps/presentation/providers/map_provider.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
 import '../widgets/journey_preview_map.dart';
@@ -187,12 +189,59 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     );
   }
 
+  /// Prefetch the road-following route while the countdown is running.
+  ///
+  /// Fire-and-forget: if the fetch fails the map screen retries on its own
+  /// and shows its loading pill as a fallback.
+  void _prefetchRoute(Journey journey) {
+    final mapProvider = context.read<MapProvider>();
+
+    // Skip if a route is already cached for this destination.
+    final cached = mapProvider.currentRoute;
+    if (cached != null && cached.coordinates.isNotEmpty) {
+      final last = cached.coordinates.last;
+      final dx = (last[0] - journey.destination.longitude).abs();
+      final dy = (last[1] - journey.destination.latitude).abs();
+      if (dx < 0.001 && dy < 0.001) {
+        print('✅ Route already cached for this destination — skipping prefetch');
+        return;
+      }
+    }
+
+    unawaited(() async {
+      try {
+        final pos = await geo.Geolocator.getCurrentPosition(
+          locationSettings: const geo.LocationSettings(
+            accuracy: geo.LocationAccuracy.high,
+          ),
+        ).timeout(const Duration(seconds: 4));
+
+        print('🚀 Prefetching route during countdown');
+        await mapProvider.fetchRoute(
+          originLat: pos.latitude,
+          originLng: pos.longitude,
+          destLat: journey.destination.latitude,
+          destLng: journey.destination.longitude,
+        );
+        print('✅ Route prefetched and cached');
+      } catch (e) {
+        print('⚠️ Route prefetch failed — map screen will retry: $e');
+      }
+    }());
+  }
+
   void _startCountdownTimer() {
     _countdownAnimationController.forward();
-    
+
     // Haptic feedback for countdown start
     HapticFeedback.mediumImpact();
-    
+
+    // Kick off route prefetch during the countdown — see _prefetchRoute()
+    final journey = context.read<JourneyProvider>().currentJourney;
+    if (journey != null) {
+      _prefetchRoute(journey);
+    }
+
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_countdownValue > 1) {
         setState(() {
@@ -242,6 +291,32 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       _showGoMessage = false;
       _countdownValue = 5;
     });
+  }
+
+  /// Skip the countdown and start the journey as soon as the prefetched route
+  /// is ready. Caps the wait at 5 seconds so a failed prefetch never blocks.
+  Future<void> _onSkipCountdown() async {
+    _countdownTimer?.cancel();
+    _countdownAnimationController.stop();
+
+    setState(() {
+      _showGoMessage = true;
+    });
+
+    HapticFeedback.heavyImpact();
+    _countdownAnimationController.reset();
+    _countdownAnimationController.forward();
+
+    final mapProvider = context.read<MapProvider>();
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+
+    while (mapProvider.isFetchingRoute && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
+    }
+
+    if (!mounted) return;
+    await _onCountdownComplete();
   }
 
   void _navigateToEditJourney(Journey journey) {
@@ -967,22 +1042,59 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                             ),
                           ),
                           const SizedBox(height: 48),
-                          ElevatedButton(
-                            onPressed: _onCancelCountdown,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colors.silver.withOpacity(0.8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 32,
-                                vertical: 12,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton(
+                                onPressed: _onCancelCountdown,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: colors.silver.withOpacity(0.8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 28,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
-                            child: const Text(
-                              'Cancel',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(width: 16),
+                              ElevatedButton(
+                                onPressed: _onSkipCountdown,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: colors.electricRed,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 28,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.fast_forward, size: 18, color: Colors.white),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Skip',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ] else ...[
                           Text(

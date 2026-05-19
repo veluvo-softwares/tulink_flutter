@@ -22,21 +22,31 @@ class MapProvider with ChangeNotifier {
   RouteResultModel? _currentRoute;
   RouteResultModel? get currentRoute => _currentRoute;
 
+  bool _isFetchingRoute = false;
+  bool get isFetchingRoute => _isFetchingRoute;
+
   Future<RouteResultModel?> fetchRoute({
     required double originLat,
     required double originLng,
     required double destLat,
     required double destLng,
   }) async {
-    final result = await _routeDataSource.getRoute(
-      originLat: originLat,
-      originLng: originLng,
-      destLat: destLat,
-      destLng: destLng,
-    );
-    _currentRoute = result;
+    _isFetchingRoute = true;
     notifyListeners();
-    return result;
+
+    try {
+      final result = await _routeDataSource.getRoute(
+        originLat: originLat,
+        originLng: originLng,
+        destLat: destLat,
+        destLng: destLng,
+      );
+      _currentRoute = result;
+      return result;
+    } finally {
+      _isFetchingRoute = false;
+      notifyListeners();
+    }
   }
 
   void clearRoute() {
