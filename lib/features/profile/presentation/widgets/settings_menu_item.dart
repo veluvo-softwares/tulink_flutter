@@ -8,6 +8,7 @@ class SettingsMenuItem extends StatelessWidget {
   final Color? iconColor;
   final bool showArrow;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   const SettingsMenuItem({
     super.key,
@@ -17,6 +18,7 @@ class SettingsMenuItem extends StatelessWidget {
     this.iconColor,
     this.showArrow = true,
     this.onTap,
+    this.trailing,
   });
 
   @override
@@ -58,8 +60,10 @@ class SettingsMenuItem extends StatelessWidget {
                 ),
               ),
               
-              // Arrow
-              if (showArrow)
+              // Trailing widget or arrow
+              if (trailing != null)
+                trailing!
+              else if (showArrow)
                 Icon(
                   Icons.arrow_forward_ios,
                   color: colors.silver.withOpacity(0.6),

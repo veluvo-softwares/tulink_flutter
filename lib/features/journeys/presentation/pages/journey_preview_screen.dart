@@ -879,6 +879,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                     final currentUserId = context.read<AuthProvider>().user?.id;
                     final isLeader = currentUserId != null && journey.leaderId == currentUserId;
                     final isActive = journey.status == JourneyStatus.ACTIVE;
+                    final isPending = journey.status == JourneyStatus.PENDING;
 
                     // Leader on an already-running journey: resume without re-starting
                     if (isLeader && isActive) {
@@ -914,14 +915,99 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                       );
                     }
 
-                    // Start Convoy — only for leader on a PENDING journey
+                    // Non-leader on an active journey: join the live map
+                    if (!isLeader && isActive) {
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+                              Navigator.of(context).pushReplacementNamed('/mapview');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colors.electricRed,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.directions_car, size: 24),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Join Journey',
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // Non-leader on a pending journey: waiting for leader banner
+                    if (!isLeader && isPending) {
+                      return Container(
+                        margin: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                        decoration: BoxDecoration(
+                          color: colors.cardDark,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: colors.brushedSteel.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(colors.electricRed),
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Waiting for leader to start',
+                                    style: TextStyle(
+                                      color: colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'You will be taken to the map automatically when the convoy departs',
+                                    style: TextStyle(
+                                      color: colors.silver,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // Leader on a pending journey: start countdown button
                     return Container(
                       padding: const EdgeInsets.all(16),
                       child: SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: _canStartJourney(journey) && !_showCountdown && !_isStartingJourney
+                          onPressed: !_showCountdown && !_isStartingJourney
                               ? _startJourneyCountdown
                               : null,
                           style: ElevatedButton.styleFrom(

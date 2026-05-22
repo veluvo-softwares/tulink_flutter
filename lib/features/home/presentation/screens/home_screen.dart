@@ -58,14 +58,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && mounted) {
       context.read<InviteProvider>().refreshInvitationsSilently();
     }
   }
 
   void _startInvitePolling() {
     _invitePollingTimer?.cancel();
-    _invitePollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _invitePollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (mounted) {
         context.read<InviteProvider>().refreshInvitationsSilently();
       }
@@ -104,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // Pre-join WebSocket room for any active journey we're a member of so
     // we receive the journey-started event while waiting on the home screen.
+    if (!mounted) return;
     _preJoinActiveJourneyRoom();
   }
 

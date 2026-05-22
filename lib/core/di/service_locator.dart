@@ -40,6 +40,7 @@ import '../../features/maps/data/repositories/map_repository_impl.dart';
 import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
+import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
 import '../network/dio_client.dart';
 import '../theme/theme_provider.dart';
@@ -69,6 +70,7 @@ class ServiceLocator {
   late MapRepository _mapRepository;
   late SearchPlacesUseCase _searchPlacesUseCase;
   late MapProvider _mapProvider;
+  late NavigationProvider _navigationProvider;
 
   // Journey Feature
   late JourneyRemoteDataSource _journeyRemoteDataSource;
@@ -112,6 +114,7 @@ class ServiceLocator {
   
   // Map Feature Getters
   MapProvider get mapProvider => _mapProvider;
+  NavigationProvider get navigationProvider => _navigationProvider;
   RouteRemoteDataSource get routeRemoteDataSource => _routeRemoteDataSource;
 
   // Journey Feature Getters
@@ -207,6 +210,7 @@ class ServiceLocator {
       _searchPlacesUseCase,
       _routeRemoteDataSource,
     );
+    _navigationProvider = NavigationProvider();
     _journeyProvider = JourneyProvider(
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
