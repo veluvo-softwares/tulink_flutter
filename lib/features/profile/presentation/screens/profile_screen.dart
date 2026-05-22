@@ -8,6 +8,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../analytics/presentation/providers/analytics_provider.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../journeys/presentation/utils/journey_navigation.dart';
+import '../../../maps/presentation/providers/navigation_provider.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/profile_stats_grid.dart';
 import '../widgets/settings_menu_item.dart';
@@ -169,6 +170,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Column(
                   children: [
+                    Consumer<NavigationProvider>(
+                      builder: (context, navProvider, _) {
+                        return SettingsMenuItem(
+                          icon: Icons.record_voice_over_outlined,
+                          title: 'Voice Navigation',
+                          showArrow: false,
+                          trailing: Switch(
+                            value: navProvider.isVoiceEnabled,
+                            onChanged: navProvider.setVoiceEnabled,
+                            activeColor: colors.electricRed,
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDivider(colors),
                     SettingsMenuItem(
                       icon: Icons.notifications_outlined,
                       title: 'Notifications',

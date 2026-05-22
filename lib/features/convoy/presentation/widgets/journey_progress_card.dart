@@ -16,6 +16,8 @@ class JourneyProgressCard extends StatelessWidget {
     required this.currentUserId,
     required this.isLeader,
     this.onEndJourney,
+    this.isExpanded = false,
+    this.onToggleExpanded,
   });
 
   final Journey journey;
@@ -23,6 +25,9 @@ class JourneyProgressCard extends StatelessWidget {
   final String currentUserId;
   final bool isLeader;
   final VoidCallback? onEndJourney;
+  /// When false the card renders as a compact pill to keep the map visible.
+  final bool isExpanded;
+  final VoidCallback? onToggleExpanded;
 
   /// Whether the current user is one of the members marked ARRIVED.
   bool get _currentUserArrived {
@@ -43,7 +48,59 @@ class JourneyProgressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<TulinkColors>()!;
-    
+    return isExpanded ? _buildExpanded(colors) : _buildCollapsedPill(colors);
+  }
+
+  /// Compact single-row pill — keeps the map largely unobstructed while
+  /// driving.  Tapping it expands to the full card.
+  Widget _buildCollapsedPill(TulinkColors colors) {
+    return GestureDetector(
+      onTap: onToggleExpanded,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        decoration: BoxDecoration(
+          color: colors.carbonBlack,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.location_on, color: colors.electricRed, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  journey.destinationAddress,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildProgressBadge(colors),
+              const SizedBox(width: 8),
+              Icon(Icons.keyboard_arrow_up, color: colors.silver, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Full expanded card — stats, participants, action button.
+  Widget _buildExpanded(TulinkColors colors) {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -72,7 +129,8 @@ class JourneyProgressCard extends StatelessWidget {
             if (_shouldShowWaitingBanner) ...[
               const SizedBox(height: 12),
               _buildWaitingBanner(colors),
-            ] else if (convoySnapshot != null && convoySnapshot!.laggingMembers.isNotEmpty) ...[
+            ] else if (convoySnapshot != null &&
+                convoySnapshot!.laggingMembers.isNotEmpty) ...[
               const SizedBox(height: 12),
               _buildStatusMessage(colors),
             ],
@@ -86,15 +144,33 @@ class JourneyProgressCard extends StatelessWidget {
     );
   }
 
-  /// Build header with destination name
+  /// Build header with destination name and collapse chevron.
   Widget _buildHeader(TulinkColors colors) {
-    return Text(
-      journey.destinationAddress,
-      style: GoogleFonts.inter(
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        color: colors.white,
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            journey.destinationAddress,
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: colors.white,
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: onToggleExpanded,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Icon(
+              Icons.keyboard_arrow_down,
+              color: colors.silver,
+              size: 24,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

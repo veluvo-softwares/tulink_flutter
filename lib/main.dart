@@ -16,6 +16,7 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/maps/presentation/providers/map_provider.dart';
+import 'features/maps/presentation/providers/navigation_provider.dart';
 import 'features/journeys/presentation/providers/journey_provider.dart';
 import 'features/invites/presentation/providers/invite_provider.dart';
 
@@ -157,6 +158,10 @@ class MyApp extends StatelessWidget {
         // Map Provider
         ChangeNotifierProvider<MapProvider>.value(
           value: serviceLocator.mapProvider,
+        ),
+        // Navigation Provider
+        ChangeNotifierProvider<NavigationProvider>.value(
+          value: serviceLocator.navigationProvider,
         ),
         // Journey Provider
         ChangeNotifierProvider<JourneyProvider>.value(

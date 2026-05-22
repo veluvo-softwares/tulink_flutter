@@ -44,6 +44,8 @@ class InviteProvider extends ChangeNotifier {
   bool _isLoadingInvitations = false;
   bool get isLoadingInvitations => _isLoadingInvitations;
 
+  DateTime? _lastRefreshedAt;
+
   String? _invitationsError;
   String? get invitationsError => _invitationsError;
 
@@ -131,17 +133,27 @@ class InviteProvider extends ChangeNotifier {
     }
 
     _isLoadingInvitations = false;
+    _lastRefreshedAt = DateTime.now();
     notifyListeners();
   }
 
   /// Silently refresh invitations in the background without showing the
   /// loading indicator. Used by the home screen polling timer so the badge
   /// count updates automatically without causing a full-screen spinner.
+  ///
+  /// Debounced to at most once per 30 seconds to prevent rapid duplicate
+  /// network calls from overlapping sources (timer + lifecycle + init).
   Future<void> refreshInvitationsSilently() async {
     if (_isLoadingInvitations) return;
+    final now = DateTime.now();
+    if (_lastRefreshedAt != null &&
+        now.difference(_lastRefreshedAt!) < const Duration(seconds: 30)) {
+      return;
+    }
     final result = await getInvitationsUseCase();
     if (result.isSuccess && result.data != null) {
       _invitations = result.data!;
+      _lastRefreshedAt = DateTime.now();
       notifyListeners();
     }
   }
