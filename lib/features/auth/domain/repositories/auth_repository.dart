@@ -48,4 +48,11 @@ abstract class AuthRepository {
 
   /// Delete user account
   Future<({bool success, Failure? failure})> deleteAccount();
+
+  /// Trigger sending the verification email for the authenticated user.
+  Future<({bool success, Failure? failure})> sendEmailVerification();
+
+  /// Fetch the live user profile and return whether emailVerified is true.
+  /// Always bypasses local cache — calls remote directly.
+  Future<({bool isEmailVerified, Failure? failure})> checkEmailVerification();
 }
