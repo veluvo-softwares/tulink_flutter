@@ -13,6 +13,7 @@ import 'core/navigation/app_router.dart';
 import 'core/navigation/main_navigation_screen.dart';
 import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/auth/presentation/providers/email_verification_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/maps/presentation/providers/map_provider.dart';
@@ -154,6 +155,10 @@ class MyApp extends StatelessWidget {
         // Auth Provider
         ChangeNotifierProvider<AuthProvider>.value(
           value: serviceLocator.authProvider,
+        ),
+        // Email Verification Provider
+        ChangeNotifierProvider<EmailVerificationProvider>.value(
+          value: serviceLocator.emailVerificationProvider,
         ),
         // Map Provider
         ChangeNotifierProvider<MapProvider>.value(
