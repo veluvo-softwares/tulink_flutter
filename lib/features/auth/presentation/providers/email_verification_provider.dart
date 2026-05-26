@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../../core/errors/failure.dart';
-import '../../../../core/services/car_toast_service.dart';
-import 'auth_provider.dart';
+import 'package:tulink_flutter/core/errors/failure.dart';
+import 'package:tulink_flutter/core/services/car_toast_service.dart';
+import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 
 /// State provider for the email verification screen.
 ///
