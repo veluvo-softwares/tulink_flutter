@@ -10,14 +10,16 @@ enum CarToastType {
   warning,
   /// Error toast (red)
   error,
+  /// Info toast (silver — neutral)
+  info,
 }
 
 /// A custom toast widget that animates like a car moving from left to right
 class CarToast extends StatefulWidget {
   /// Create a car toast with the specified message and type
   const CarToast({
-    super.key,
     required this.message,
+    super.key,
     this.type = CarToastType.success,
     this.duration = const Duration(seconds: 2),
     this.onDismiss,
@@ -70,7 +72,7 @@ class _CarToastState extends State<CarToast>
       end: Offset.zero, // Stop at normal position
     ).animate(CurvedAnimation(
       parent: _slideController,
-      curve: const Interval(0.0, 0.4, curve: Curves.easeOutCubic),
+      curve: const Interval(0, 0.4, curve: Curves.easeOutCubic),
     ));
 
     // Slide out to right (car exiting screen)
@@ -79,13 +81,13 @@ class _CarToastState extends State<CarToast>
       end: const Offset(1.2, 0), // Exit off-screen right
     ).animate(CurvedAnimation(
       parent: _slideController,
-      curve: const Interval(0.6, 1.0, curve: Curves.easeInCubic),
+      curve: const Interval(0.6, 1, curve: Curves.easeInCubic),
     ));
 
     // Fade animation for smooth appearance/disappearance
     _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
+      begin: 0,
+      end: 1,
     ).animate(_fadeController);
   }
 
@@ -124,10 +126,16 @@ class _CarToastState extends State<CarToast>
         return const Color(0xFFF59E0B); // Orange
       case CarToastType.error:
         return const Color(0xFFEF4444); // Red
+      case CarToastType.info:
+        return const Color(0xFFC8C8C8); // Silver
     }
   }
 
   Color _getTextColor() {
+    // Info toast uses dark text on silver background for legibility
+    if (widget.type == CarToastType.info) {
+      return Colors.black87;
+    }
     // High contrast white text for dark theme with colored accents
     return Colors.white;
   }
@@ -140,6 +148,8 @@ class _CarToastState extends State<CarToast>
         return Icons.warning;
       case CarToastType.error:
         return Icons.error;
+      case CarToastType.info:
+        return Icons.info_outline;
     }
   }
 

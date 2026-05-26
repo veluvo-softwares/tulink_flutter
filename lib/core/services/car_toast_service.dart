@@ -4,12 +4,12 @@ import 'package:tulink_flutter/core/widgets/car_toast.dart';
 
 /// A service for displaying animated car-like toast messages
 class CarToastService {
-  CarToastService._internal();
-  
-  static final CarToastService _instance = CarToastService._internal();
-  
   /// Get the singleton instance
   factory CarToastService() => _instance;
+
+  CarToastService._internal();
+
+  static final CarToastService _instance = CarToastService._internal();
 
   OverlayEntry? _currentToastEntry;
   bool _isToastVisible = false;
@@ -37,6 +37,15 @@ class CarToastService {
     _instance._showToast(
       message: message,
       type: CarToastType.error,
+      context: context,
+    );
+  }
+
+  /// Show an info toast (silver — neutral)
+  static void showInfo(String message, {BuildContext? context}) {
+    _instance._showToast(
+      message: message,
+      type: CarToastType.info,
       context: context,
     );
   }
@@ -82,9 +91,7 @@ class CarToastService {
           message: message,
           type: type,
           duration: duration,
-          onDismiss: () {
-            _dismissCurrentToast();
-          },
+          onDismiss: _dismissCurrentToast,
         ),
       ),
     );
@@ -134,5 +141,10 @@ extension CarToastExtension on BuildContext {
   /// Show an error toast
   void showErrorToast(String message) {
     CarToastService.showError(message, context: this);
+  }
+
+  /// Show an info toast
+  void showInfoToast(String message) {
+    CarToastService.showInfo(message, context: this);
   }
 }
