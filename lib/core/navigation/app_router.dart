@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tulink_flutter/main.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
+import 'package:tulink_flutter/features/auth/presentation/screens/verify_email_screen.dart';
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
@@ -52,6 +53,12 @@ class AppRouter {
       case AuthScreen.routeName:
         return _createRoute(
           const AuthScreen(),
+          settings,
+        );
+
+      case VerifyEmailScreen.routeName:
+        return _createRoute(
+          const VerifyEmailScreen(),
           settings,
         );
 
@@ -174,7 +181,10 @@ abstract class Routes {
   
   /// Authentication screen route
   static const String auth = AuthScreen.routeName;
-  
+
+  /// Email verification screen route
+  static const String verifyEmail = VerifyEmailScreen.routeName;
+
   /// Root route (alias for home)
   static const String root = '/';
 }

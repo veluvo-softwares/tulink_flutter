@@ -28,6 +28,7 @@ import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/data/services/auth_api_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/auth/presentation/providers/email_verification_provider.dart';
 import '../../features/journeys/data/datasources/journey_remote_data_source.dart';
 import '../../features/journeys/data/repositories/journey_repository_impl.dart';
 import '../../features/journeys/domain/repositories/journey_repository.dart';
@@ -61,6 +62,7 @@ class ServiceLocator {
   late AuthRemoteDataSource _authRemoteDataSource;
   late AuthRepository _authRepository;
   late AuthProvider _authProvider;
+  late EmailVerificationProvider _emailVerificationProvider;
   late ThemeProvider _themeProvider;
 
   // Map Feature
@@ -110,6 +112,8 @@ class ServiceLocator {
   AuthRemoteDataSource get authRemoteDataSource => _authRemoteDataSource;
   AuthRepository get authRepository => _authRepository;
   AuthProvider get authProvider => _authProvider;
+  EmailVerificationProvider get emailVerificationProvider =>
+      _emailVerificationProvider;
   ThemeProvider get themeProvider => _themeProvider;
   
   // Map Feature Getters
@@ -204,6 +208,7 @@ class ServiceLocator {
       acceptInvitationUseCase: AcceptInvitation(_inviteRepository),
     );
     _authProvider = AuthProvider(_authRepository);
+    _emailVerificationProvider = EmailVerificationProvider(_authProvider);
     _themeProvider = ThemeProvider();
     _mapProvider = MapProvider(
       _mapRepository,
