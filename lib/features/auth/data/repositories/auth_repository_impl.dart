@@ -261,7 +261,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<({bool success, Failure? failure})> deleteAccount() async {
     try {
       await remoteDataSource.deleteAccount();
-      
+
       // Clear all local data
       await localDataSource.clearCachedUser();
       await localDataSource.clearCachedToken();
@@ -274,6 +274,36 @@ class AuthRepositoryImpl implements AuthRepository {
       return (
         success: false,
         failure: const ServerFailure(message: 'Account deletion failed'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool success, Failure? failure})> sendEmailVerification() async {
+    try {
+      await remoteDataSource.sendEmailVerification();
+      return (success: true, failure: null);
+    } on Failure catch (failure) {
+      return (success: false, failure: failure);
+    } catch (e) {
+      return (
+        success: false,
+        failure: const ServerFailure(message: 'Failed to send verification email'),
+      );
+    }
+  }
+
+  @override
+  Future<({bool isEmailVerified, Failure? failure})> checkEmailVerification() async {
+    try {
+      final result = await remoteDataSource.checkEmailVerification();
+      return (isEmailVerified: result, failure: null);
+    } on Failure catch (failure) {
+      return (isEmailVerified: false, failure: failure);
+    } catch (e) {
+      return (
+        isEmailVerified: false,
+        failure: const ServerFailure(message: 'Failed to check email verification'),
       );
     }
   }
