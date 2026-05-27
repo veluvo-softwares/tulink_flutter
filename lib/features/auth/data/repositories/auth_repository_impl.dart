@@ -297,6 +297,15 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<({bool isEmailVerified, Failure? failure})> checkEmailVerification() async {
     try {
       final result = await remoteDataSource.checkEmailVerification();
+      if (result) {
+        // Persist verified state to Hive so cold reboots load the correct flag.
+        final cachedUser = await localDataSource.getCachedUser();
+        if (cachedUser != null && !cachedUser.isEmailVerified) {
+          await localDataSource.cacheUser(
+            cachedUser.copyWith(isEmailVerified: true),
+          );
+        }
+      }
       return (isEmailVerified: result, failure: null);
     } on Failure catch (failure) {
       return (isEmailVerified: false, failure: failure);
