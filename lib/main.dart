@@ -1,3 +1,9 @@
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -23,11 +29,25 @@ import 'features/journeys/presentation/providers/journey_provider.dart';
 import 'features/invites/presentation/providers/invite_provider.dart';
 
 void main() {
-  // Keep main() synchronous and minimal. The native splash stays up while
-  // Dart loads. As soon as Flutter is ready we paint our own splash and run
-  // heavy initialization in the background.
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AppBootstrap());
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+
+    FlutterError.onError =
+        FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(!kDebugMode);
+
+    runApp(const AppBootstrap());
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 /// Boots the app: shows a splash, runs heavy init in the background, then
