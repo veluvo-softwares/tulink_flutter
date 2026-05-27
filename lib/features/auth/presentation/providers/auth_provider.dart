@@ -73,10 +73,11 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
-        
+
+        if (result.user?.isEmailVerified == true) {
+          CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
+        }
+
         return true;
       } else {
         _setFailure(result.failure);
@@ -114,10 +115,11 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
-        
+
+        if (result.user?.isEmailVerified == true) {
+          CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
+        }
+
         return true;
       } else {
         _setFailure(result.failure);
@@ -147,10 +149,6 @@ class AuthProvider extends ChangeNotifier {
         _user = null;
         _isSignedIn = false;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Successfully signed out. See you next time!');
-        
         return true;
       } else {
         _setFailure(result.failure);

@@ -15,6 +15,7 @@ import 'features/auth/data/models/user_model.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/providers/email_verification_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
+import 'features/auth/presentation/screens/verify_email_screen.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/maps/presentation/providers/map_provider.dart';
 import 'features/maps/presentation/providers/navigation_provider.dart';
@@ -227,6 +228,8 @@ class HomePage extends StatelessWidget {
 
           if (!authProvider.isSignedIn) {
             return const AuthScreen();
+          } else if (!authProvider.isEmailVerified) {
+            return const VerifyEmailScreen();
           } else {
             return const MainNavigationScreen();
           }
