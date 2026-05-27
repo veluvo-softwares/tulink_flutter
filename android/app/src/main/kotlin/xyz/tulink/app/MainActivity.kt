@@ -1,4 +1,4 @@
-package com.example.tulink_flutter
+package xyz.tulink.app
 
 import io.flutter.embedding.android.FlutterActivity
 
