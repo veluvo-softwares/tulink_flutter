@@ -73,10 +73,11 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
-        
+
+        if (result.user?.isEmailVerified == true) {
+          CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
+        }
+
         return true;
       } else {
         _setFailure(result.failure);
@@ -114,10 +115,11 @@ class AuthProvider extends ChangeNotifier {
         _user = result.user;
         _isSignedIn = true;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
-        
+
+        if (result.user?.isEmailVerified == true) {
+          CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
+        }
+
         return true;
       } else {
         _setFailure(result.failure);
@@ -147,10 +149,6 @@ class AuthProvider extends ChangeNotifier {
         _user = null;
         _isSignedIn = false;
         _setLoading(false);
-        
-        // Show success toast
-        CarToastService.showSuccess('Successfully signed out. See you next time!');
-        
         return true;
       } else {
         _setFailure(result.failure);
@@ -300,6 +298,54 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       _setFailure(const ServerFailure(message: 'Account deletion failed'));
       _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Whether the currently cached user has a verified email address.
+  bool get isEmailVerified => _user?.isEmailVerified ?? false;
+
+  /// Update the local user cache to reflect a verified email.
+  /// Called by EmailVerificationProvider when the poll confirms verification.
+  void markEmailVerified() {
+    if (_user == null) return;
+    _user = _user!.copyWith(isEmailVerified: true);
+    notifyListeners();
+  }
+
+  /// Trigger sending the verification email for the authenticated user.
+  /// Follows the resetPassword() pattern with _setLoading guards.
+  /// No toast from this method — EmailVerificationProvider handles toast messaging.
+  Future<bool> sendEmailVerification() async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.sendEmailVerification();
+
+      if (result.success) {
+        _setLoading(false);
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Failed to send verification email'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Check whether the currently signed-in user's email is verified.
+  /// Does NOT set isLoading — the 5-second background poll must not flicker UI.
+  /// Transient network errors return false and are silently retried by the polling timer.
+  Future<bool> checkEmailVerification() async {
+    try {
+      final result = await _authRepository.checkEmailVerification();
+      return result.isEmailVerified;
+    } catch (e) {
       return false;
     }
   }

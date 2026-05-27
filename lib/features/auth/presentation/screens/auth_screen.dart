@@ -4,6 +4,7 @@ import 'package:tulink_flutter/main.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
+import 'verify_email_screen.dart';
 
 /// Authentication screen with sign in and sign up functionality
 /// Implements Tu-Link motorsports-inspired design system
@@ -238,8 +239,8 @@ class _AuthScreenState extends State<AuthScreen>
           TextFormField(
             controller: _signUpNameController,
             decoration: const InputDecoration(
-              labelText: 'Full Name',
-              hintText: 'Enter your full name',
+              labelText: 'Display name',
+              hintText: 'Enter your display name',
               prefixIcon: Icon(Icons.person_outline),
             ),
             validator: (value) {
@@ -373,8 +374,11 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
-      // Navigate to home on successful sign in
-      Navigator.of(context).pushReplacementNamed(HomePage.routeName);
+      if (!authProvider.isEmailVerified) {
+        Navigator.of(context).pushReplacementNamed(VerifyEmailScreen.routeName);
+      } else {
+        Navigator.of(context).pushReplacementNamed(HomePage.routeName);
+      }
     } else {
       // Show error message via SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
@@ -399,8 +403,11 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
-      // Navigate to home on successful sign up
-      Navigator.of(context).pushReplacementNamed(HomePage.routeName);
+      if (!authProvider.isEmailVerified) {
+        Navigator.of(context).pushReplacementNamed(VerifyEmailScreen.routeName);
+      } else {
+        Navigator.of(context).pushReplacementNamed(HomePage.routeName);
+      }
     } else {
       // Show error message via SnackBar
       ScaffoldMessenger.of(context).showSnackBar(

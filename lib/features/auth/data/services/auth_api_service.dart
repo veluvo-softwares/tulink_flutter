@@ -85,6 +85,21 @@ class AuthApiService {
     );
   }
 
+  /// Trigger sending the verification email for the authenticated user.
+  Future<void> sendEmailVerification() {
+    return ApiHandler.performStandardVoidApiCall(
+      () => _dio.post<void>(ApiRoutes.sendEmailVerification),
+    );
+  }
+
+  /// Fetch the live user profile to check emailVerified status (bypasses cache).
+  Future<Map<String, dynamic>> checkEmailVerification() {
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
+      () => _dio.get<Map<String, dynamic>>(ApiRoutes.currentUser),
+      (data) => data,
+    );
+  }
+
   /// Update user profile
   /// Returns standardized response with updated user data
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> profileData) {

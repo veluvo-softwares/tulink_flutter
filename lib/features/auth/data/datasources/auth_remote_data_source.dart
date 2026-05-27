@@ -34,6 +34,12 @@ abstract class AuthRemoteDataSource {
   /// Verify email address
   Future<void> verifyEmail({required String token});
 
+  /// Trigger sending the verification email for the authenticated user.
+  Future<void> sendEmailVerification();
+
+  /// Fetch live profile to check emailVerified status (bypasses local cache).
+  Future<bool> checkEmailVerification();
+
   /// Update user profile
   Future<UserModel> updateProfile({
     String? name,
@@ -138,6 +144,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<void> verifyEmail({required String token}) async {
     // Execute API call through service
     await _authApiService.verifyEmail({'token': token});
+  }
+
+  @override
+  Future<void> sendEmailVerification() async {
+    await _authApiService.sendEmailVerification();
+  }
+
+  @override
+  Future<bool> checkEmailVerification() async {
+    final responseData = await _authApiService.checkEmailVerification();
+    return responseData['emailVerified'] as bool? ?? false;
   }
 
   @override
