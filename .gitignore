@@ -47,11 +47,24 @@ app.*.map.json
 # Dotenv files
 .env
 
+# Android signing
+android/key.properties
+*.jks
+*.keystore
+
 
 .planning/
 
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+**/fastlane/README.md
+vendor/bundle/
+.bundle/
+
 # Firebase
 .firebase/
-ios/GoogleService-Info.plist
 ios/Runner/GoogleService-Info.plist
 android/app/google-services.json

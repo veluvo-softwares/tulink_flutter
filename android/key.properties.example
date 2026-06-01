@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and fill in the values.
+# Keep key.properties out of git — it is in .gitignore.
+storeFile=/absolute/path/to/tulink-upload.jks
+storePassword=
+keyAlias=tulink-upload
+keyPassword=
