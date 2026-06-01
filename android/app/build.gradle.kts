@@ -62,10 +62,16 @@ android {
     buildTypes {
         release {
             val releaseSigning = signingConfigs.getByName("release")
-            signingConfig = if (releaseSigning.storeFile != null) {
-                releaseSigning
-            } else {
-                signingConfigs.getByName("debug")
+            signingConfig = when {
+                releaseSigning.storeFile != null -> releaseSigning
+                System.getenv("CI") != null -> throw GradleException(
+                    "Release signing: no keystore configured. " +
+                    "Ensure ANDROID_KEYSTORE_PATH and ANDROID_KEYSTORE_* env vars are set in CI.",
+                )
+                else -> {
+                    println("Release signing: no keystore found — using debug keystore for local build")
+                    signingConfigs.getByName("debug")
+                }
             }
         }
     }
