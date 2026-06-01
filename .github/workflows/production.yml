@@ -1,0 +1,46 @@
+name: Production · App Stores
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Production not yet wired
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain
+        run: |
+          echo "Production releases are not yet implemented."
+          echo "This workflow is scaffolding for a future PR that will:"
+          echo "  - Android: ship to Play Store internal track via fastlane supply"
+          echo "  - iOS: ship to App Store Connect via fastlane deliver/pilot"
+          echo "Remove the 'if: false' gates on the jobs below and fill in"
+          echo "the production lanes in android/fastlane/Fastfile and"
+          echo "ios/fastlane/Fastfile when ready."
+          exit 0
+
+  android-production:
+    name: Android · Play Store
+    needs: guard
+    if: false # gate — flip to true when prod lane is implemented
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "TODO: build AAB and run fastlane android production"
+
+  ios-production:
+    name: iOS · App Store
+    needs: guard
+    if: false # gate — flip to true when prod lane is implemented
+    runs-on: macos-latest
+    steps:
+      - run: echo "TODO: build signed IPA and run fastlane ios production"
