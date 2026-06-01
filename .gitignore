@@ -66,6 +66,5 @@ vendor/bundle/
 
 # Firebase
 .firebase/
-ios/GoogleService-Info.plist
 ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
