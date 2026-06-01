@@ -73,7 +73,7 @@ dependencies:
   permission_handler: ^11.3.1
 
   # Text to speech
-  flutter_tts: ^3.8.5
+  flutter_tts: ^4.2.5
   
   # Battery info for convoy metadata
   battery_plus: ^6.0.2
