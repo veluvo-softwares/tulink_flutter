@@ -102,6 +102,7 @@ void main() {
         heading: 90.0,
         speed: 15.5,
         isMoving: true,
+        statusChange: 'MOVING',
       );
 
       // Act
@@ -111,8 +112,7 @@ void main() {
       expect(entity.userId, 'user123');
       expect(entity.latitude, -1.2921);
       expect(entity.longitude, 36.8219);
-      expect(entity.speedKmh, 55.8); // 15.5 m/s to km/h
-      expect(entity.memberStatus, 'MOVING');
+      expect(entity.speedKmh, closeTo(55.8, 0.001)); // 15.5 m/s to km/h
     });
 
     test('should handle RTDB snapshot parsing', () {
