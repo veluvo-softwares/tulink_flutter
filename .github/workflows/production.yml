@@ -5,6 +5,21 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes for this version"
+        required: false
+        type: string
+      target_track:
+        description: "Play Store / App Store track (internal, alpha, beta, production)"
+        required: false
+        default: "internal"
+        type: string
+      rollout_percentage:
+        description: "Staged rollout percentage (1-100)"
+        required: false
+        default: "10"
+        type: string
 
 permissions:
   contents: read

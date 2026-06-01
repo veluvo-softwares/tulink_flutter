@@ -62,9 +62,12 @@ android {
     buildTypes {
         release {
             val releaseSigning = signingConfigs.getByName("release")
+            val isReleaseBuild = gradle.startParameter.taskNames.any {
+                it.contains("release", ignoreCase = true)
+            }
             signingConfig = when {
                 releaseSigning.storeFile != null -> releaseSigning
-                System.getenv("CI") != null -> throw GradleException(
+                System.getenv("CI") != null && isReleaseBuild -> throw GradleException(
                     "Release signing: no keystore configured. " +
                     "Ensure ANDROID_KEYSTORE_PATH and ANDROID_KEYSTORE_* env vars are set in CI.",
                 )
