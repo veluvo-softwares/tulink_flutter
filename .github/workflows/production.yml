@@ -34,13 +34,19 @@ jobs:
     needs: guard
     if: false # gate — flip to true when prod lane is implemented
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - run: echo "TODO: build AAB and run fastlane android production"
+      - name: Placeholder
+        run: |
+          echo "TODO: build AAB and run fastlane android production"
 
   ios-production:
     name: iOS · App Store
     needs: guard
     if: false # gate — flip to true when prod lane is implemented
     runs-on: macos-latest
+    environment: production
     steps:
-      - run: echo "TODO: build signed IPA and run fastlane ios production"
+      - name: Placeholder
+        run: |
+          echo "TODO: build signed IPA and run fastlane ios production"
