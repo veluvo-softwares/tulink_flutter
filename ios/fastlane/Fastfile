@@ -1,0 +1,80 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build an Ad Hoc IPA and distribute to Firebase App Distribution"
+  lane :beta do
+    firebase_app_id = ENV["FIREBASE_IOS_APP_ID"] ||
+      UI.user_error!("FIREBASE_IOS_APP_ID not set")
+    service_account_path = ENV["FIREBASE_SERVICE_ACCOUNT_PATH"] ||
+      UI.user_error!("FIREBASE_SERVICE_ACCOUNT_PATH not set")
+    release_notes = ENV["RELEASE_NOTES"] || `git log -1 --pretty=%B`.strip
+    groups = ENV["FAD_GROUPS"] || "tulink-alpha-testers"
+
+    keychain_name = "tulink-ci-keychain"
+    keychain_password = ENV["IOS_KEYCHAIN_PASSWORD"] ||
+      UI.user_error!("IOS_KEYCHAIN_PASSWORD not set")
+    cert_path = ENV["IOS_CERT_PATH"] ||
+      UI.user_error!("IOS_CERT_PATH not set (path to .p12)")
+    cert_password = ENV["IOS_CERT_PASSWORD"] ||
+      UI.user_error!("IOS_CERT_PASSWORD not set")
+    profile_path = ENV["IOS_PROVISIONING_PROFILE_PATH"] ||
+      UI.user_error!("IOS_PROVISIONING_PROFILE_PATH not set")
+
+    create_keychain(
+      name: keychain_name,
+      password: keychain_password,
+      default_keychain: false,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false,
+    )
+
+    import_certificate(
+      certificate_path: cert_path,
+      certificate_password: cert_password,
+      keychain_name: keychain_name,
+      keychain_password: keychain_password,
+    )
+
+    install_provisioning_profile(path: profile_path)
+
+    # flutter build ipa --no-codesign produces the .xcarchive; gym re-signs it.
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "ad-hoc",
+      skip_build_archive: true,
+      archive_path: "../build/ios/archive/Runner.xcarchive",
+      export_options: {
+        signingStyle: "manual",
+        provisioningProfiles: {
+          "xyz.tulink.app" => "Tu-Link Ad Hoc",
+        },
+      },
+      output_directory: "../build/ios/ipa",
+      output_name: "Runner.ipa",
+    )
+
+    firebase_app_distribution(
+      app: firebase_app_id,
+      ipa_path: "../build/ios/ipa/Runner.ipa",
+      service_credentials_file: service_account_path,
+      groups: groups,
+      release_notes: release_notes,
+    )
+
+    delete_keychain(name: keychain_name) if File.exist?(
+      File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
+    )
+  end
+
+  desc "Production release to App Store (NOT IMPLEMENTED YET)"
+  lane :production do
+    UI.user_error!(
+      "iOS production lane is not implemented yet. " \
+      "This batch is beta-only. Wire up `deliver` (App Store Connect) or " \
+      "`pilot` (TestFlight) in a future PR.",
+    )
+  end
+end
