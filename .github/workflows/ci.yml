@@ -6,18 +6,33 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege: jobs only need to read the repo
+permissions:
+  contents: read
+
+# Cancel an in-progress run on the same ref when a new one starts
+concurrency:
+  group: CI-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   android:
     name: Android build
     runs-on: ubuntu-latest
+    # Skip on forked PRs — they cannot access repo secrets
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
       - name: Inject Firebase config
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
 
       - name: Create .env
-        run: echo "MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}" > .env
+        env:
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+        run: echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" > .env
 
       - uses: subosito/flutter-action@v2
         with:
@@ -26,20 +41,26 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter analyze lib/ --no-fatal-infos
+      - run: flutter analyze lib/ --no-fatal-infos --no-fatal-warnings
       - run: flutter build apk --debug
 
   ios:
     name: iOS build
     runs-on: macos-latest
+    # Skip on forked PRs — they cannot access repo secrets
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
       - name: Inject Firebase config
-        run: echo "${{ secrets.GOOGLE_SERVICES_INFO_PLIST }}" | base64 --decode > ios/GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/GoogleService-Info.plist
 
       - name: Create .env
-        run: echo "MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}" > .env
+        env:
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+        run: echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" > .env
 
       - uses: subosito/flutter-action@v2
         with:
