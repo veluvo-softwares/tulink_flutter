@@ -72,7 +72,7 @@ dependencies:
   geolocator: ^13.0.1
   permission_handler: ^11.3.1
 
-  # Text to speach
+  # Text to speech
   flutter_tts: ^3.8.5
   
   # Battery info for convoy metadata
