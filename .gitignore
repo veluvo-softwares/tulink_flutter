@@ -47,6 +47,11 @@ app.*.map.json
 # Dotenv files
 .env
 
+# Android signing
+android/key.properties
+*.jks
+*.keystore
+
 
 .planning/
 
