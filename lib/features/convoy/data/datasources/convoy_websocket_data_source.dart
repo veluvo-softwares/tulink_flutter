@@ -206,9 +206,33 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     }
 
     _currentJourneyId = journeyId;
+
+    // Await joined-journey confirmation so we know whether the server actually
+    // added us to the room (vs silently rejecting with an error event).
+    final completer = Completer<void>();
+
+    late void Function(dynamic) onJoined;
+    onJoined = (data) {
+      _socket!.off('joined-journey', onJoined);
+      if (!completer.isCompleted) completer.complete();
+    };
+
+    _socket!.on('joined-journey', onJoined);
     _socket!.emit('join-journey', {'journeyId': journeyId});
-    
+
     print('🔌 Joining journey: $journeyId');
+
+    // 10-second timeout — if joined-journey never arrives (e.g. server rejected
+    // with an error event), log a warning and continue so a slow server doesn't
+    // block coordination indefinitely. The caller will surface the failure via
+    // missing snapshots and eventually fall back to REST polling.
+    await completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        _socket!.off('joined-journey', onJoined);
+        print('⚠️ join-journey timed out for $journeyId — server may have rejected membership');
+      },
+    );
   }
 
   @override
@@ -323,15 +347,24 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       print('🔌 Connection status: $status - ${data['message']}');
     });
 
-    // Error events
+    // Error events — covers both transport errors and server-emitted `error` events
+    // (e.g. join-journey rejected because isParticipant check failed)
     _socket!.onError((error) {
       print('❌ WebSocket error: $error');
       _updateConnectionState(ConvoyConnectionState.error);
     });
+    _socket!.on('error', (data) {
+      final message = data is Map ? data['message'] : data?.toString();
+      print('❌ Server error: $message');
+    });
 
     // Journey lifecycle events
     _socket!.on('joined-journey', (data) {
-      print('✅ Joined journey: ${data['journeyId']}');
+      final journeyId = data is Map ? data['journeyId'] : null;
+      print('✅ Joined journey: $journeyId');
+      // Emit an empty snapshot immediately so the provider has a non-null
+      // snapshot to work with while waiting for latest-locations.
+      _emitConvoySnapshot();
     });
 
     _socket!.on('left-journey', (data) {
@@ -403,7 +436,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     // Location update events
     _socket!.on('location-update', (data) {
-      _handleLocationUpdate(data as Map<String, dynamic>);
+      if (data is! Map) return;
+      _handleLocationUpdate(data.cast<String, dynamic>());
     });
 
     _socket!.on('location-update-ack', (data) {
@@ -412,7 +446,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     });
 
     _socket!.on('latest-locations', (data) {
-      _handleLatestLocations(data as Map<String, dynamic>);
+      if (data is! Map) return;
+      _handleLatestLocations(data.cast<String, dynamic>());
     });
 
     // Convoy alerts
@@ -476,11 +511,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       final userId = data['userId'] as String?;
       if (userId == null) return;
 
+      final locationMap = (data['location'] as Map?)?.cast<String, dynamic>();
+      if (locationMap == null) return;
+
       // Convert WebSocket format to MemberPosition
       final memberData = {
         'userId': userId,
-        'latitude': data['location']['latitude'],
-        'longitude': data['location']['longitude'],
+        'latitude': locationMap['latitude'],
+        'longitude': locationMap['longitude'],
         'timestamp': data['timestamp'],
         'accuracy': data['accuracy'],
         'heading': data['heading'],
@@ -509,8 +547,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// Handle latest locations event (initial state)
   void _handleLatestLocations(Map<String, dynamic> data) {
     try {
-      final locations = data['locations'] as Map<String, dynamic>?;
-      final destination = data['destination'] as Map<String, dynamic>?;
+      final locationsRaw = data['locations'];
+      final locations = locationsRaw is Map
+          ? locationsRaw.cast<String, dynamic>()
+          : null;
+      final destinationRaw = data['destination'];
+      final destination = destinationRaw is Map
+          ? destinationRaw.cast<String, dynamic>()
+          : null;
       final destinationAddress = data['destinationAddress'] as String?;
 
       // Clear and rebuild members map
@@ -518,9 +562,13 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
       if (locations != null) {
         for (final entry in locations.entries) {
-          final userId = entry.key;
-          final locationData = entry.value as Map<String, dynamic>;
-          
+          final userId = entry.key as String?;
+          if (userId == null) continue;
+          final locationData = entry.value is Map
+              ? (entry.value as Map).cast<String, dynamic>()
+              : null;
+          if (locationData == null) continue;
+
           try {
             final position = MemberPositionModel.fromJson({
               'userId': userId,
