@@ -127,11 +127,73 @@ class _AuthScreenState extends State<AuthScreen>
                   ],
                 ),
               ),
+
+              AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, _) {
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _tabController.index == 1
+                        ? _buildGuestButton()
+                        : const SizedBox.shrink(),
+                  );
+                },
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildGuestButton() {
+    final colors = Theme.of(context).extension<TulinkColors>()!;
+
+    return Column(
+      children: [
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            const Expanded(child: Divider()),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'or',
+                style: TextStyle(color: colors.silver),
+              ),
+            ),
+            const Expanded(child: Divider()),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Consumer<AuthProvider>(
+          builder: (context, authProvider, _) {
+            return OutlinedButton.icon(
+              onPressed: authProvider.isLoading ? null : _handleGuestSignIn,
+              icon: Icon(Icons.person_outline, color: colors.silver),
+              label: Text(
+                'Continue as Guest',
+                style: TextStyle(color: colors.silver),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: colors.silver),
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleGuestSignIn() async {
+    final success = await context.read<AuthProvider>().signInAsGuest();
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.of(context).pushReplacementNamed(HomePage.routeName);
+    }
   }
 
   Widget _buildSignInForm() {

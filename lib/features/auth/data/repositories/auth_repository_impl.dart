@@ -112,6 +112,38 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<({UserEntity? user, String? token, Failure? failure})>
+      signInAsGuest() async {
+    try {
+      final result = await remoteDataSource.signInAsGuest();
+
+      // Cache the user and token locally
+      await localDataSource.cacheUser(result.user);
+      await localDataSource.cacheToken(result.token);
+      await dioClient.saveAuthToken(result.token);
+
+      // Save refresh token if provided
+      if (result.refreshToken != null) {
+        await dioClient.saveRefreshToken(result.refreshToken!);
+      }
+
+      return (
+        user: result.user.toEntity(),
+        token: result.token,
+        failure: null,
+      );
+    } on Failure catch (failure) {
+      return (user: null, token: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        token: null,
+        failure: const ServerFailure(message: 'Guest sign-in failed'),
+      );
+    }
+  }
+
+  @override
   Future<({bool success, Failure? failure})> signOut() async {
     try {
       // Attempt remote sign out (optional, can continue if fails)

@@ -248,7 +248,7 @@ class HomePage extends StatelessWidget {
 
           if (!authProvider.isSignedIn) {
             return const AuthScreen();
-          } else if (!authProvider.isEmailVerified) {
+          } else if (!authProvider.isGuest && !authProvider.isEmailVerified) {
             return const VerifyEmailScreen();
           } else {
             return const MainNavigationScreen();
