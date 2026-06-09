@@ -37,6 +37,15 @@ class AuthApiService {
     );
   }
 
+  /// Sign in as a guest using Firebase Anonymous Authentication
+  /// Returns standardized response with anonymous user and tokens
+  Future<Map<String, dynamic>> signInAsGuest() {
+    return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
+      () => _dio.post<Map<String, dynamic>>(ApiRoutes.guestSignIn),
+      (data) => data,
+    );
+  }
+
   /// Sign out the current user
   /// Uses standardized void response format
   Future<void> signOut() {

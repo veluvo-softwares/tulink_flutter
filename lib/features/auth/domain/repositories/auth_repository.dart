@@ -18,6 +18,9 @@ abstract class AuthRepository {
     required String name,
   });
 
+  /// Sign in as a guest using Firebase Anonymous Authentication
+  Future<({UserEntity? user, String? token, Failure? failure})> signInAsGuest();
+
   /// Sign out the current user
   Future<({bool success, Failure? failure})> signOut();
 
