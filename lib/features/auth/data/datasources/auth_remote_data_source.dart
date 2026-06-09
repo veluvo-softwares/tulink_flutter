@@ -19,6 +19,9 @@ abstract class AuthRemoteDataSource {
     required String name,
   });
 
+  /// Sign in as a guest using Firebase Anonymous Authentication
+  Future<({UserModel user, String token, String? refreshToken})> signInAsGuest();
+
   /// Sign out the current user
   Future<void> signOut();
 
@@ -102,6 +105,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     print('📥 SignUp API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
     print('📥 SignUp API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
     
+    return (
+      user: authResponse.user,
+      token: authResponse.tokens.idToken,
+      refreshToken: authResponse.tokens.refreshToken,
+    );
+  }
+
+  @override
+  Future<({UserModel user, String token, String? refreshToken})>
+      signInAsGuest() async {
+    final responseData = await _authApiService.signInAsGuest();
+    final authResponse = AuthResponseModel.fromJson(responseData);
+
+    print(
+      '📥 GuestSignIn API Response - ID Token: '
+      '${authResponse.tokens.idToken.substring(0, 20)}...',
+    );
+
     return (
       user: authResponse.user,
       token: authResponse.tokens.idToken,
