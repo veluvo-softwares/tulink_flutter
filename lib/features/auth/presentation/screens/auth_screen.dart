@@ -128,7 +128,17 @@ class _AuthScreenState extends State<AuthScreen>
                 ),
               ),
 
-              _buildGuestButton(),
+              AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, _) {
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _tabController.index == 1
+                        ? _buildGuestButton()
+                        : const SizedBox.shrink(),
+                  );
+                },
+              ),
             ],
           ),
         ),

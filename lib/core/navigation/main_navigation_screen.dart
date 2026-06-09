@@ -49,8 +49,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               Container(
                 width: double.infinity,
                 color: colors.brushedSteel,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.of(context).padding.top + 8,
+                  16,
+                  8,
+                ),
                 child: Row(
                   children: [
                     Icon(Icons.person_outline, color: colors.silver, size: 16),

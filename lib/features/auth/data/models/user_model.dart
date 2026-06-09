@@ -86,7 +86,9 @@ class UserModel extends UserEntity {
           false,
       createdAt: _parseCreatedAt(json),
       updatedAt: _parseUpdatedAt(json),
-      isGuest: json['isGuest'] as bool? ?? false,
+      isGuest: json['isGuest'] as bool? ??
+          (json['displayName']?.toString() == 'Guest' &&
+              (json['email']?.toString() ?? '').isEmpty),
     );
   }
 
