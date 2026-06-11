@@ -11,6 +11,7 @@ class UserEntity extends Equatable {
     this.isEmailVerified = false,
     required this.createdAt,
     this.updatedAt,
+    this.isGuest = false,
   });
 
   final String id;
@@ -21,6 +22,7 @@ class UserEntity extends Equatable {
   final bool isEmailVerified;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final bool isGuest;
 
   @override
   List<Object?> get props => [
@@ -32,6 +34,7 @@ class UserEntity extends Equatable {
         isEmailVerified,
         createdAt,
         updatedAt,
+        isGuest,
       ];
 
   /// Create a copy of this entity with updated fields
@@ -44,6 +47,7 @@ class UserEntity extends Equatable {
     bool? isEmailVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isGuest,
   }) {
     return UserEntity(
       id: id ?? this.id,
@@ -54,6 +58,7 @@ class UserEntity extends Equatable {
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isGuest: isGuest ?? this.isGuest,
     );
   }
 }

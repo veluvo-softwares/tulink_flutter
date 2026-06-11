@@ -1,0 +1,3 @@
+app_identifier "xyz.tulink.app"
+apple_id ""  # left blank — CI uses cert/profile from secrets, not Apple ID auth
+team_id "29M86UUNK8"

@@ -305,6 +305,36 @@ class AuthProvider extends ChangeNotifier {
   /// Whether the currently cached user has a verified email address.
   bool get isEmailVerified => _user?.isEmailVerified ?? false;
 
+  /// Whether the current user is signed in as a guest (anonymous).
+  bool get isGuest => _user?.isGuest ?? false;
+
+  /// Sign in as a guest using Firebase Anonymous Authentication.
+  Future<bool> signInAsGuest() async {
+    _setLoading(true);
+    _clearFailure();
+
+    try {
+      final result = await _authRepository.signInAsGuest();
+
+      if (result.failure == null) {
+        _user = result.user;
+        _isSignedIn = true;
+        _setLoading(false);
+        CarToastService.showSuccess('Signed in as guest');
+        return true;
+      } else {
+        _setFailure(result.failure);
+        _setLoading(false);
+        CarToastService.showError(_getErrorMessage(result.failure));
+        return false;
+      }
+    } catch (e) {
+      _setFailure(const ServerFailure(message: 'Guest sign-in failed'));
+      _setLoading(false);
+      return false;
+    }
+  }
+
   /// Update the local user cache to reflect a verified email.
   /// Called by EmailVerificationProvider when the poll confirms verification.
   void markEmailVerified() {

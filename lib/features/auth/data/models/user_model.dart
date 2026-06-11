@@ -19,6 +19,7 @@ class UserModel extends UserEntity {
     this.isEmailVerified = false,
     required this.createdAt,
     this.updatedAt,
+    this.isGuest = false,
   }) : super(
           id: id,
           email: email,
@@ -28,6 +29,7 @@ class UserModel extends UserEntity {
           isEmailVerified: isEmailVerified,
           createdAt: createdAt,
           updatedAt: updatedAt,
+          isGuest: isGuest,
         );
 
   @HiveField(0)
@@ -65,6 +67,11 @@ class UserModel extends UserEntity {
   @override
   final DateTime? updatedAt;
 
+  @HiveField(8)
+  @JsonKey(name: 'isGuest')
+  @override
+  final bool isGuest;
+
   /// Create UserModel from JSON with robust error handling
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -72,12 +79,16 @@ class UserModel extends UserEntity {
       email: json['email']?.toString() ?? '',
       name: json['displayName']?.toString() ?? json['name']?.toString() ?? '',
       phoneNumber: json['phoneNumber']?.toString(),
-      profilePicture: json['profilePicture']?.toString() ?? 
-                      json['photoURL']?.toString(),
-      isEmailVerified: json['emailVerified'] as bool? ?? 
-                      json['email_verified'] as bool? ?? false,
+      profilePicture: json['profilePicture']?.toString() ??
+          json['photoURL']?.toString(),
+      isEmailVerified: json['emailVerified'] as bool? ??
+          json['email_verified'] as bool? ??
+          false,
       createdAt: _parseCreatedAt(json),
       updatedAt: _parseUpdatedAt(json),
+      isGuest: json['isGuest'] as bool? ??
+          (json['displayName']?.toString() == 'Guest' &&
+              (json['email']?.toString() ?? '').isEmpty),
     );
   }
 
@@ -88,7 +99,7 @@ class UserModel extends UserEntity {
       final parsed = DateTime.tryParse(json['createdAt'].toString());
       if (parsed != null) return parsed;
     }
-    
+
     // Firebase metadata structure
     if (json['metadata'] != null) {
       final metadata = json['metadata'] as Map<String, dynamic>;
@@ -97,24 +108,24 @@ class UserModel extends UserEntity {
         if (parsed != null) return parsed;
       }
     }
-    
+
     // Fallback alternatives
     if (json['created_at'] != null) {
       final parsed = DateTime.tryParse(json['created_at'].toString());
       if (parsed != null) return parsed;
     }
-    
+
     // Default to current time
     return DateTime.now();
   }
 
-  /// Parse updatedAt from various possible structures  
+  /// Parse updatedAt from various possible structures
   static DateTime? _parseUpdatedAt(Map<String, dynamic> json) {
     // Direct field
     if (json['updatedAt'] != null) {
       return DateTime.tryParse(json['updatedAt'].toString());
     }
-    
+
     // Firebase metadata structure
     if (json['metadata'] != null) {
       final metadata = json['metadata'] as Map<String, dynamic>;
@@ -122,12 +133,12 @@ class UserModel extends UserEntity {
         return DateTime.tryParse(metadata['lastSignInTime'].toString());
       }
     }
-    
+
     // Fallback alternatives
     if (json['updated_at'] != null) {
       return DateTime.tryParse(json['updated_at'].toString());
     }
-    
+
     return null;
   }
 
@@ -141,6 +152,7 @@ class UserModel extends UserEntity {
         isEmailVerified: entity.isEmailVerified,
         createdAt: entity.createdAt,
         updatedAt: entity.updatedAt,
+        isGuest: entity.isGuest,
       );
 
   /// Convert UserModel to JSON (uses generated method with JsonKey mappings)
@@ -156,6 +168,7 @@ class UserModel extends UserEntity {
         isEmailVerified: isEmailVerified,
         createdAt: createdAt,
         updatedAt: updatedAt,
+        isGuest: isGuest,
       );
 
   /// Create a copy with new values
@@ -169,6 +182,7 @@ class UserModel extends UserEntity {
     bool? isEmailVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? isGuest,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -179,6 +193,7 @@ class UserModel extends UserEntity {
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isGuest: isGuest ?? this.isGuest,
     );
   }
 }
