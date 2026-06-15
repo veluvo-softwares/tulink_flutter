@@ -6,6 +6,7 @@ import '../../../../core/utils/journey_stats_calculator.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../analytics/presentation/providers/analytics_provider.dart';
+import '../../../convoy/presentation/providers/convoy_provider.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../journeys/presentation/utils/journey_navigation.dart';
 import '../../../maps/presentation/providers/navigation_provider.dart';
@@ -525,6 +526,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
+              // Drop the WebSocket user channel so the next user on this device
+              // doesn't inherit this user's socket/room.
+              context.read<ConvoyProvider>().stopUserChannel();
               context.read<AuthProvider>().signOut();
             },
             child: Text(

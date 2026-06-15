@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
@@ -13,6 +14,9 @@ import 'package:tulink_flutter/features/journeys/presentation/pages/create_journ
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
+import 'package:tulink_flutter/core/services/car_toast_service.dart';
+import 'package:tulink_flutter/core/services/location_permission_service.dart';
+import 'package:tulink_flutter/core/services/push_notification_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import '../widgets/journey_card.dart';
 import '../widgets/journeys_card.dart';
@@ -28,12 +32,32 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _invitePollingTimer;
+  StreamSubscription<RemoteMessage>? _pushSub;
+  int _lastJourneyInviteTick = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Request location permission early (right after login lands on home) so
+      // it's already granted by the time a journey starts — we need to publish
+      // position the moment the convoy goes active. Best-effort: never blocks
+      // the home screen, and the convoy flow re-checks before starting anyway.
+      unawaited(LocationPermissionService.requestLocationPermission());
+
+      // Initialise push notifications (FCM) now that we're authenticated, and
+      // refresh the invite list when a push arrives so invites show up live.
+      if (mounted) {
+        final push = context.read<PushNotificationService>();
+        unawaited(push.init());
+        _pushSub = push.messages.listen(_onPushMessage);
+
+        // Open the WebSocket user channel for instant invite delivery while the
+        // app is open. FCM covers the backgrounded/closed case.
+        unawaited(context.read<ConvoyProvider>().startUserChannel());
+      }
+
       await _refreshData();
       // After refresh, if the server has no active journeys but _currentJourney
       // is still set (e.g. from a previous session), clear it.
@@ -52,8 +76,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _invitePollingTimer?.cancel();
+    _pushSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// A push arrived while the app is foregrounded on home — refresh the invite
+  /// list and surface a brief in-app banner so the user sees it immediately.
+  void _onPushMessage(RemoteMessage message) {
+    if (!mounted) return;
+    context.read<InviteProvider>().refreshInvitationsSilently();
+
+    final notification = message.notification;
+    final text = notification?.title ?? notification?.body;
+    if (text != null) {
+      CarToastService.showSuccess(text, context: context);
+    }
   }
 
   @override
@@ -76,6 +114,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final convoyProvider = context.watch<ConvoyProvider>();
+
+    // A journey-invite arrived over the WebSocket user channel — refresh the
+    // invite list and surface a banner without a reload.
+    if (convoyProvider.journeyInviteTick != _lastJourneyInviteTick) {
+      _lastJourneyInviteTick = convoyProvider.journeyInviteTick;
+      final invite = convoyProvider.lastJourneyInvite;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<InviteProvider>().refreshInvitationsSilently();
+        final journeyName = invite?['journeyName'] as String?;
+        CarToastService.showSuccess(
+          journeyName != null
+              ? 'New invite: $journeyName'
+              : 'You have a new journey invite',
+          context: context,
+        );
+      });
+    }
+
     if (convoyProvider.pendingJourneyStartedId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -116,10 +173,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (userId == null) return;
 
     for (final journey in journeyProvider.activeJourneys) {
-      if (journey.leaderId != userId) {
-        convoyProvider.joinJourneyRoom(journey.id);
-        break;
-      }
+      convoyProvider.joinJourneyRoom(journey.id);
+      break;
     }
   }
 

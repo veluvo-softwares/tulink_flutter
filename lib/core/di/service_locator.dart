@@ -44,6 +44,7 @@ import '../../features/maps/presentation/providers/map_provider.dart';
 import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
 import '../network/dio_client.dart';
+import '../services/push_notification_service.dart';
 import '../theme/theme_provider.dart';
 import '../auth/token_manager.dart';
 
@@ -104,8 +105,13 @@ class ServiceLocator {
   late FetchLatestSnapshot _fetchLatestSnapshot;
   late ConvoyProvider _convoyProvider;
 
+  // Push notifications (FCM)
+  late PushNotificationService _pushNotificationService;
+
   // Getters for accessing dependencies
   DioClient get dioClient => _dioClient;
+  PushNotificationService get pushNotificationService =>
+      _pushNotificationService;
   Box<dynamic> get authBox => _authBox;
   AuthApiService get authApiService => _authApiService;
   AuthLocalDataSource get authLocalDataSource => _authLocalDataSource;
@@ -153,6 +159,10 @@ class ServiceLocator {
     // Initialize network client
     _dioClient = DioClient();
     _dioClient.initialize();
+
+    // Push notifications (FCM). Initialised post-login by the home screen,
+    // which has the authenticated context needed to register the token.
+    _pushNotificationService = PushNotificationService(_dioClient.dio);
 
     // Initialize API services
     _authApiService = AuthApiService(_dioClient.dio);

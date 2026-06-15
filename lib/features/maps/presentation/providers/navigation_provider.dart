@@ -110,6 +110,7 @@ class NavigationProvider with ChangeNotifier {
   void loadRoute(RouteResultModel route) {
     print('🧭 NavigationProvider: loading new route');
     _activeRoute = route;
+    _currentProgress = null; // stale segment index from old route must not seed the new snap window
     _maneuverTracker.loadRoute(route);
     _offRouteDetector.reset();
     notifyListeners();

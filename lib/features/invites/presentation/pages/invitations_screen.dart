@@ -5,7 +5,9 @@ import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/journey_invitation.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
+import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
+import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 
 class InvitationsScreen extends StatefulWidget {
   static const String routeName = '/invitations';
@@ -37,17 +39,30 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     if (!mounted) return;
 
     if (accepted) {
-      // Pre-join the WebSocket room immediately so we are subscribed to the
-      // journey room before the leader taps Start — the journey is still
-      // PENDING here, so _preJoinActiveJourneyRoom() on the home screen
-      // would not yet pick it up.
-      context.read<ConvoyProvider>().joinJourneyRoom(invitation.journeyId);
-
       context.showSuccessToast('You joined "${invitation.journeyName}"!');
-      Navigator.of(context).pushNamed(
-        JourneyPreviewScreen.routeName,
-        arguments: invitation.journeyId,
-      );
+
+      // Fetch the journey to determine its current status.
+      await context.read<JourneyProvider>().fetchJourneyById(invitation.journeyId);
+      if (!mounted) return;
+
+      final journey = context.read<JourneyProvider>().currentJourney;
+
+      if (journey?.status == JourneyStatus.ACTIVE) {
+        // Journey already started — skip the preview and go straight to the map.
+        // startCoordination begins GPS publishing; it handles the case where
+        // joinJourneyRoom was called first (listener mode) by checking _isPublishing.
+        await context.read<ConvoyProvider>().startCoordination(invitation.journeyId);
+        if (!mounted) return;
+        Navigator.of(context).pushNamed('/mapview');
+      } else {
+        // Journey is still PENDING — pre-join the WS room so we receive the
+        // journey-started event when the leader taps Start, then show the preview.
+        context.read<ConvoyProvider>().joinJourneyRoom(invitation.journeyId);
+        Navigator.of(context).pushNamed(
+          JourneyPreviewScreen.routeName,
+          arguments: invitation.journeyId,
+        );
+      }
     } else {
       final error = context.read<InviteProvider>().acceptError;
       context.showErrorToast(error ?? 'Failed to accept invitation');
