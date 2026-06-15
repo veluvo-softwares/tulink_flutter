@@ -15,8 +15,8 @@ import 'package:tulink_flutter/features/journeys/presentation/providers/journey_
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
-import 'package:tulink_flutter/core/services/location_permission_service.dart';
 import 'package:tulink_flutter/core/services/push_notification_service.dart';
+import 'package:tulink_flutter/core/widgets/location_access_sheet.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import '../widgets/journey_card.dart';
 import '../widgets/journeys_card.dart';
@@ -40,11 +40,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Request location permission early (right after login lands on home) so
-      // it's already granted by the time a journey starts — we need to publish
-      // position the moment the convoy goes active. Best-effort: never blocks
-      // the home screen, and the convoy flow re-checks before starting anyway.
-      unawaited(LocationPermissionService.requestLocationPermission());
+      // Prime + request location first (right after login lands on home), with
+      // an explainer sheet to lift grant rates, so it's already granted by the
+      // time a journey starts. Awaited and sequenced BEFORE the push prompt
+      // below so two system permission dialogs never stack. The convoy flow
+      // still hard-gates location before starting.
+      if (mounted) {
+        await maybeShowLocationPriming(context);
+      }
 
       // Initialise push notifications (FCM) now that we're authenticated, and
       // refresh the invite list when a push arrives so invites show up live.

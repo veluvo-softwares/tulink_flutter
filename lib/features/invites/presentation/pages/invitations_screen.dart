@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
+import 'package:tulink_flutter/core/widgets/location_access_sheet.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/journey_invitation.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
@@ -49,8 +50,10 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
       if (journey?.status == JourneyStatus.ACTIVE) {
         // Journey already started — skip the preview and go straight to the map.
-        // startCoordination begins GPS publishing; it handles the case where
-        // joinJourneyRoom was called first (listener mode) by checking _isPublishing.
+        // startCoordination begins GPS publishing, so gate location first; a
+        // blocked user is routed to settings and does not enter the map.
+        if (!await ensureLocationReady(context)) return;
+        if (!mounted) return;
         await context.read<ConvoyProvider>().startCoordination(invitation.journeyId);
         if (!mounted) return;
         Navigator.of(context).pushNamed('/mapview');
