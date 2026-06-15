@@ -50,6 +50,16 @@ abstract class ConvoyWebSocketDataSource {
   /// Members who pre-joined the room should navigate to the map on receiving this.
   Stream<String> get journeyStartedStream;
 
+  /// Stream of `participant-accepted` events. Fires when an invited member
+  /// accepts; emits the current journeyId so the leader can refresh its
+  /// participant list live without a manual reload.
+  Stream<String> get participantAcceptedStream;
+
+  /// Stream of `journey-invite` events pushed to this user's per-user room when
+  /// someone invites them to a journey. Delivered on any connected socket, so
+  /// the invite list can update live without a reload.
+  Stream<Map<String, dynamic>> get journeyInviteStream;
+
   /// Send acknowledgment for received location update
   Future<void> acknowledgeUpdate(int sequenceNumber);
 
@@ -80,6 +90,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   final StreamController<JourneyEndedEvent> _journeyEndedController = StreamController.broadcast();
   final StreamController<ParticipantArrivedEvent> _participantArrivedController = StreamController.broadcast();
   final StreamController<String> _journeyStartedController = StreamController.broadcast();
+  final StreamController<String> _participantAcceptedController = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _journeyInviteController = StreamController.broadcast();
   
   // Convoy state
   final Map<String, MemberPosition> _members = {};
@@ -127,21 +139,52 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   Stream<String> get journeyStartedStream => _journeyStartedController.stream;
 
   @override
+  Stream<String> get participantAcceptedStream =>
+      _participantAcceptedController.stream;
+
+  @override
+  Stream<Map<String, dynamic>> get journeyInviteStream =>
+      _journeyInviteController.stream;
+
+  @override
   ConvoyConnectionState get connectionState => _connectionState;
 
   @override
   bool get isConnected => _socket?.connected ?? false;
 
-  @override
-  Future<void> connect(String firebaseToken) async {
-    if (isConnected) return;
+  /// Guards against opening duplicate sockets when multiple callers race to
+  /// connect (e.g. the user channel on home and convoy coordination). All
+  /// concurrent connect() calls await the same in-flight connection.
+  Future<void>? _connectingFuture;
 
+  @override
+  Future<void> connect(String firebaseToken) {
+    if (isConnected) return Future.value();
+
+    // A connection is already being established — reuse it instead of opening
+    // a second socket.
+    final inFlight = _connectingFuture;
+    if (inFlight != null) return inFlight;
+
+    final future = _doConnect(firebaseToken);
+    _connectingFuture = future;
+    return future.whenComplete(() => _connectingFuture = null);
+  }
+
+  Future<void> _doConnect(String firebaseToken) async {
     try {
       _intentionalDisconnect = false; // Reset flag when starting new connection
       // Fresh user-initiated connection — clear the short-lived counter so a
       // prior bad session doesn't immediately kill this one.
       _shortLivedConnections = 0;
       _updateConnectionState(ConvoyConnectionState.connecting);
+
+      // Dispose any stale socket before creating a new one so we never leak an
+      // orphaned connection that lingers in rooms on the server.
+      if (_socket != null) {
+        _socket!.dispose();
+        _socket = null;
+      }
 
       // Create Socket.IO client with authentication
       _socket = io.io(
@@ -404,6 +447,24 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
     });
 
+    _socket!.on('participant-accepted', (data) {
+      final userId = data is Map ? data['userId'] : null;
+      print('🤝 Participant accepted: $userId');
+      final journeyId = _currentJourneyId;
+      if (journeyId != null && !_participantAcceptedController.isClosed) {
+        _participantAcceptedController.add(journeyId);
+      }
+    });
+
+    // User-scoped event — arrives on any connected socket (we auto-join the
+    // backend's user room on connect), independent of the current journey.
+    _socket!.on('journey-invite', (data) {
+      print('📨 Journey invite received: $data');
+      if (data is Map && !_journeyInviteController.isClosed) {
+        _journeyInviteController.add(data.cast<String, dynamic>());
+      }
+    });
+
     // Participant events
     _socket!.on('participant-joined', (data) {
       final userId = data['userId'] as String?;
@@ -531,7 +592,11 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
       final position = MemberPositionModel.fromJson(memberData);
       _members[userId] = position.toEntity();
-      
+      print(
+        '📍 Peer location update from $userId '
+        '(${_members.length} members in convoy)',
+      );
+
       // Acknowledge the update
       final sequenceNumber = data['sequenceNumber'] as int?;
       if (sequenceNumber != null) {
@@ -547,7 +612,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// Handle latest locations event (initial state)
   void _handleLatestLocations(Map<String, dynamic> data) {
     try {
-      final locationsRaw = data['locations'];
+      final locationsRaw = data['participants'];
       final locations = locationsRaw is Map
           ? locationsRaw.cast<String, dynamic>()
           : null;
@@ -557,9 +622,11 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
           : null;
       final destinationAddress = data['destinationAddress'] as String?;
 
-      // Clear and rebuild members map
-      _members.clear();
-
+      // Merge the snapshot into the members map rather than clearing it. The
+      // snapshot can be incomplete (it only reflects what the server had cached
+      // at that moment), and it is broadcast to the whole room on every join —
+      // clearing here would wipe peers we've already received via live
+      // `location-update` events and reset everyone to a stale snapshot.
       if (locations != null) {
         for (final entry in locations.entries) {
           final userId = entry.key as String?;
@@ -570,11 +637,43 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
           if (locationData == null) continue;
 
           try {
+            // Coordinates arrive nested under 'location', not as flat keys.
+            final nested = (locationData['location'] as Map?)
+                ?.cast<String, dynamic>();
+            final lat = nested != null
+                ? (nested['latitude'] as num?)?.toDouble()
+                : (locationData['latitude'] as num?)?.toDouble();
+            final lng = nested != null
+                ? (nested['longitude'] as num?)?.toDouble()
+                : (locationData['longitude'] as num?)?.toDouble();
+
+            if (lat == null || lng == null) continue;
+
+            // Prefer an explicit userId in the payload (added in a future
+            // backend pass); for now the key is the internal participantId.
+            final memberId =
+                locationData['userId'] as String? ?? userId;
+
             final position = MemberPositionModel.fromJson({
-              'userId': userId,
-              ...locationData,
-            });
-            _members[userId] = position.toEntity();
+              'userId': memberId,
+              'latitude': lat,
+              'longitude': lng,
+              'timestamp': locationData['timestamp'],
+              'accuracy': locationData['accuracy'],
+              'heading': locationData['heading'],
+              'speed': locationData['speed'],
+              'altitude': locationData['altitude'],
+              'sequenceNumber': locationData['sequenceNumber'],
+              'priority': locationData['priority'],
+            }).toEntity();
+
+            // Upsert: never let an older snapshot position overwrite a fresher
+            // one we already have from a live update.
+            final existing = _members[memberId];
+            if (existing == null ||
+                position.timestamp >= existing.timestamp) {
+              _members[memberId] = position;
+            }
           } catch (e) {
             print('⚠️ Failed to parse location for $userId: $e');
           }
@@ -768,6 +867,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     if (!_journeyStartedController.isClosed) {
       await _journeyStartedController.close();
+    }
+
+    if (!_participantAcceptedController.isClosed) {
+      await _participantAcceptedController.close();
+    }
+
+    if (!_journeyInviteController.isClosed) {
+      await _journeyInviteController.close();
     }
   }
 }

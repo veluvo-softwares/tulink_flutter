@@ -10,6 +10,7 @@ import '../../../maps/presentation/providers/map_provider.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
 import '../widgets/journey_preview_map.dart';
+import '../../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../../convoy/presentation/providers/convoy_provider.dart';
 import 'invite_participants_screen.dart';
 
@@ -37,6 +38,11 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   late Animation<double> _countdownScale;
   bool _showGoMessage = false;
 
+  /// Last seen value of ConvoyProvider.participantAcceptedTick. When it changes
+  /// (an invited member accepted), we re-fetch the journey so the participant
+  /// list updates live without a manual reload.
+  int _lastParticipantAcceptedTick = 0;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +64,11 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     // Load journey details and initialize invitation provider when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JourneyProvider>().fetchJourneyById(widget.journeyId);
+
+      // Pre-join the WebSocket room so the leader is CONNECTED in Firestore
+      // before startJourney() fires. startCoordination() later detects
+      // _isSubscribed == true and only adds GPS publishing on top.
+      context.read<ConvoyProvider>().joinJourneyRoom(widget.journeyId);
     });
   }
 
@@ -67,6 +78,17 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     // Members waiting on this screen receive journey-started when the leader
     // starts. Navigate to the map immediately without any user action.
     final convoyProvider = context.watch<ConvoyProvider>();
+
+    // An invited member accepted — refresh the journey so the leader sees the
+    // updated participant status live (no manual reload needed).
+    if (convoyProvider.participantAcceptedTick != _lastParticipantAcceptedTick) {
+      _lastParticipantAcceptedTick = convoyProvider.participantAcceptedTick;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId);
+      });
+    }
+
     if (convoyProvider.pendingJourneyStartedId == widget.journeyId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -133,7 +155,20 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
 
   Future<void> _onCountdownComplete() async {
     if (!mounted) return;
-    
+
+    // Wait up to 1.5 s for the background joinJourneyRoom to complete its
+    // WebSocket handshake. If it doesn't connect in time we still proceed —
+    // the DISCONNECTED window will be small and the socket keeps retrying.
+    final convoy = context.read<ConvoyProvider>();
+    if (convoy.connectionState != ConvoyConnectionState.connected) {
+      final deadline = DateTime.now().add(const Duration(milliseconds: 1500));
+      while (mounted &&
+             DateTime.now().isBefore(deadline) &&
+             convoy.connectionState != ConvoyConnectionState.connected) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+
     setState(() {
       _isStartingJourney = true;
     });
@@ -141,18 +176,15 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     try {
       // Start the journey via backend API
       final success = await context.read<JourneyProvider>().startJourney(widget.journeyId);
-      
+
       if (success && mounted) {
         // Start convoy coordination in the background
         final convoyProvider = context.read<ConvoyProvider>();
-        
+
         // Initialize convoy coordination for real-time tracking
         print('🚀 Starting convoy coordination for journey: ${widget.journeyId}');
         convoyProvider.startCoordination(widget.journeyId);
-        
-        // Small delay to ensure convoy starts properly
-        await Future.delayed(const Duration(milliseconds: 500));
-        
+
         if (mounted) {
           // Navigate to convoy map screen (main map with convoy UI)
           Navigator.of(context).pushReplacementNamed(

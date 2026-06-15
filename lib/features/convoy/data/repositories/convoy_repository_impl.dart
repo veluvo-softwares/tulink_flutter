@@ -36,6 +36,9 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Timer? _fallbackPollingTimer;
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
+  // When true, the socket is kept alive across convoy stop so the user keeps
+  // receiving user-scoped events (journey invites) on the home screen.
+  bool _userChannelActive = false;
   // Prevents the fallback polling timer from restarting after a terminal
   // failure (e.g. journey ended, user kicked out). Reset only in stopCoordination().
   bool _terminalFailureDetected = false;
@@ -297,6 +300,42 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       _webSocketDataSource.journeyStartedStream;
 
   @override
+  Stream<String> get participantAcceptedStream =>
+      _webSocketDataSource.participantAcceptedStream;
+
+  @override
+  Stream<Map<String, dynamic>> get journeyInviteStream =>
+      _webSocketDataSource.journeyInviteStream;
+
+  @override
+  Future<void> connectUserChannel() async {
+    try {
+      _userChannelActive = true;
+      // Socket may already be up (e.g. mid-convoy) — connect() is a no-op then.
+      if (_webSocketDataSource.isConnected) return;
+
+      final token = await _tokenManager.getValidAuthToken();
+      if (token == null) {
+        print('❌ Cannot start user channel - no valid auth token');
+        return;
+      }
+      await _webSocketDataSource.connect(token);
+      print('🔌 User channel socket connected (invite delivery)');
+    } catch (e) {
+      print('❌ Failed to start user channel: $e');
+    }
+  }
+
+  @override
+  Future<void> disconnectUserChannel() async {
+    _userChannelActive = false;
+    // Only actually drop the socket if no journey is using it.
+    if (_currentJourneyId == null) {
+      await _webSocketDataSource.disconnect();
+    }
+  }
+
+  @override
   Future<void> stopCoordination() async {
     print('🛑 Stopping convoy coordination...');
     
@@ -316,11 +355,16 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     // Cancel WebSocket subscription
     await _webSocketSubscription?.cancel();
     _webSocketSubscription = null;
-    
-    // Disconnect WebSocket
-    await _webSocketDataSource.disconnect();
-    print('✅ WebSocket disconnected');
-    
+
+    // Disconnect WebSocket — unless the user channel wants it kept alive so the
+    // user keeps receiving journey invites on the home screen.
+    if (_userChannelActive) {
+      print('🔌 Keeping socket alive for user channel (invite delivery)');
+    } else {
+      await _webSocketDataSource.disconnect();
+      print('✅ WebSocket disconnected');
+    }
+
     // Reset state
     _isWebSocketConnected = false;
     _currentJourneyId = null;

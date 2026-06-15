@@ -48,4 +48,19 @@ abstract class ConvoyRepository {
   /// Members waiting on the home screen should navigate to the map on
   /// receiving this.
   Stream<String> get journeyStartedStream;
+
+  /// Fires (with the current journeyId) when an invited member accepts.
+  /// The leader uses this to refresh its participant list live.
+  Stream<String> get participantAcceptedStream;
+
+  /// Fires when the backend pushes a `journey-invite` to this user.
+  Stream<Map<String, dynamic>> get journeyInviteStream;
+
+  /// Connect the socket for user-scoped events (e.g. journey invites) without
+  /// joining a journey, and keep it alive across convoy start/stop so the user
+  /// keeps receiving invites while on the home screen. Idempotent.
+  Future<void> connectUserChannel();
+
+  /// Tear down the user-scoped channel (e.g. on logout).
+  Future<void> disconnectUserChannel();
 }

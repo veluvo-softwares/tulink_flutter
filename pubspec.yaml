@@ -79,6 +79,7 @@ dependencies:
   battery_plus: ^6.0.2
   firebase_core: ^4.9.0
   firebase_crashlytics: ^5.2.2
+  firebase_messaging: ^16.0.0
 
 dev_dependencies:
   flutter_test:

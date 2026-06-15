@@ -291,20 +291,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
   /// Fetch the road-following route from the backend and draw it on the map.
   /// Fails silently — the destination pin stays visible without a route line.
-  Future<void> _drawActualRoute(Journey journey) async {
+  Future<void> _drawActualRoute(
+    Journey journey, {
+    double? knownLat,
+    double? knownLng,
+  }) async {
     if (_mapboxMap == null) return;
 
-    // Get current GPS position as route origin
-    geo.Position? pos;
-    try {
-      pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
-        ),
-      ).timeout(const Duration(seconds: 5));
-    } catch (e) {
-      print('⚠️ Could not get position for route: $e');
-      return; // Keep the straight-line placeholder
+    // Prefer a position already in hand (e.g. from the live navigation stream)
+    // to avoid paying the GPS cold-start cost (up to 5s on Android) again.
+    double? originLat = knownLat;
+    double? originLng = knownLng;
+
+    if (originLat == null || originLng == null) {
+      geo.Position? pos;
+      try {
+        pos = await geo.Geolocator.getCurrentPosition(
+          locationSettings: const geo.LocationSettings(
+            accuracy: geo.LocationAccuracy.high,
+          ),
+        ).timeout(const Duration(seconds: 5));
+      } catch (e) {
+        print('⚠️ Could not get position for route: $e');
+        return; // Keep the straight-line placeholder
+      }
+      originLat = pos.latitude;
+      originLng = pos.longitude;
     }
 
     if (!mounted) return;
@@ -325,8 +337,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     } else {
       print('🌐 No prefetched route — fetching now');
       route = await mapProvider.fetchRoute(
-        originLat: pos.latitude,
-        originLng: pos.longitude,
+        originLat: originLat,
+        originLng: originLng,
         destLat: journey.destination.latitude,
         destLng: journey.destination.longitude,
       );
@@ -404,15 +416,22 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     if (!mounted) return;
     print('🧭 Handling reroute for journey ${journey.id}');
 
-    // Clear the cached route so _drawActualRoute fetches a fresh one
-    // rather than reusing the now-stale prefetched one.
-    if (!mounted) return;
+    // Grab the current position from the live navigation stream before clearing
+    // state. When off-route, snappedLatitude/Longitude holds the raw GPS
+    // coordinate (MapMatchingService returns raw when deviation > threshold),
+    // so it is the correct origin for the new route — and it's already in hand,
+    // avoiding a second GPS cold-start wait.
+    final progress = context.read<NavigationProvider>().currentProgress;
+    final knownLat = progress?.snappedLatitude;
+    final knownLng = progress?.snappedLongitude;
+
+    // Clear the cached route so _drawActualRoute fetches a fresh one.
     context.read<MapProvider>().clearRoute();
     // Reset throttle state so trim and puck start immediately on the new route.
     _lastTrimmedSegmentIndex = null;
     _lastTrimAt = null;
 
-    await _drawActualRoute(journey);
+    await _drawActualRoute(journey, knownLat: knownLat, knownLng: knownLng);
 
     final newRoute = context.read<MapProvider>().currentRoute;
     print('🧭 reroute fetched: ${newRoute?.coordinates.length ?? 0} coords');
@@ -701,26 +720,13 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     // Only update if the snapshot has changed
     if (currentHash != _lastUpdateHash) {
       _lastUpdateHash = currentHash;
-      final isFirstUpdate = _lastSnapshot == null;
       _lastSnapshot = convoySnapshot;
 
       if (convoySnapshot != null && currentUserId != null) {
-        // Update convoy visualization with route line and member markers
-        if (isFirstUpdate) {
-          await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
-          if (!_canUseMap) return;
-          await ConvoyRouteLine.addConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
-        } else {
-          await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
-          if (!_canUseMap) return;
-          await ConvoyRouteLine.updateConvoyRoute(_mapboxMap!, convoySnapshot, currentUserId);
-        }
-
+        await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
         print('✅ Updated convoy markers: ${convoySnapshot.members.length} members');
       } else {
         await ConvoyRouteLine.removeConvoyMarkers(_mapboxMap!);
-        if (!_canUseMap) return;
-        await ConvoyRouteLine.removeConvoyRoute(_mapboxMap!);
         print('✅ Removed convoy visualization');
         _lastSnapshot = null;
       }

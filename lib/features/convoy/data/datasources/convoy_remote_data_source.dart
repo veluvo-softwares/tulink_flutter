@@ -74,13 +74,39 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
       for (final entry in snapshotDto.locations.entries) {
         try {
           final locationData = entry.value as Map<String, dynamic>;
+
+          // Backend embeds coordinates under a nested 'location' object.
+          // Fall back to flat keys for any future schema that flattens them.
+          final nested =
+              (locationData['location'] as Map?)?.cast<String, dynamic>();
+          final lat = nested != null
+              ? (nested['latitude'] as num?)?.toDouble()
+              : (locationData['latitude'] as num?)?.toDouble();
+          final lng = nested != null
+              ? (nested['longitude'] as num?)?.toDouble()
+              : (locationData['longitude'] as num?)?.toDouble();
+
+          if (lat == null || lng == null) continue;
+
+          // Prefer an explicit userId in the payload (added in a future backend
+          // pass); fall back to the map key which is currently participantId.
+          final userId =
+              locationData['userId'] as String? ?? entry.key;
+
           final position = MemberPositionModel.fromJson({
-            'userId': entry.key,
-            ...locationData,
+            'userId': userId,
+            'latitude': lat,
+            'longitude': lng,
+            'timestamp': locationData['timestamp'],
+            'accuracy': locationData['accuracy'],
+            'heading': locationData['heading'],
+            'speed': locationData['speed'],
+            'altitude': locationData['altitude'],
+            'sequenceNumber': locationData['sequenceNumber'],
+            'priority': locationData['priority'],
           });
-          memberPositions[entry.key] = position.toEntity();
+          memberPositions[userId] = position.toEntity();
         } catch (e) {
-          // Skip invalid position data and continue
           print('⚠️ Failed to parse position for user ${entry.key}: $e');
         }
       }

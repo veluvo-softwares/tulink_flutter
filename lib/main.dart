@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -13,6 +14,7 @@ import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart
 
 import 'core/config/app_config.dart';
 import 'core/di/service_locator.dart';
+import 'core/services/push_notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/tulink_colors.dart';
 import 'core/navigation/app_router.dart';
@@ -28,10 +30,21 @@ import 'features/maps/presentation/providers/navigation_provider.dart';
 import 'features/journeys/presentation/providers/journey_provider.dart';
 import 'features/invites/presentation/providers/invite_provider.dart';
 
+/// Handles FCM messages that arrive while the app is in the background or
+/// terminated. Must be a top-level function. The OS renders the notification;
+/// this runs in a separate isolate, so keep it lightweight.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print('📦 FCM background message: ${message.messageId}');
+}
+
 void main() {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
     await Firebase.initializeApp();
+
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     FlutterError.onError =
         FirebaseCrashlytics.instance.recordFlutterFatalError;
@@ -204,6 +217,10 @@ class MyApp extends StatelessWidget {
         // Convoy Provider
         ChangeNotifierProvider.value(
           value: serviceLocator.convoyProvider,
+        ),
+        // Push notification service (FCM) — plain Provider, not a notifier.
+        Provider<PushNotificationService>.value(
+          value: serviceLocator.pushNotificationService,
         ),
       ],
       child: Consumer<ThemeProvider>(

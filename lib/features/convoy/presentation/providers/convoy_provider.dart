@@ -57,9 +57,14 @@ class ConvoyProvider extends ChangeNotifier {
   // GPS and location publishing
   StreamSubscription<Position>? _locationSubscription;
   DateTime? _lastPublishTime;
-  DateTime? _lastMovementTime;
-  bool _isInHeartbeatMode = false;
-  Timer? _heartbeatTimer;
+  Position? _lastKnownPosition;
+
+  /// Fixed-cadence beacon timer. Convoy members must keep publishing their
+  /// position even while stationary, otherwise they disappear from everyone
+  /// else's map. GPS movement events alone are insufficient because a still
+  /// device emits nothing.
+  Timer? _publishTimer;
+  static const Duration _publishInterval = Duration(seconds: 4);
 
   // Convoy stream subscriptions
   StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>? _convoySubscription;
@@ -67,6 +72,12 @@ class ConvoyProvider extends ChangeNotifier {
   StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
   StreamSubscription<ParticipantArrivedEvent>? _participantArrivedSubscription;
   StreamSubscription<String>? _journeyStartedSubscription;
+  StreamSubscription<String>? _participantAcceptedSubscription;
+
+  /// User-scoped invite subscription. Lives for the whole session (set up by
+  /// [startUserChannel]); deliberately NOT torn down by [stopCoordination],
+  /// which is journey-scoped.
+  StreamSubscription<Map<String, dynamic>>? _journeyInviteSubscription;
 
   /// Last journey-ended event received. Surfaced to the UI so screens can
   /// react (toast, navigate away) and clear after handling.
@@ -90,6 +101,22 @@ class ConvoyProvider extends ChangeNotifier {
   int get totalMemberCount => _totalMemberCount;
   ParticipantArrivedEvent? get lastArrivalEvent => _lastArrivalEvent;
 
+  /// Increments every time an invited member accepts (server `participant-accepted`
+  /// event) for the journey we're currently in. Screens showing the participant
+  /// list watch this and re-fetch the journey so the leader sees the accepted
+  /// state live, without a manual reload.
+  int _participantAcceptedTick = 0;
+  int get participantAcceptedTick => _participantAcceptedTick;
+
+  /// Increments every time the backend pushes a `journey-invite` to this user
+  /// over the WebSocket user channel. The home screen watches this to refresh
+  /// the invite list and show a banner without a reload. [lastJourneyInvite]
+  /// holds the payload of the most recent invite (journeyName, etc.).
+  int _journeyInviteTick = 0;
+  int get journeyInviteTick => _journeyInviteTick;
+  Map<String, dynamic>? _lastJourneyInvite;
+  Map<String, dynamic>? get lastJourneyInvite => _lastJourneyInvite;
+
   // Dependencies
   final Battery _battery = Battery();
 
@@ -108,8 +135,8 @@ class ConvoyProvider extends ChangeNotifier {
   /// no-op. If we're coordinating a *different* journey, that one is stopped
   /// first to avoid leaking subscriptions / GPS streams across journeys.
   Future<void> startCoordination(String journeyId) async {
-    // Already coordinating this journey — nothing to do.
-    if (_currentJourneyId == journeyId && _isSubscribed) {
+    // Already fully coordinating (subscribed + publishing GPS) — nothing to do.
+    if (_currentJourneyId == journeyId && _isSubscribed && _isPublishing) {
       return;
     }
 
@@ -134,11 +161,14 @@ class ConvoyProvider extends ChangeNotifier {
         throw permissionResult.failure ?? ConvoyFailure.locationPermissionDenied;
       }
 
-      // Start location publishing
+      // Start location publishing (GPS)
       await _startLocationPublishing(journeyId);
 
-      // Start convoy position streaming
-      _startConvoyStream(journeyId);
+      // Set up convoy streams only if not already subscribed (e.g. joinJourneyRoom
+      // was called first and streams are already running in listener mode).
+      if (!_isSubscribed) {
+        _startConvoyStream(journeyId);
+      }
 
       _isSubscribed = true;
       notifyListeners();
@@ -153,6 +183,38 @@ class ConvoyProvider extends ChangeNotifier {
       );
       _setError(failure.message);
     }
+  }
+
+  /// Open the user-scoped WebSocket channel so the user receives `journey-invite`
+  /// pushes live (e.g. while sitting on the home screen). Connects the socket
+  /// and keeps it alive across convoy start/stop. Idempotent — call once after
+  /// login. FCM covers the case where the app is backgrounded/closed.
+  Future<void> startUserChannel() async {
+    try {
+      await _repository.connectUserChannel();
+
+      _journeyInviteSubscription ??= _repository.journeyInviteStream.listen(
+        (invite) {
+          print('📨 ConvoyProvider: journey-invite $invite');
+          _lastJourneyInvite = invite;
+          _journeyInviteTick++;
+          notifyListeners();
+        },
+        onError: (Object error) {
+          print('❌ journey-invite stream error: $error');
+        },
+      );
+    } catch (e) {
+      print('❌ Failed to start user channel: $e');
+    }
+  }
+
+  /// Close the user-scoped channel (call on logout). Cancels the invite
+  /// subscription and drops the socket if no journey is using it.
+  Future<void> stopUserChannel() async {
+    await _journeyInviteSubscription?.cancel();
+    _journeyInviteSubscription = null;
+    await _repository.disconnectUserChannel();
   }
 
   /// Join a journey room to receive real-time events without starting GPS.
@@ -185,10 +247,9 @@ class ConvoyProvider extends ChangeNotifier {
     _locationSubscription = null;
     _isPublishing = false;
     
-    // Stop heartbeat timer
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _isInHeartbeatMode = false;
+    // Stop the fixed-cadence beacon timer
+    _publishTimer?.cancel();
+    _publishTimer = null;
     
     // Stop convoy streaming
     await _convoySubscription?.cancel();
@@ -210,6 +271,10 @@ class ConvoyProvider extends ChangeNotifier {
     await _journeyStartedSubscription?.cancel();
     _journeyStartedSubscription = null;
     _pendingJourneyStartedId = null;
+
+    // Stop participant-accepted monitoring
+    await _participantAcceptedSubscription?.cancel();
+    _participantAcceptedSubscription = null;
     
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -225,7 +290,7 @@ class ConvoyProvider extends ChangeNotifier {
     _snapshot = null;
     _connectionState = ConvoyConnectionState.disconnected;
     _lastPublishTime = null;
-    _lastMovementTime = null;
+    _lastKnownPosition = null;
     _currentJourneyId = null;
     _consecutivePublishFailures = 0;
     _arrivedCount = 0;
@@ -246,6 +311,16 @@ class ConvoyProvider extends ChangeNotifier {
     );
 
     try {
+      // Seed an initial position immediately so we beacon before the first
+      // movement event arrives (a still device emits nothing on its own).
+      try {
+        final initial = await Geolocator.getCurrentPosition();
+        _lastKnownPosition = initial;
+        await _publishLocation(journeyId, initial, false);
+      } catch (e) {
+        print('⚠️ Failed to get initial position: $e');
+      }
+
       _locationSubscription = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen(
@@ -256,6 +331,16 @@ class ConvoyProvider extends ChangeNotifier {
         },
       );
 
+      // Fixed-cadence beacon: republish the last known position on a steady
+      // interval even while stationary, so parked / just-joined members stay
+      // visible to the rest of the convoy.
+      _publishTimer?.cancel();
+      _publishTimer = Timer.periodic(_publishInterval, (_) {
+        final position = _lastKnownPosition;
+        if (position == null) return;
+        _publishLocation(journeyId, position, (position.speed ?? 0.0) > 0.5);
+      });
+
       _isPublishing = true;
       notifyListeners();
       
@@ -265,32 +350,19 @@ class ConvoyProvider extends ChangeNotifier {
     }
   }
 
-  /// Handle new GPS location with throttling and heartbeat logic
+  /// Handle a new GPS location from the movement stream. Caches the position
+  /// for the periodic beacon and publishes immediately (throttled to 1/sec)
+  /// for responsive live tracking while moving.
   Future<void> _handleLocationUpdate(String journeyId, Position position) async {
+    _lastKnownPosition = position;
+
     final now = DateTime.now();
-    final speed = position.speed ?? 0.0;
-    final isMoving = speed > 0.5; // Moving if speed > 0.5 m/s
+    final isMoving = (position.speed ?? 0.0) > 0.5; // Moving if speed > 0.5 m/s
 
-    // Update movement tracking
-    if (isMoving) {
-      _lastMovementTime = now;
-      if (_isInHeartbeatMode) {
-        _exitHeartbeatMode(); // Exit heartbeat mode when movement detected
-      }
-    }
-
-    // Check if we should throttle the update
+    // Throttle movement-driven publishes to max 1/sec; the periodic beacon
+    // guarantees a baseline cadence regardless of movement.
     if (_shouldThrottleUpdate(now, isMoving)) {
       return;
-    }
-
-    // Enter heartbeat mode if stationary for 15+ seconds
-    if (!isMoving && !_isInHeartbeatMode && _lastMovementTime != null) {
-      final timeSinceMovement = now.difference(_lastMovementTime!);
-      if (timeSinceMovement.inSeconds >= 15) {
-        _enterHeartbeatMode(journeyId);
-        return;
-      }
     }
 
     await _publishLocation(journeyId, position, isMoving);
@@ -302,29 +374,6 @@ class ConvoyProvider extends ChangeNotifier {
     
     final timeSinceLastPublish = now.difference(_lastPublishTime!);
     return timeSinceLastPublish.inMilliseconds < 1000; // Max 1 per second
-  }
-
-  /// Enter heartbeat mode (stationary for 15+ seconds)
-  void _enterHeartbeatMode(String journeyId) {
-    if (_isInHeartbeatMode) return;
-    
-    _isInHeartbeatMode = true;
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      Geolocator.getCurrentPosition().then((position) {
-        _publishLocation(journeyId, position, false);
-      }).catchError((error) {
-        print('⚠️ Heartbeat location update failed: $error');
-      });
-    });
-  }
-
-  /// Exit heartbeat mode when movement is detected
-  void _exitHeartbeatMode() {
-    if (!_isInHeartbeatMode) return;
-    
-    _isInHeartbeatMode = false;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
   }
 
   /// Publish location to backend.
@@ -529,6 +578,20 @@ class ConvoyProvider extends ChangeNotifier {
         print('❌ journey-started stream error: $error');
       },
     );
+
+    _participantAcceptedSubscription =
+        _repository.participantAcceptedStream.listen(
+      (journeyId) {
+        if (journeyId == _currentJourneyId) {
+          print('🤝 ConvoyProvider: participant-accepted for $journeyId');
+          _participantAcceptedTick++;
+          notifyListeners();
+        }
+      },
+      onError: (Object error) {
+        print('❌ participant-accepted stream error: $error');
+      },
+    );
   }
 
   /// Stops just the GPS publishing side (location stream + heartbeat) while
@@ -540,9 +603,8 @@ class ConvoyProvider extends ChangeNotifier {
     _locationSubscription = null;
     _isPublishing = false;
 
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _isInHeartbeatMode = false;
+    _publishTimer?.cancel();
+    _publishTimer = null;
   }
 
   /// Consume the last arrival event after the UI has reacted (toast,

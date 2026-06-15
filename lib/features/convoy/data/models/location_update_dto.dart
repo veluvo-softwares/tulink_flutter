@@ -138,8 +138,10 @@ class ConvoySnapshotDto {
 
   /// Create from JSON
   factory ConvoySnapshotDto.fromJson(Map<String, dynamic> json) {
+    // Backend sends 'participants' key; fall back to 'locations' for compat.
+    final raw = json['participants'] ?? json['locations'];
     return ConvoySnapshotDto(
-      locations: json['locations'] as Map<String, dynamic>? ?? {},
+      locations: raw is Map ? raw.cast<String, dynamic>() : {},
       destination: json['destination'] != null 
           ? LocationCoordinatesDto.fromJson(json['destination'] as Map<String, dynamic>)
           : null,
