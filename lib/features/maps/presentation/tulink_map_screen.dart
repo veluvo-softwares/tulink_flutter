@@ -84,6 +84,13 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   /// perceptually important.
   DateTime? _lastPuckUpdateAt;
 
+  /// Tracks the built-in Mapbox location puck's enabled state.
+  /// `null` = unknown (nothing applied yet). The custom snapped puck owns the
+  /// screen during navigation, so we keep the built-in puck off while a
+  /// journey is active — otherwise both render and you see the red + blue
+  /// double-marker. See [_setBuiltInPuckEnabled].
+  bool? _puckEnabled;
+
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
     _pointAnnotationManager = 
@@ -601,11 +608,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       try { await _mapboxMap!.style.removeStyleLayer(ringId); } catch (_) {}
       try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
       // Restore the built-in puck now that the custom one is gone.
-      try {
-        await _mapboxMap!.location.updateSettings(
-          LocationComponentSettings(enabled: true),
-        );
-      } catch (_) {}
+      await _setBuiltInPuckEnabled(true);
       return;
     }
 
@@ -616,6 +619,13 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       return;
     }
     _lastPuckUpdateAt = now;
+
+    // Keep the built-in puck off for the entire life of the snapped puck.
+    // Re-asserted on every (throttled) tick — but cheap: _setBuiltInPuckEnabled
+    // short-circuits once the state is applied, so this is a no-op after the
+    // first disable. A single failed disable can no longer leave the blue puck
+    // stranded under the red one.
+    await _setBuiltInPuckEnabled(false);
 
     final geoJson = jsonEncode({
       'type': 'Feature',
@@ -630,14 +640,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       final sourceExists =
           await _mapboxMap!.style.styleSourceExists(sourceId);
       if (!sourceExists) {
-        // Swap off the built-in puck now that our snapped puck is taking over.
-        // Prevents two overlapping dots during active navigation.
-        try {
-          await _mapboxMap!.location.updateSettings(
-            LocationComponentSettings(enabled: false),
-          );
-        } catch (_) {}
-
+        // Built-in puck is already disabled above; just add the snapped puck.
         await _mapboxMap!.style.addSource(
           GeoJsonSource(id: sourceId, data: geoJson),
         );
@@ -672,28 +675,47 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     }
   }
 
+  /// Set Mapbox's built-in location puck on/off, tracking the applied state so
+  /// we never spam the platform channel and so navigation can cheaply
+  /// re-assert "off" on every tick. Errors are logged, not swallowed — a
+  /// silent failure here is precisely what let the blue built-in puck leak
+  /// through alongside the red snapped puck (the double-marker bug).
+  Future<void> _setBuiltInPuckEnabled(bool enabled) async {
+    if (!_canUseMap) return;
+    // Already in the desired state — skip the redundant channel hop.
+    if (_puckEnabled == enabled) return;
+    try {
+      await _mapboxMap!.location.updateSettings(LocationComponentSettings(
+        enabled: enabled,
+        pulsingEnabled: enabled,
+        puckBearingEnabled: enabled,
+        puckBearing: PuckBearing.HEADING,
+      ));
+      _puckEnabled = enabled;
+    } catch (e) {
+      print('⚠️ Failed to set built-in puck enabled=$enabled: $e');
+    }
+  }
+
   /// Enable user location with proper permission and auth checks
   Future<void> _enableUserLocation(MapboxMap mapboxMap) async {
     try {
       // Check if user is authenticated
       final authProvider = context.read<AuthProvider>();
       final currentUser = authProvider.user;
-      
+
       if (currentUser == null) {
         print('⚠️ User not authenticated, skipping user location');
         return;
       }
-      
-      // Enable the built-in puck so the user's position is visible from the
-      // moment the map loads. _drawSnappedPuck will swap it off when active
-      // navigation produces a snapped position, then restore it on cleanup.
-      await mapboxMap.location.updateSettings(LocationComponentSettings(
-        enabled: true,
-        pulsingEnabled: true,
-        puckBearingEnabled: true,
-        puckBearing: PuckBearing.HEADING,
-      ));
-      
+
+      // Built-in puck is the DEFAULT self-marker — it must be visible whenever
+      // the custom snapped puck isn't drawn (journey overview, before driving
+      // starts, solo mode without live nav progress). _drawSnappedPuck switches
+      // it off only while it's actively rendering the red snapped puck, and
+      // restores it when navigation stops. Disabling it here would leave the
+      // user with no puck during the overview.
+      await _setBuiltInPuckEnabled(true);
       print('✅ User location component enabled for ${currentUser.id}');
     } catch (e) {
       print('❌ Failed to enable user location: $e');
@@ -708,6 +730,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final convoyProvider = context.read<ConvoyProvider>();
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.user?.id;
+    final currentName = authProvider.user?.name;
 
     // Get convoy snapshot filtered to exclude current user
     final convoySnapshot = currentUserId != null
@@ -768,7 +791,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       
       _activeJourneyId = currentJourney.id;
       _isConvoyCoordinationActive = true;
-      
+
+      // Note: do NOT disable the built-in puck here. It stays on until the
+      // snapped puck actually starts drawing (see _drawSnappedPuck), otherwise
+      // the user has no puck during the journey overview / pre-driving window.
+
       // Start convoy coordination
       convoyProvider.startCoordination(currentJourney.id);
 

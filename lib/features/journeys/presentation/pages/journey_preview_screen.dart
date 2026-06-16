@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:provider/provider.dart';
-import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../../core/widgets/location_access_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../maps/presentation/providers/map_provider.dart';
 import '../../domain/entities/journey.dart';
@@ -93,7 +93,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         convoyProvider.consumeJourneyStartedEvent();
-        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then((_) {
+        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then((_) async {
+          if (!mounted) return;
+          // Leader just started — gate location before we begin publishing.
+          if (!await ensureLocationReady(context)) return;
           if (!mounted) return;
           context.read<ConvoyProvider>().startCoordination(widget.journeyId);
           Navigator.of(context).pushReplacementNamed('/mapview');
@@ -110,36 +113,22 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   }
 
 
+  /// Gate location, then begin coordination and enter the live map. Used by the
+  /// Resume/Join buttons for journeys that are already ACTIVE — these start GPS
+  /// publishing immediately, so the location gate must pass first.
+  Future<void> _gateThenEnterMap() async {
+    if (!await ensureLocationReady(context)) return;
+    if (!mounted) return;
+    context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+    Navigator.of(context).pushReplacementNamed('/mapview');
+  }
+
   Future<void> _startJourneyCountdown() async {
-    // Ensure location permission is granted BEFORE the countdown begins —
-    // the convoy goes ACTIVE on the backend once the countdown completes.
-    final hasPermission =
-        await LocationPermissionService.hasLocationPermission();
-
-    if (!hasPermission) {
-      final result =
-          await LocationPermissionService.requestLocationPermission();
-
-      if (!result.granted) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result.failure?.message ??
-                    'Location access is required to start a convoy.',
-              ),
-              backgroundColor: Colors.red,
-              action: SnackBarAction(
-                label: 'Settings',
-                textColor: Colors.white,
-                onPressed: LocationPermissionService.openAppSettings,
-              ),
-            ),
-          );
-        }
-        return; // Do not start countdown
-      }
-    }
+    // Hard location gate BEFORE the countdown begins — the convoy goes ACTIVE
+    // on the backend once the countdown completes, so a user with location off
+    // or denied must never reach that point. The gate surfaces a settings
+    // hand-off sheet and we abort before any backend calls.
+    if (!await ensureLocationReady(context)) return;
 
     if (!mounted) return;
 
@@ -921,10 +910,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: () {
-                              context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-                              Navigator.of(context).pushReplacementNamed('/mapview');
-                            },
+                            onPressed: _gateThenEnterMap,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colors.electricRed,
                               shape: RoundedRectangleBorder(
@@ -955,10 +941,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: () {
-                              context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-                              Navigator.of(context).pushReplacementNamed('/mapview');
-                            },
+                            onPressed: _gateThenEnterMap,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: colors.electricRed,
                               shape: RoundedRectangleBorder(

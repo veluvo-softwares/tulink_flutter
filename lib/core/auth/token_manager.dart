@@ -425,28 +425,34 @@ class TokenManager {
   /// Calculate refresh token expiry (typically longer than access token)
   String? _calculateRefreshTokenExpiry(String refreshToken) {
     try {
-      // Try to decode JWT refresh token
+      // Some backends issue a JWT refresh token with a real `exp` — honour it.
       final parts = refreshToken.split('.');
       if (parts.length >= 2) {
         String payload = parts[1];
         while (payload.length % 4 != 0) {
           payload += '=';
         }
-        
+
         final decoded = base64Decode(payload);
         final payloadJson = jsonDecode(utf8.decode(decoded)) as Map<String, dynamic>;
-        
+
         if (payloadJson.containsKey('exp')) {
           final exp = payloadJson['exp'] as int;
           return DateTime.fromMillisecondsSinceEpoch(exp * 1000).toIso8601String();
         }
       }
     } catch (e) {
-      // JWT parsing failed, fall back to estimate
+      // Not a JWT — fall through.
     }
 
-    // Default refresh token expiry (7 days from now)
-    return DateTime.now().add(const Duration(days: 7)).toIso8601String();
+    // Firebase refresh tokens are opaque (not JWTs) and do not expire on a
+    // fixed clock; they remain valid until the server revokes them. Returning
+    // null records "no client-known expiry" so getValidRefreshToken never
+    // discards a still-valid token. The server stays authoritative: a revoked
+    // token fails at the refresh endpoint, which clears tokens and triggers
+    // onAuthLost. (Previously this returned a 7-day cap, which silently logged
+    // users out a week after sign-in even though their token was still good.)
+    return null;
   }
 
   /// Check if a token is expired
