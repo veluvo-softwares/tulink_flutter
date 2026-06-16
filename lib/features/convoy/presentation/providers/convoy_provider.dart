@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show visibleForTesting;
@@ -303,12 +304,54 @@ class ConvoyProvider extends ChangeNotifier {
   }
 
 
+  /// Build platform-specific location settings that keep GPS alive while the
+  /// app is backgrounded or the screen is off during a journey.
+  ///
+  /// - Android: runs the position stream inside a foreground service with a
+  ///   persistent notification (required by the OS to track in the background)
+  ///   and a wake lock so sampling continues with the screen off.
+  /// - iOS: enables background location updates with the blue status-bar
+  ///   indicator. "While Using" permission is sufficient with this flag set;
+  ///   we do not require "Always". Auto-pause is disabled so a stationary
+  ///   device doesn't silently stop the convoy beacon.
+  LocationSettings _buildLocationSettings() {
+    const accuracy = LocationAccuracy.high;
+    const distanceFilter = 5; // metres
+
+    if (Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: accuracy,
+        distanceFilter: distanceFilter,
+        forceLocationManager: false,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Journey in progress',
+          notificationText: 'Tu-Link is sharing your location with your convoy.',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    }
+
+    if (Platform.isIOS) {
+      return AppleSettings(
+        accuracy: accuracy,
+        distanceFilter: distanceFilter,
+        activityType: ActivityType.automotiveNavigation,
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+        pauseLocationUpdatesAutomatically: false,
+      );
+    }
+
+    return const LocationSettings(
+      accuracy: accuracy,
+      distanceFilter: distanceFilter,
+    );
+  }
+
   /// Start GPS location publishing with throttling
   Future<void> _startLocationPublishing(String journeyId) async {
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5, // Emit on 5m movement
-    );
+    final locationSettings = _buildLocationSettings();
 
     try {
       // Seed an initial position immediately so we beacon before the first
