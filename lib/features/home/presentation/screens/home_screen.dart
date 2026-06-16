@@ -35,6 +35,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<RemoteMessage>? _pushSub;
   int _lastJourneyInviteTick = 0;
 
+  /// Guards the resume-on-launch prompt so it fires at most once per app
+  /// session — not on every home rebuild, tab switch, or background/resume.
+  bool _resumePrompted = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +73,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           journeyProvider.clearCurrentJourney();
         }
       }
+
+      // Resume an in-progress journey after a relaunch / force-close: if the
+      // server still lists an ACTIVE journey for this user, surface it on home
+      // and offer a one-tap return to the live map.
+      if (mounted) _maybeResumeActiveJourney();
+
       _startInvitePolling();
     });
   }
@@ -525,14 +535,149 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Navigate to map screen to continue an active journey
   void _continueActiveJourney(dynamic journey) {
     final journeyProvider = context.read<JourneyProvider>();
-    
+
     // Set this journey as the current journey
     if (journey is Journey) {
       journeyProvider.setCurrentJourney(journey);
     }
-    
+
     // Navigate directly to map screen for active journey
     Navigator.of(context).pushNamed('/mapview');
+  }
+
+  /// On launch, if the server still reports an ACTIVE journey for this user
+  /// (the journey kept running while the app was backgrounded/force-closed),
+  /// promote it to the current journey so the home banner shows, and offer a
+  /// one-tap return to the live map. The map screen re-starts convoy
+  /// coordination on mount, so resuming is just navigation.
+  void _maybeResumeActiveJourney() {
+    if (_resumePrompted) return;
+
+    final journeyProvider = context.read<JourneyProvider>();
+
+    // Prefer an already-current active journey; otherwise the first ACTIVE
+    // journey the server returned for this user.
+    Journey? resume;
+    final current = journeyProvider.currentJourney;
+    if (current != null && current.status == JourneyStatus.ACTIVE) {
+      resume = current;
+    } else {
+      for (final j in journeyProvider.activeJourneys) {
+        if (j.status == JourneyStatus.ACTIVE) {
+          resume = j;
+          break;
+        }
+      }
+    }
+    if (resume == null) return;
+
+    _resumePrompted = true;
+
+    // Surface it on home (active-journey card) even if the user dismisses the
+    // prompt — a cold launch leaves currentJourney null otherwise.
+    journeyProvider.setCurrentJourney(resume);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showResumeJourneySheet(resume!);
+    });
+  }
+
+  Future<void> _showResumeJourneySheet(Journey journey) async {
+    final colors = Theme.of(context).tulinkColors;
+
+    final shouldResume = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: colors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: colors.silver.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: colors.electricRed.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.navigation_rounded,
+                    color: colors.electricRed, size: 32),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Journey in progress',
+                style: TextStyle(
+                  color: colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You have a live journey to '
+                '${journey.destinationAddress.isNotEmpty ? journey.destinationAddress : 'your destination'}. '
+                'Jump back in to keep your convoy in sync.',
+                style: TextStyle(color: colors.silver, fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colors.electricRed,
+                    foregroundColor: colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(sheetContext).pop(true),
+                  child: const Text(
+                    'Resume journey',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 48,
+                child: TextButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(false),
+                  child: Text(
+                    'Not now',
+                    style: TextStyle(
+                      color: colors.silver,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (shouldResume == true && mounted) {
+      _continueActiveJourney(journey);
+    }
   }
 
   void _navigateToProfile() {
