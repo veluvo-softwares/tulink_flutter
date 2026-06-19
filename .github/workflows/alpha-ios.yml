@@ -79,3 +79,31 @@ jobs:
 
       - name: Compute build number
         run: echo "BUILD_NUMBER=$((${{ github.run_number }} + 1000))" >> $GITHUB_ENV
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: Pod install
+        run: cd ios && pod install
+
+      - name: Build signed archive
+        run: flutter build ipa --release --no-codesign --build-number=$BUILD_NUMBER --build-name=1.0.1
+
+      - name: Distribute via Fastlane
+        working-directory: ios
+        env:
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes || github.event.head_commit.message }}
+        run: bundle exec fastlane ios testflight
+
+      - name: Cleanup secrets
+        if: always()
+        run: |
+          rm -f $HOME/ios-signing/tulink-distribution.p12
+          rm -f $HOME/ios-signing/TuLink_App_Store.mobileprovision
+          rm -f $HOME/ios-signing/asc-api-key.p8
+          rm -f ios/Runner/GoogleService-Info.plist
