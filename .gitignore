@@ -52,6 +52,13 @@ android/key.properties
 *.jks
 *.keystore
 
+# iOS / Apple signing secrets — never commit
+ios testflight distribution files/
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+
 
 .planning/
 
