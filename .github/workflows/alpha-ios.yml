@@ -1,0 +1,81 @@
+name: Alpha · iOS · TestFlight
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes (overrides commit message)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-distribute:
+    name: Build & distribute to TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          cache: true
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Inject Firebase config
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+
+      - name: Write .env
+        env:
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+        run: echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" > .env
+
+      - name: Decode iOS signing certificate
+        env:
+          IOS_CERT_P12: ${{ secrets.IOS_CERT_P12 }}
+        run: |
+          mkdir -p $HOME/ios-signing
+          echo "$IOS_CERT_P12" | base64 --decode > $HOME/ios-signing/tulink-distribution.p12
+          echo "IOS_CERT_PATH=$HOME/ios-signing/tulink-distribution.p12" >> $GITHUB_ENV
+
+      - name: Decode provisioning profile
+        env:
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          mkdir -p $HOME/ios-signing
+          echo "$IOS_PROVISIONING_PROFILE" | base64 --decode > $HOME/ios-signing/TuLink_App_Store.mobileprovision
+          echo "IOS_PROVISIONING_PROFILE_PATH=$HOME/ios-signing/TuLink_App_Store.mobileprovision" >> $GITHUB_ENV
+
+      - name: Decode App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          mkdir -p $HOME/ios-signing
+          echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode > $HOME/ios-signing/asc-api-key.p8
+          echo "APP_STORE_CONNECT_API_KEY_PATH=$HOME/ios-signing/asc-api-key.p8" >> $GITHUB_ENV
+
+      - name: Compute build number
+        run: echo "BUILD_NUMBER=$((${{ github.run_number }} + 1000))" >> $GITHUB_ENV
