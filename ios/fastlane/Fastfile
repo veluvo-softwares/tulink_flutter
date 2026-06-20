@@ -21,6 +21,10 @@ platform :ios do
       UI.user_error!("APP_STORE_CONNECT_API_KEY_ID not set")
     api_issuer_id = ENV["APP_STORE_CONNECT_API_ISSUER_ID"] ||
       UI.user_error!("APP_STORE_CONNECT_API_ISSUER_ID not set")
+    # `flutter build ipa --no-codesign` produces a team-less archive, so the
+    # export step must be told the team explicitly or xcodebuild fails with
+    # "exportArchive No Team Found in Archive".
+    team_id = ENV["APPLE_TEAM_ID"] || "29M86UUNK8"
 
     begin
       create_keychain(
@@ -59,8 +63,10 @@ platform :ios do
         export_method: "app-store",
         skip_build_archive: true,
         archive_path: "../build/ios/archive/Runner.xcarchive",
+        export_team_id: team_id,
         export_options: {
           signingStyle: "manual",
+          teamID: team_id,
           provisioningProfiles: {
             "xyz.tulink.app" => profile_name,
           },
