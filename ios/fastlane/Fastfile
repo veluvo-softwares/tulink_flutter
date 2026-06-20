@@ -1,6 +1,87 @@
 default_platform(:ios)
 
 platform :ios do
+  desc "Build an App Store-signed IPA and upload it to TestFlight"
+  lane :testflight do
+    # Unique name prevents collisions when jobs run concurrently on the same host.
+    keychain_name = "tulink-ci-#{Time.now.to_i}"
+    keychain_password = ENV["IOS_KEYCHAIN_PASSWORD"] ||
+      UI.user_error!("IOS_KEYCHAIN_PASSWORD not set")
+    cert_path = ENV["IOS_CERT_PATH"] ||
+      UI.user_error!("IOS_CERT_PATH not set (path to .p12)")
+    cert_password = ENV["IOS_CERT_PASSWORD"] ||
+      UI.user_error!("IOS_CERT_PASSWORD not set")
+    profile_path = ENV["IOS_PROVISIONING_PROFILE_PATH"] ||
+      UI.user_error!("IOS_PROVISIONING_PROFILE_PATH not set")
+    profile_name = ENV["IOS_PROVISIONING_PROFILE_NAME"] ||
+      UI.user_error!("IOS_PROVISIONING_PROFILE_NAME not set")
+    api_key_path = ENV["APP_STORE_CONNECT_API_KEY_PATH"] ||
+      UI.user_error!("APP_STORE_CONNECT_API_KEY_PATH not set (path to .p8)")
+    api_key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"] ||
+      UI.user_error!("APP_STORE_CONNECT_API_KEY_ID not set")
+    api_issuer_id = ENV["APP_STORE_CONNECT_API_ISSUER_ID"] ||
+      UI.user_error!("APP_STORE_CONNECT_API_ISSUER_ID not set")
+
+    begin
+      create_keychain(
+        name: keychain_name,
+        password: keychain_password,
+        default_keychain: false,
+        unlock: true,
+        timeout: 3600,
+        lock_when_sleeps: false,
+      )
+
+      import_certificate(
+        certificate_path: cert_path,
+        certificate_password: cert_password,
+        keychain_name: keychain_name,
+        keychain_password: keychain_password,
+      )
+
+      install_provisioning_profile(path: profile_path)
+
+      api_key = app_store_connect_api_key(
+        key_id: api_key_id,
+        issuer_id: api_issuer_id,
+        key_filepath: api_key_path,
+        duration: 500,
+        in_house: false,
+      )
+
+      # Re-signs the workflow-produced .xcarchive (flutter build ipa --no-codesign
+      # --build-number=$BUILD_NUMBER) rather than rebuilding it, so the unique
+      # build number stamped by the workflow survives into the uploaded IPA.
+      build_app(
+        workspace: "Runner.xcworkspace",
+        scheme: "Runner",
+        configuration: "Release",
+        export_method: "app-store",
+        skip_build_archive: true,
+        archive_path: "../build/ios/archive/Runner.xcarchive",
+        export_options: {
+          signingStyle: "manual",
+          provisioningProfiles: {
+            "xyz.tulink.app" => profile_name,
+          },
+        },
+        output_directory: "../build/ios/ipa",
+        output_name: "Runner.ipa",
+      )
+
+      upload_to_testflight(
+        api_key: api_key,
+        ipa: "../build/ios/ipa/Runner.ipa",
+        skip_waiting_for_build_processing: true,
+        skip_submission: true,
+        distribute_external: false,
+      )
+    ensure
+      delete_keychain(name: keychain_name) rescue nil
+    end
+  end
+
+  # DEPRECATED: superseded by the :testflight lane below. Kept as a working ad-hoc/Firebase fallback; not wired into any CI workflow.
   desc "Build an Ad Hoc IPA and distribute to Firebase App Distribution"
   lane :beta do
     firebase_app_id = ENV["FIREBASE_IOS_APP_ID"] ||
