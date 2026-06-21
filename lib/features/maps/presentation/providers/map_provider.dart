@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
+import '../../../../core/constants/map_constants.dart';
 import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
 import '../../domain/repositories/map_repository.dart';
@@ -70,6 +71,20 @@ class MapProvider with ChangeNotifier {
   bool get isSearching => _isSearching;
   String? get searchError => _searchError;
 
+  // The location-bias coordinate used for the most recent search (live →
+  // last-known → Nairobi default). Exposed so the search UI can flag results
+  // that are implausibly far from the user. Never null after a search runs.
+  double? _searchBiasLat;
+  double? _searchBiasLng;
+
+  /// Latitude of the bias point used for the most recent search, or null if
+  /// no search has run yet.
+  double? get searchBiasLat => _searchBiasLat;
+
+  /// Longitude of the bias point used for the most recent search, or null if
+  /// no search has run yet.
+  double? get searchBiasLng => _searchBiasLng;
+
   Future<void> loadMarathonData() async {
     // Marathon data is deprecated
     _marathonRoute = null;
@@ -92,22 +107,17 @@ class MapProvider with ChangeNotifier {
     _searchError = null;
     notifyListeners();
 
-    // Acquire current position for location bias — fail silently
-    geo.Position? pos;
-    try {
-      pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.low, // Low accuracy is fine for bias
-        ),
-      ).timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // No coordinates — search still works, just unbiased
-    }
+    // Resolve a location-bias coordinate so the query is never sent unbiased:
+    // live fix → last-known position → Nairobi default. Logged by source only
+    // (never coordinates) to preserve privacy.
+    final bias = await _resolveSearchBias();
+    _searchBiasLat = bias.latitude;
+    _searchBiasLng = bias.longitude;
 
     final result = await _searchPlacesUseCase(
       trimmedQuery,
-      lat: pos?.latitude,
-      lng: pos?.longitude,
+      lat: bias.latitude,
+      lng: bias.longitude,
     );
 
     _isSearching = false;
@@ -123,6 +133,44 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
   }
   
+  /// Resolve a location-bias coordinate for place search, trying in order:
+  /// a live low-accuracy fix (short timeout) → the last-known position →
+  /// [kDefaultMapCenter]. Always returns a coordinate so a search is never
+  /// sent unbiased. Logs only which source was used, never the coordinates.
+  Future<MapCoordinate> _resolveSearchBias() async {
+    // 1. Live fix — low accuracy is fine for biasing; short timeout so a cold
+    //    GPS doesn't stall the search.
+    try {
+      final pos = await geo.Geolocator.getCurrentPosition(
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.low,
+        ),
+      ).timeout(const Duration(seconds: 3));
+      print('✅ bias: live');
+      return MapCoordinate(latitude: pos.latitude, longitude: pos.longitude);
+    } catch (_) {
+      // Fall through to last-known.
+    }
+
+    // 2. Last-known position — instant, no fix wait.
+    try {
+      final lastKnown = await geo.Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        print('✅ bias: last-known');
+        return MapCoordinate(
+          latitude: lastKnown.latitude,
+          longitude: lastKnown.longitude,
+        );
+      }
+    } catch (_) {
+      // Fall through to default.
+    }
+
+    // 3. Default centre (Nairobi).
+    print('✅ bias: default');
+    return kDefaultMapCenter;
+  }
+
   void clearSearchResults() {
     _searchResults = [];
     _searchError = null;
