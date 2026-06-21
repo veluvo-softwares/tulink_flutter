@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
@@ -257,9 +259,23 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                       separatorBuilder: (_, __) => Divider(color: colors.brushedSteel, height: 1),
                       itemBuilder: (context, index) {
                         final result = mapProvider.searchResults[index];
+                        // Advisory only — flag results implausibly far from the
+                        // search bias point. Never blocks selection.
+                        final biasLat = mapProvider.searchBiasLat;
+                        final biasLng = mapProvider.searchBiasLng;
+                        final isFar = biasLat != null &&
+                            biasLng != null &&
+                            _distanceKm(
+                                  biasLat,
+                                  biasLng,
+                                  result.lat,
+                                  result.lng,
+                                ) >
+                                _kFarResultThresholdKm;
                         return ListTile(
                           title: Text(result.displayName, style: const TextStyle(color: Colors.white)),
                           subtitle: Text(result.address, style: TextStyle(color: colors.silver, fontSize: 12)),
+                          trailing: isFar ? _buildFarResultBadge(colors) : null,
                           onTap: () {
                             setState(() {
                               _selectedLat = result.lat;
@@ -392,5 +408,50 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
         ),
       ),
     );
+  }
+
+  /// Distance threshold (km) beyond which a search result is flagged as far
+  /// from the user's bias point. Advisory only — selection is never blocked.
+  static const double _kFarResultThresholdKm = 300;
+
+  /// Inline "Far from you" advisory badge for results far from the bias point.
+  Widget _buildFarResultBadge(TulinkColors colors) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.electricRed.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.electricRed.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.public_off, size: 12, color: colors.electricRed),
+          const SizedBox(width: 4),
+          Text(
+            'Far from you',
+            style: TextStyle(
+              color: colors.electricRed,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Great-circle distance in kilometres between two coordinates (haversine).
+  double _distanceKm(double lat1, double lng1, double lat2, double lng2) {
+    const earthRadiusKm = 6371.0;
+    final dLat = (lat2 - lat1) * math.pi / 180.0;
+    final dLng = (lng2 - lng1) * math.pi / 180.0;
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * math.pi / 180.0) *
+            math.cos(lat2 * math.pi / 180.0) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusKm * c;
   }
 }
