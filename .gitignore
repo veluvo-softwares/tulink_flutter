@@ -75,3 +75,6 @@ vendor/bundle/
 .firebase/
 ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
+
+# Local planning / spec docs — not part of the app build
+/docs
