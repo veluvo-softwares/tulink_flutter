@@ -10,6 +10,7 @@ import '../../../core/theme/tulink_colors.dart';
 import '../data/models/route_result_model.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'providers/map_provider.dart';
+import 'services/convoy_interpolation_service.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
 import '../../journeys/domain/entities/journey.dart';
 import '../../convoy/presentation/providers/convoy_provider.dart';
@@ -57,6 +58,18 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
   // Cached provider reference — safe to call in dispose() without a context.
   NavigationProvider? _navigationProvider;
+
+  // Cached convoy provider + user id so the interpolation ticker can pull
+  // fresh peer positions without reading context from a Timer callback.
+  ConvoyProvider? _convoyProvider;
+  String? _convoyUserId;
+
+  // Drives smooth, interpolated peer-marker movement between broadcast
+  // snapshots. Mapbox does not tween between discrete source updates, so this
+  // ticker pushes display-only projected positions to the marker source in
+  // place (~12.5 Hz). Cancelled in dispose and whenever there are no peers.
+  Timer? _interpolationTicker;
+  bool _interpolationRenderInFlight = false;
 
   // True once the backend confirms the current user has arrived at the
   // destination (via `participant-arrived` WebSocket event).  Stops the
@@ -732,20 +745,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final currentUserId = authProvider.user?.id;
     final currentName = authProvider.user?.name;
 
+    // Cache for the interpolation ticker, which runs outside the widget tree.
+    _convoyProvider = convoyProvider;
+    _convoyUserId = currentUserId;
+
     // Get convoy snapshot filtered to exclude current user
     final convoySnapshot = currentUserId != null
         ? convoyProvider.getDisplaySnapshot(currentUserId)
         : convoyProvider.snapshot;
 
+    final hasPeers = convoySnapshot != null &&
+        currentUserId != null &&
+        convoySnapshot.members.isNotEmpty &&
+        !(convoySnapshot.destination.latitude == 0.0 &&
+            convoySnapshot.destination.longitude == 0.0);
+
     // Generate a hash to check if the snapshot has actually changed
     final currentHash = _generateSnapshotHash(convoySnapshot);
 
-    // Only update if the snapshot has changed
+    // Membership / colour / destination changes gate the (in-place) source
+    // create + teardown. Smooth position movement between snapshots is driven
+    // by the interpolation ticker, not this hash.
     if (currentHash != _lastUpdateHash) {
       _lastUpdateHash = currentHash;
       _lastSnapshot = convoySnapshot;
 
-      if (convoySnapshot != null && currentUserId != null) {
+      if (hasPeers) {
         await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
         print('✅ Updated convoy markers: ${convoySnapshot.members.length} members');
       } else {
@@ -753,6 +778,71 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
         print('✅ Removed convoy visualization');
         _lastSnapshot = null;
       }
+    }
+
+    // Run the smooth-movement ticker only while there are peers to animate.
+    if (hasPeers) {
+      _startInterpolationTicker();
+    } else {
+      _stopInterpolationTicker();
+    }
+  }
+
+  /// Start the periodic ticker that pushes interpolated peer positions to the
+  /// in-place marker source. Idempotent — safe to call on every snapshot.
+  void _startInterpolationTicker() {
+    if (_interpolationTicker != null) return;
+    _interpolationTicker = Timer.periodic(
+      const Duration(milliseconds: 80),
+      (_) => _onInterpolationTick(),
+    );
+  }
+
+  /// Stop the interpolation ticker — no peers, coordination stopped, dispose.
+  void _stopInterpolationTicker() {
+    _interpolationTicker?.cancel();
+    _interpolationTicker = null;
+    _interpolationRenderInFlight = false;
+  }
+
+  /// One render tick: recompute display-only interpolated coordinates for all
+  /// peers and push them to the marker source in place. Never mutates the
+  /// snapshot or provider — the authoritative position is the last received
+  /// MemberPosition.
+  Future<void> _onInterpolationTick() async {
+    if (!_canUseMap) {
+      _stopInterpolationTicker();
+      return;
+    }
+    // Skip this tick if the previous in-place render is still in flight.
+    if (_interpolationRenderInFlight) return;
+
+    final provider = _convoyProvider;
+    final userId = _convoyUserId;
+    if (provider == null || userId == null) return;
+
+    final snapshot = provider.getDisplaySnapshot(userId);
+    final members = snapshot?.members.values.toList() ?? <MemberPosition>[];
+    if (members.isEmpty) {
+      _stopInterpolationTicker();
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final coordinates = <List<double>>[
+      for (final member in members)
+        ConvoyInterpolationService.interpolatedPosition(member, now),
+    ];
+
+    _interpolationRenderInFlight = true;
+    try {
+      await ConvoyRouteLine.renderMemberMarkers(
+        _mapboxMap!,
+        members,
+        coordinates,
+      );
+    } finally {
+      _interpolationRenderInFlight = false;
     }
   }
 
@@ -1110,6 +1200,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   void dispose() {
     _disposed = true;
     _mapboxMap = null;
+    // Stop the peer-marker interpolation ticker before the map handle is gone.
+    _stopInterpolationTicker();
     // Stop the camera-follow GPS stream — independent of convoy coordination
     _cameraFollowSubscription?.cancel();
     _cameraFollowSubscription = null;
