@@ -1,11 +1,16 @@
 import 'dart:convert';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../domain/entities/convoy_snapshot.dart';
+import '../../domain/entities/member_position.dart';
 
 class ConvoyRouteLine {
   static const String _membersSourceId = 'convoy-members-source';
 
-  /// Create convoy member markers on the map
+  /// Render convoy member markers from a [ConvoySnapshot].
+  ///
+  /// Builds each feature from the member's raw (authoritative) position and
+  /// delegates to [renderMemberMarkers], which creates the source + layers on
+  /// first render and updates the source data in place afterwards.
   static Future<void> addConvoyMarkers(
     MapboxMap mapboxMap,
     ConvoySnapshot snapshot,
@@ -18,20 +23,59 @@ class ConvoyRouteLine {
       return;
     }
 
-    try {
-      // Remove existing markers
-      await removeConvoyMarkers(mapboxMap);
+    // Current user is already excluded by the provider's display snapshot.
+    final members = snapshot.members.values.toList();
+    final coordinates = <List<double>>[
+      for (final member in members) [member.longitude, member.latitude],
+    ];
 
-      // Add member markers
-      await _addMemberMarkersSource(mapboxMap, snapshot, currentUserId);
+    await renderMemberMarkers(mapboxMap, members, coordinates);
+  }
+
+  /// Render [members] at the given [coordinates] (each `[lng, lat]`, parallel
+  /// to [members]).
+  ///
+  /// On first render (source absent) the GeoJSON source and the three layers
+  /// are added once. On every subsequent render only the source `data` is
+  /// updated in place via `setStyleSourceProperty`, so the layers are never
+  /// torn down — eliminating the blank-frame flicker that made peers "poof".
+  ///
+  /// This is the single render path shared by snapshot-driven updates and the
+  /// interpolation ticker, so colour/status changes (driven by the per-feature
+  /// `status` property) flow through here without rebuilding layers.
+  static Future<void> renderMemberMarkers(
+    MapboxMap mapboxMap,
+    List<MemberPosition> members,
+    List<List<double>> coordinates,
+  ) async {
+    try {
+      final geoJson = _buildMembersGeoJson(members, coordinates);
+
+      final sourceExists =
+          await mapboxMap.style.styleSourceExists(_membersSourceId);
+      if (sourceExists) {
+        // In-place update — no layer teardown, no blank frame.
+        await mapboxMap.style.setStyleSourceProperty(
+          _membersSourceId,
+          'data',
+          geoJson,
+        );
+        return;
+      }
+
+      await mapboxMap.style.addSource(GeoJsonSource(
+        id: _membersSourceId,
+        data: geoJson,
+      ));
       await _addMemberMarkersLayer(mapboxMap);
 
-      // Destination marker is drawn by _drawDestinationPin in tulink_map_screen.dart
-      // from static Journey data — no duplicate destination layer is needed here.
+      // Destination marker is drawn by _drawDestinationPin in
+      // tulink_map_screen.dart from static Journey data — no duplicate
+      // destination layer is needed here.
 
       print('✅ Convoy member markers added');
     } catch (e) {
-      print('❌ Failed to add convoy markers: $e');
+      print('❌ Failed to render convoy markers: $e');
     }
   }
 
@@ -59,19 +103,21 @@ class ConvoyRouteLine {
     }
   }
 
-  /// Add member markers source
-  static Future<void> _addMemberMarkersSource(
-    MapboxMap mapboxMap,
-    ConvoySnapshot snapshot,
-    String currentUserId,
-  ) async {
+  /// Build the members `FeatureCollection` JSON from [members] and parallel
+  /// [coordinates] (each `[lng, lat]`). Geometry comes from [coordinates] (so
+  /// the interpolation ticker can supply display-only projected positions)
+  /// while all properties come from the authoritative [MemberPosition].
+  static String _buildMembersGeoJson(
+    List<MemberPosition> members,
+    List<List<double>> coordinates,
+  ) {
     final features = <Map<String, dynamic>>[];
-
-    // Get all convoy members from filtered snapshot (current user already excluded by provider)  
-    final members = snapshot.members.values.toList();
 
     for (int i = 0; i < members.length; i++) {
       final member = members[i];
+      final coordinate = i < coordinates.length
+          ? coordinates[i]
+          : <double>[member.longitude, member.latitude];
       features.add({
         'type': 'Feature',
         'properties': {
@@ -85,20 +131,15 @@ class ConvoyRouteLine {
         },
         'geometry': {
           'type': 'Point',
-          'coordinates': [member.longitude, member.latitude],
+          'coordinates': coordinate,
         },
       });
     }
 
-    final geoJsonData = {
+    return jsonEncode({
       'type': 'FeatureCollection',
       'features': features,
-    };
-
-    await mapboxMap.style.addSource(GeoJsonSource(
-      id: _membersSourceId,
-      data: jsonEncode(geoJsonData),
-    ));
+    });
   }
 
   /// Extract 2-character initials from a userId. Falls back to a single
@@ -188,5 +229,4 @@ class ConvoyRouteLine {
       print('⚠️ Failed to add label layer: $e');
     }
   }
-
 }
