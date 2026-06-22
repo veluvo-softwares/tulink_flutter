@@ -8,5 +8,6 @@ abstract class MapRepository {
     String query, {
     double? lat,
     double? lng,
+    String? regionCode,
   });
 }
