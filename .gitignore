@@ -61,6 +61,7 @@ ios testflight distribution files/
 
 
 .planning/
+docs/
 
 # Fastlane
 **/fastlane/report.xml
