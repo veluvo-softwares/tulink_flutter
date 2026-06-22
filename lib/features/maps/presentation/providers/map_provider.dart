@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
 import '../../../../core/constants/map_constants.dart';
+import '../../../../core/services/region_service.dart';
 import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
 import '../../domain/repositories/map_repository.dart';
@@ -114,10 +115,19 @@ class MapProvider with ChangeNotifier {
     _searchBiasLat = bias.latitude;
     _searchBiasLng = bias.longitude;
 
+    // Derive the search region from the same bias fix (cached per session,
+    // refreshed only on significant movement). Null when unresolved, in which
+    // case the param is omitted and the backend default applies.
+    final regionCode = await RegionService.resolveRegionCode(
+      lat: bias.latitude,
+      lng: bias.longitude,
+    );
+
     final result = await _searchPlacesUseCase(
       trimmedQuery,
       lat: bias.latitude,
       lng: bias.longitude,
+      regionCode: regionCode,
     );
 
     _isSearching = false;
