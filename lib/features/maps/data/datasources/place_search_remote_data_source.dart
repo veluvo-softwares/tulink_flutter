@@ -6,6 +6,7 @@ abstract class PlaceSearchRemoteDataSource {
     String query, {
     double? lat,
     double? lng,
+    String? regionCode,
   });
 }
 
@@ -19,11 +20,13 @@ class PlaceSearchRemoteDataSourceImpl implements PlaceSearchRemoteDataSource {
     String query, {
     double? lat,
     double? lng,
+    String? regionCode,
   }) async {
     try {
       final queryParams = <String, dynamic>{'query': query};
       if (lat != null) queryParams['lat'] = lat;
       if (lng != null) queryParams['lng'] = lng;
+      if (regionCode != null) queryParams['regionCode'] = regionCode;
 
       final response = await dio.get<Map<String, dynamic>>(
         '/maps/search',

@@ -11,7 +11,13 @@ class SearchPlacesUseCase {
     String query, {
     double? lat,
     double? lng,
+    String? regionCode,
   }) async {
-    return await repository.searchPlaces(query, lat: lat, lng: lng);
+    return await repository.searchPlaces(
+      query,
+      lat: lat,
+      lng: lng,
+      regionCode: regionCode,
+    );
   }
 }

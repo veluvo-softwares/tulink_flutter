@@ -25,6 +25,7 @@ class MapRepositoryImpl implements MapRepository {
     String query, {
     double? lat,
     double? lng,
+    String? regionCode,
   }) async {
     try {
       final trimmedQuery = query.trim();
@@ -36,6 +37,7 @@ class MapRepositoryImpl implements MapRepository {
         trimmedQuery,
         lat: lat,
         lng: lng,
+        regionCode: regionCode,
       );
       
       if (response.success) {
