@@ -67,6 +67,14 @@ class ConvoyProvider extends ChangeNotifier {
   Timer? _publishTimer;
   static const Duration _publishInterval = Duration(seconds: 4);
 
+  /// Coalesces rapid snapshot emissions into a single UI notification.
+  /// With 2+ moving members, peer `location-update`s arrive several times
+  /// per second; notifying listeners on every one triggered a full map
+  /// rebuild + marker re-render per emission, saturating the main thread.
+  /// We store the freshest snapshot and flush at most once per window.
+  Timer? _snapshotNotifyTimer;
+  static const Duration _snapshotNotifyInterval = Duration(milliseconds: 300);
+
   // Convoy stream subscriptions
   StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>? _convoySubscription;
   StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
@@ -251,7 +259,11 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop the fixed-cadence beacon timer
     _publishTimer?.cancel();
     _publishTimer = null;
-    
+
+    // Stop the coalesced snapshot-notify timer
+    _snapshotNotifyTimer?.cancel();
+    _snapshotNotifyTimer = null;
+
     // Stop convoy streaming
     await _convoySubscription?.cancel();
     _convoySubscription = null;
@@ -542,10 +554,14 @@ class ConvoyProvider extends ChangeNotifier {
         if (result.snapshot != null) {
           _snapshot = result.snapshot;
           _clearError();
+          // Coalesce high-frequency snapshot updates: store the latest
+          // snapshot now, but flush to the UI at most once per window so
+          // N rapid peer updates collapse into one render.
+          _scheduleSnapshotNotify();
         } else if (result.failure != null) {
           _setError(result.failure!.message);
+          notifyListeners();
         }
-        notifyListeners();
       },
       onError: (error) {
         print('❌ Convoy stream error: $error');
@@ -635,6 +651,18 @@ class ConvoyProvider extends ChangeNotifier {
         print('❌ participant-accepted stream error: $error');
       },
     );
+  }
+
+  /// Schedule a coalesced `notifyListeners()` for snapshot updates. If a
+  /// flush is already pending, this is a no-op — the latest `_snapshot` is
+  /// already captured and will be delivered when the window elapses. This
+  /// collapses bursts of peer location-updates into one render per window.
+  void _scheduleSnapshotNotify() {
+    if (_snapshotNotifyTimer != null) return;
+    _snapshotNotifyTimer = Timer(_snapshotNotifyInterval, () {
+      _snapshotNotifyTimer = null;
+      notifyListeners();
+    });
   }
 
   /// Stops just the GPS publishing side (location stream + heartbeat) while

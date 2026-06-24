@@ -214,6 +214,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   /// Stop REST fallback polling
   void _stopRestFallbackPolling() {
+    // No-op when polling isn't running. The WS snapshot listener calls this on
+    // every peer update; without this guard it logged "Stopped REST fallback
+    // polling" on every emission, flooding logs during an active convoy.
+    if (_fallbackPollingTimer == null) return;
     _fallbackPollingTimer?.cancel();
     _fallbackPollingTimer = null;
     print('✅ Stopped REST fallback polling');
