@@ -46,6 +46,10 @@ class PlaceSearchRemoteDataSourceImpl implements PlaceSearchRemoteDataSource {
       throw DioException(
         requestOptions: e.requestOptions,
         response: e.response,
+        // Preserve the original type (connectionError / badResponse / cancel /
+        // timeout) — defaulting to `unknown` is what made the repository
+        // mislabel server/parse/cancel errors as "no internet".
+        type: e.type,
         message: 'Network error while searching places: ${e.message}',
         error: e.error,
       );

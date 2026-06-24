@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
 import '../../../../core/constants/map_constants.dart';
+import '../../../../core/errors/failure.dart';
 import '../../../../core/services/region_service.dart';
 import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
@@ -64,6 +65,11 @@ class MapProvider with ChangeNotifier {
   bool _isSearching = false;
   String? _searchError;
 
+  /// Monotonic id tagging each search; a response whose id is no longer the
+  /// latest is discarded so a slow/stale out-of-order response never overwrites
+  /// newer or cleared state. Incremented on every search and on clear.
+  int _searchRequestId = 0;
+
   RaceRoute? get marathonRoute => _marathonRoute;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -94,7 +100,11 @@ class MapProvider with ChangeNotifier {
   
   Future<void> searchPlaces(String query) async {
     final trimmedQuery = query.trim();
-    
+
+    // Tag this search; any later state mutation is guarded against this id so a
+    // stale/out-of-order response is dropped instead of clobbering newer state.
+    final requestId = ++_searchRequestId;
+
     // Clear results if query is empty or too short
     if (trimmedQuery.isEmpty || trimmedQuery.length < 2) {
       _searchResults = [];
@@ -130,8 +140,20 @@ class MapProvider with ChangeNotifier {
       regionCode: regionCode,
     );
 
+    // Superseded by a newer search (or a clear) while this one was in flight —
+    // discard silently so stale results never overwrite current state.
+    if (requestId != _searchRequestId) return;
+
+    // A cancelled/aborted request is benign — never surface an error card.
+    final failure = result.failure;
+    if (failure is SearchFailure && failure.isCancellation) {
+      _isSearching = false;
+      notifyListeners();
+      return;
+    }
+
     _isSearching = false;
-    
+
     if (result.isSuccess && result.data != null) {
       _searchResults = result.data!;
       _searchError = null;
@@ -139,10 +161,10 @@ class MapProvider with ChangeNotifier {
       _searchResults = [];
       _searchError = result.failure!.message;
     }
-    
+
     notifyListeners();
   }
-  
+
   /// Resolve a location-bias coordinate for place search, trying in order:
   /// a live low-accuracy fix (short timeout) → the last-known position →
   /// [kDefaultMapCenter]. Always returns a coordinate so a search is never
@@ -182,6 +204,8 @@ class MapProvider with ChangeNotifier {
   }
 
   void clearSearchResults() {
+    // Invalidate any in-flight search so its late response is dropped.
+    _searchRequestId++;
     _searchResults = [];
     _searchError = null;
     notifyListeners();
