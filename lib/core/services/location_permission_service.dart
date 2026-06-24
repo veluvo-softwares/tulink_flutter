@@ -115,18 +115,43 @@ class LocationPermissionService {
         return foregroundResult;
       }
 
-      // For background location, we need to check if it's supported
-      // This is mainly relevant for Android 10+ where background location requires special permission
+      // Background ("Allow all the time") requires a distinct grant on Android 10+
+      // and iOS. ACCESS_BACKGROUND_LOCATION is declared in the manifest, so we must
+      // actually request the escalation here rather than silently returning.
       final permission = await Geolocator.checkPermission();
-      
+
       if (permission == LocationPermission.always) {
         return (granted: true, failure: null);
       }
-      
-      // For now, return success with foreground permission
-      // Background location setup would require additional platform-specific handling
-      return (granted: true, failure: null);
-      
+
+      // We have foreground (whileInUse) — attempt to escalate to background.
+      // Android 10 shows the background dialog here; Android 11+ may keep
+      // whileInUse and require the user to choose "Allow all the time" in
+      // Settings; iOS surfaces the always-permission prompt.
+      final escalated = await Geolocator.requestPermission();
+      if (escalated == LocationPermission.always) {
+        return (granted: true, failure: null);
+      }
+
+      // Background was not granted, but foreground tracking still works — degrade
+      // gracefully (do NOT block the journey). Surface a retryable advisory so the
+      // UI can guide the user to enable "Allow all the time" in settings.
+      print(
+        '⚠️ Background location not granted (status: $escalated) — '
+        'foreground tracking only.',
+      );
+      return (
+        granted: true,
+        failure: ConvoyFailure(
+          message: 'Background location not granted',
+          details:
+              'For live tracking while the app is in the background, enable '
+              '"Allow all the time" for location in your device settings.',
+          timestamp: DateTime.now(),
+          isRetryable: true,
+        ),
+      );
+
     } catch (e) {
       return (
         granted: false,

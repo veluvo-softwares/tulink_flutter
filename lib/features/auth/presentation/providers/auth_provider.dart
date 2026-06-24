@@ -14,6 +14,11 @@ class AuthProvider extends ChangeNotifier {
 
   final AuthRepository _authRepository;
 
+  /// Hook invoked when the session ends (explicit sign-out OR an unrecoverable
+  /// auth-lost). Wired in ServiceLocator to tear down live convoy coordination
+  /// and the user WebSocket channel so a signed-out client stops publishing GPS.
+  VoidCallback? onSessionEnded;
+
   // State variables
   UserEntity? _user;
   bool _isLoading = false;
@@ -146,6 +151,9 @@ class AuthProvider extends ChangeNotifier {
       final result = await _authRepository.signOut();
 
       if (result.success) {
+        // Stop convoy GPS publishing + WebSocket BEFORE clearing user state so a
+        // signed-out client never keeps emitting location updates (D11-1).
+        onSessionEnded?.call();
         _user = null;
         _isSignedIn = false;
         _setLoading(false);
@@ -171,6 +179,8 @@ class AuthProvider extends ChangeNotifier {
   /// so the UI flips to AuthScreen on the next rebuild.
   void _handleAuthLost() {
     if (!_isSignedIn && _user == null) return;
+    // Tear down convoy coordination + user channel on unrecoverable auth loss too.
+    onSessionEnded?.call();
     _user = null;
     _isSignedIn = false;
     notifyListeners();
