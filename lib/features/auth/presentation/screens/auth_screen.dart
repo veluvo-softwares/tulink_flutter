@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/main.dart';
 
@@ -199,13 +200,16 @@ class _AuthScreenState extends State<AuthScreen>
   Widget _buildSignInForm() {
     return Form(
       key: _signInFormKey,
-      child: Column(
+      child: AutofillGroup(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Email field
           TextFormField(
             controller: _signInEmailController,
             keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.username, AutofillHints.email],
             decoration: const InputDecoration(
               labelText: 'Email',
               hintText: 'Enter your email address',
@@ -228,6 +232,9 @@ class _AuthScreenState extends State<AuthScreen>
           TextFormField(
             controller: _signInPasswordController,
             obscureText: !_signInPasswordVisible,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
+            onFieldSubmitted: (_) => _handleSignIn(),
             decoration: InputDecoration(
               labelText: 'Password',
               hintText: 'Enter your password',
@@ -287,6 +294,7 @@ class _AuthScreenState extends State<AuthScreen>
             },
           ),
         ],
+        ),
       ),
     );
   }
@@ -436,6 +444,8 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
+      // Trigger the OS "save password?" prompt for the password manager.
+      TextInput.finishAutofillContext();
       if (!authProvider.isEmailVerified) {
         Navigator.of(context).pushReplacementNamed(VerifyEmailScreen.routeName);
       } else {
@@ -465,6 +475,8 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (success) {
+      // Trigger the OS "save password?" prompt for the password manager.
+      TextInput.finishAutofillContext();
       if (!authProvider.isEmailVerified) {
         Navigator.of(context).pushReplacementNamed(VerifyEmailScreen.routeName);
       } else {

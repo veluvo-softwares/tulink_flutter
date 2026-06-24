@@ -14,7 +14,6 @@ class DioClient {
 
   late Dio _dio;
   final TokenManager _tokenManager = TokenManager();
-  int _retryCount = 0;
 
   Dio get dio => _dio;
 
@@ -87,48 +86,51 @@ class DioClient {
           return;
         }
 
-        final body = error.response?.data;
-        // Backend nests the code under `error` in some paths and at the top
-        // level in others — accept both shapes so we don't miss a refresh.
-        String? code;
-        if (body is Map) {
-          code = body['code']?.toString();
-          if (code == null && body['error'] is Map) {
-            code = (body['error'] as Map)['code']?.toString();
-          }
+        // Loop guard: if this request was already retried after a refresh and
+        // STILL 401s, the session is genuinely dead — clear and log out.
+        final alreadyRetried =
+            error.requestOptions.extra['__authRetried'] == true;
+        if (alreadyRetried) {
+          await _tokenManager.clearAllTokens();
+          _tokenManager.onAuthLost?.call();
+          handler.reject(
+            DioException(
+              requestOptions: error.requestOptions,
+              response: error.response,
+              type: DioExceptionType.badResponse,
+              error: AuthFailure.tokenInvalid,
+            ),
+          );
+          return;
         }
 
-        if (code == 'TOKEN_EXPIRED') {
-          try {
-            final fresh = await _tokenManager.refreshAuthToken();
-            final retryOptions = error.requestOptions;
-            retryOptions.headers['Authorization'] = 'Bearer $fresh';
-            final response = await _dio.fetch<dynamic>(retryOptions);
-            handler.resolve(response);
-            return;
-          } on TokenFailure {
-            handler.reject(
-              DioException(
-                requestOptions: error.requestOptions,
-                response: error.response,
-                type: DioExceptionType.badResponse,
-                error: AuthFailure.refreshTokenExpired,
-              ),
-            );
-            return;
-          }
+        // Attempt ONE refresh on ANY 401 — not only code == 'TOKEN_EXPIRED'.
+        // The backend also returns TOKEN_REVOKED / AUTH_FAILED (and a per-request
+        // getUser() can fail transiently), so gating refresh on a single code
+        // caused spurious mid-journey logouts. Refresh-then-retry recovers every
+        // recoverable case; we only log out if the refresh itself fails or the
+        // retried request (marked __authRetried) 401s again via the guard above.
+        try {
+          final fresh = await _tokenManager.refreshAuthToken();
+          final retryOptions = error.requestOptions;
+          retryOptions.headers['Authorization'] = 'Bearer $fresh';
+          retryOptions.extra['__authRetried'] = true;
+          final response = await _dio.fetch<dynamic>(retryOptions);
+          handler.resolve(response);
+          return;
+        } on TokenFailure {
+          await _tokenManager.clearAllTokens();
+          _tokenManager.onAuthLost?.call();
+          handler.reject(
+            DioException(
+              requestOptions: error.requestOptions,
+              response: error.response,
+              type: DioExceptionType.badResponse,
+              error: AuthFailure.refreshTokenExpired,
+            ),
+          );
+          return;
         }
-
-        await _tokenManager.clearAllTokens();
-        _tokenManager.onAuthLost?.call();
-        handler.reject(
-          DioException(
-            requestOptions: error.requestOptions,
-            response: error.response,
-            type: DioExceptionType.badResponse,
-            error: AuthFailure.tokenInvalid,
-          ),
-        );
       },
     );
   }
@@ -138,29 +140,32 @@ class DioClient {
     return InterceptorsWrapper(
       onError: (error, handler) async {
         final shouldRetry = _shouldRetryRequest(error);
-        
-        if (shouldRetry && _retryCount < AppConfig.maxRetryAttempts) {
-          _retryCount++;
-          
+
+        // Per-request retry counter stored in requestOptions.extra — a shared
+        // instance field raced across concurrent requests (A3-6), causing one
+        // request's success to reset another's counter mid-cycle.
+        final attempts =
+            (error.requestOptions.extra['__retryCount'] as int?) ?? 0;
+
+        if (shouldRetry && attempts < AppConfig.maxRetryAttempts) {
+          final next = attempts + 1;
+          error.requestOptions.extra['__retryCount'] = next;
+
           // Wait before retrying (exponential backoff)
-          final delay = Duration(seconds: _retryCount * 2);
+          final delay = Duration(seconds: next * 2);
           await Future<void>.delayed(delay);
 
           try {
-            print('🔄 Retrying request (attempt $_retryCount)...');
+            print('🔄 Retrying request (attempt $next)...');
             final response = await _dio.fetch<dynamic>(error.requestOptions);
-            _retryCount = 0; // Reset retry count on success
             handler.resolve(response);
             return;
-          } catch (retryError) {
-            if (_retryCount >= AppConfig.maxRetryAttempts) {
-              _retryCount = 0;
-              print('🔄 Max retry attempts reached');
-            }
+          } catch (_) {
+            // Fall through to propagate the error; the incremented per-request
+            // count in extra caps further retries on the next pass.
           }
         }
-        
-        _retryCount = 0; // Reset retry count
+
         handler.next(error);
       },
     );

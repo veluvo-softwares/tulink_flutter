@@ -246,6 +246,14 @@ class ServiceLocator {
       repository: _convoyRepository,
     );
 
+    // On sign-out / unrecoverable auth loss, tear down live convoy coordination
+    // and the user WebSocket channel so a signed-out client stops publishing GPS
+    // (D11-1). Fire-and-forget the async teardown; the auth flow does not await it.
+    _authProvider.onSessionEnded = () {
+      unawaited(_convoyProvider.stopCoordination());
+      unawaited(_convoyProvider.stopUserChannel());
+    };
+
     // Kick off auth initialization in the background. The first synchronous
     // line of AuthProvider.initialize() flips isLoading=true and notifies
     // listeners, so HomePage's spinner covers the auth check while the rest
