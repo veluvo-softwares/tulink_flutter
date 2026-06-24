@@ -513,12 +513,17 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     // Convoy alerts
     _socket!.on('lag-alert', (data) {
+      if (data is! Map) return;
       final userId = data['userId'] as String?;
+      // Guard malformed alerts: the backend sometimes emits a lag-alert with a
+      // null userId. Without this guard we logged "Lag alert for null" noise
+      // and pointlessly walked the members map on every such event.
+      if (userId == null) return;
       final severity = data['severity'] as String?;
       print('⚠️ Lag alert for $userId: $severity');
-      
+
       // Update member status if exists
-      if (userId != null && _members.containsKey(userId)) {
+      if (_members.containsKey(userId)) {
         final member = _members[userId]!;
         _members[userId] = member.copyWith(statusChange: 'LAG');
         _emitConvoySnapshot();
