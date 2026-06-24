@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../core/common/result.dart';
 import '../../../../core/errors/failure.dart';
 import '../../domain/entities/race_route.dart';
@@ -77,9 +79,33 @@ class MapRepositoryImpl implements MapRepository {
           );
         }
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      // Aborted/superseded request (FIX-05 CancelToken) — benign, never an error card.
+      if (e.type == DioExceptionType.cancel) {
+        return ResultHelper.failure(SearchFailure.cancelled);
+      }
+      // Genuine connectivity problems → the "check your internet" message is correct.
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return ResultHelper.failure(NetworkFailure.searchConnection);
+      }
+      // Any other Dio failure (badResponse/5xx/unknown) is a SERVER problem, not
+      // offline — do NOT show the connectivity card while the device is online.
       return ResultHelper.failure(
-        NetworkFailure.searchConnection,
+        ServerFailure(message: 'Search failed :(\nPlease try again in a moment'),
+      );
+    } on FormatException {
+      // Malformed/unexpected body — a data/server problem, not connectivity.
+      return ResultHelper.failure(
+        ServerFailure(message: 'Search failed :(\nPlease try again in a moment'),
+      );
+    } catch (e) {
+      // Parse/type errors (e.g. unexpected response shape) — server/data problem,
+      // not "no internet".
+      return ResultHelper.failure(
+        ServerFailure(message: 'Search failed :(\nPlease try again in a moment'),
       );
     }
   }

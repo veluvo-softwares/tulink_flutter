@@ -485,6 +485,18 @@ class SearchFailure extends Failure {
     timestamp: DateTime.now(),
   );
 
+  /// Benign sentinel: the search request was cancelled/superseded (a newer
+  /// search started or the field was cleared). The provider ignores this — it
+  /// must NEVER surface an error card. Const so `isCancellation` can identity-check.
+  static const SearchFailure cancelled = SearchFailure(
+    message: '',
+    details: 'Search request was cancelled (superseded or field cleared).',
+  );
+
+  /// True only for the [cancelled] sentinel — callers use this to silently drop
+  /// aborted requests instead of rendering an error.
+  bool get isCancellation => identical(this, SearchFailure.cancelled);
+
   @override
   SearchFailure copyWith({
     String? message,
