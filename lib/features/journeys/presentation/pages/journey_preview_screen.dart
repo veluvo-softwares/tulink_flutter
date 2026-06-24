@@ -68,7 +68,18 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       // Pre-join the WebSocket room so the leader is CONNECTED in Firestore
       // before startJourney() fires. startCoordination() later detects
       // _isSubscribed == true and only adds GPS publishing on top.
-      context.read<ConvoyProvider>().joinJourneyRoom(widget.journeyId);
+      //
+      // FIX-06: do NOT auto-join if the user is currently active in a DIFFERENT
+      // journey — joinJourneyRoom reassigns _currentJourneyId, which would
+      // silently switch the active journey and defeat the start-time switch
+      // confirmation. Defer the join to the explicit (confirmed) start in that
+      // case; startCoordination() will then tear down the prior journey cleanly.
+      final convoy = context.read<ConvoyProvider>();
+      final activeElsewhere = convoy.currentJourneyId != null &&
+          convoy.currentJourneyId != widget.journeyId;
+      if (!activeElsewhere) {
+        convoy.joinJourneyRoom(widget.journeyId);
+      }
     });
   }
 
@@ -113,11 +124,44 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   }
 
 
+  /// FIX-06 (D10): the convoy is single-active — starting/entering a journey
+  /// silently tears down live coordination for any other active journey. Confirm
+  /// with the user first when switching away from a different active journey.
+  /// Returns true if it's safe to proceed (no other active journey, same journey,
+  /// or the user confirmed the switch).
+  Future<bool> _confirmJourneySwitchIfNeeded() async {
+    final activeId = context.read<ConvoyProvider>().currentJourneyId;
+    if (activeId == null || activeId == widget.journeyId) return true;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Switch journey?'),
+        content: const Text(
+          'You are currently active in another journey. Starting this one will '
+          'stop live tracking for the other journey. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Switch journey'),
+          ),
+        ],
+      ),
+    );
+    return proceed ?? false;
+  }
+
   /// Gate location, then begin coordination and enter the live map. Used by the
   /// Resume/Join buttons for journeys that are already ACTIVE — these start GPS
   /// publishing immediately, so the location gate must pass first.
   Future<void> _gateThenEnterMap() async {
     if (!await ensureLocationReady(context)) return;
+    if (!mounted) return;
+    if (!await _confirmJourneySwitchIfNeeded()) return;
     if (!mounted) return;
     context.read<ConvoyProvider>().startCoordination(widget.journeyId);
     Navigator.of(context).pushReplacementNamed('/mapview');
@@ -130,6 +174,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     // hand-off sheet and we abort before any backend calls.
     if (!await ensureLocationReady(context)) return;
 
+    if (!mounted) return;
+
+    // FIX-06: confirm before switching away from another active journey.
+    if (!await _confirmJourneySwitchIfNeeded()) return;
     if (!mounted) return;
 
     // Permission confirmed — start the animated countdown

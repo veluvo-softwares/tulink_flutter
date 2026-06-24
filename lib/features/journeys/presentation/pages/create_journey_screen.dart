@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -36,6 +37,11 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   String? _selectedAddress;
   bool _isSettingSelectedValue = false;
 
+  /// Debounce for the destination search — only query the backend after a brief
+  /// typing pause (FIX-05) so per-keystroke overlapping requests stop producing
+  /// the spurious "check your internet" card.
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +68,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _nameController.dispose();
     _searchController.dispose();
     _lagController.dispose();
@@ -165,17 +172,28 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
               controller: _searchController,
               hintText: "Search for a place...",
               onChanged: (value) {
-                if (!_isSettingSelectedValue) {
-                  // Clear selection when user types manually
-                  if (_selectedLat != null) {
-                    setState(() {
-                      _selectedLat = null;
-                      _selectedLng = null;
-                      _selectedAddress = null;
-                    });
-                  }
-                  context.read<MapProvider>().searchPlaces(value);
+                if (_isSettingSelectedValue) return;
+                // Clear selection when user types manually (FIX-10: editing a
+                // confirmed destination invalidates its coordinates).
+                if (_selectedLat != null) {
+                  setState(() {
+                    _selectedLat = null;
+                    _selectedLng = null;
+                    _selectedAddress = null;
+                  });
                 }
+                // Debounce the search (FIX-05): reset the timer on each keystroke;
+                // an empty field clears immediately (and cancels in-flight via the
+                // provider's request-id guard).
+                _searchDebounce?.cancel();
+                if (value.trim().isEmpty) {
+                  context.read<MapProvider>().clearSearchResults();
+                  return;
+                }
+                _searchDebounce = Timer(
+                  const Duration(milliseconds: 400),
+                  () => context.read<MapProvider>().searchPlaces(value),
+                );
               },
               suffixIcon: const Icon(Icons.search, color: Colors.white54),
             ),
