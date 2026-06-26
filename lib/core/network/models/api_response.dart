@@ -82,7 +82,8 @@ class ApiError {
   /// Creates an API error
   const ApiError({
     required this.code,
-    required this.details,
+    this.details,
+    this.activeJourneyId,
   });
 
   /// Factory constructor from JSON
@@ -92,15 +93,22 @@ class ApiError {
   /// Error code type (e.g., 'VALIDATION_ERROR', 'UNAUTHORIZED', etc.)
   final String code;
 
-  /// Detailed error description
-  final String details;
+  /// Detailed error description. Nullable: the backend's typed error bodies
+  /// (e.g. `{ code, activeJourneyId }`) often omit a `details` field.
+  final String? details;
+
+  /// Present on `409 ALREADY_IN_ACTIVE_JOURNEY` — the id of the journey the
+  /// user already has ACTIVE. Lets the client drive the end-A-then-start-B
+  /// confirm flow instead of surfacing a dead-end conflict error.
+  final String? activeJourneyId;
 
   /// Convert to JSON
   Map<String, dynamic> toJson() => _$ApiErrorToJson(this);
 
   @override
   String toString() {
-    return 'ApiError(code: $code, details: $details)';
+    return 'ApiError(code: $code, details: $details, '
+        'activeJourneyId: $activeJourneyId)';
   }
 }
 
@@ -138,4 +146,26 @@ abstract class ApiErrorCodes {
 
   /// API rate limit exceeded error code
   static const String rateLimitExceeded = 'RATE_LIMIT_EXCEEDED';
+
+  // ===== Backend v1.0 server-side remediation codes (BE-FIX-1..3) =====
+
+  /// Token genuinely revoked (logout / tokensValidAfter) — re-auth required,
+  /// a refresh will NOT recover it.
+  static const String tokenRevoked = 'TOKEN_REVOKED';
+
+  /// Hard auth failure (bad/forged token, deleted account) — re-auth required.
+  static const String authFailed = 'AUTH_FAILED';
+
+  /// Places search upstream returned a non-2xx (502) — "upstream broke".
+  static const String upstreamPlacesError = 'UPSTREAM_PLACES_ERROR';
+
+  /// Directions upstream returned a non-2xx (502) — "upstream broke".
+  static const String upstreamDirectionsError = 'UPSTREAM_DIRECTIONS_ERROR';
+
+  /// Maps upstream timed out / was unreachable (503) — "offline / try later".
+  static const String upstreamUnavailable = 'UPSTREAM_UNAVAILABLE';
+
+  /// `journey.start()` rejected because the user already has an ACTIVE journey
+  /// (409). The body carries `activeJourneyId`.
+  static const String alreadyInActiveJourney = 'ALREADY_IN_ACTIVE_JOURNEY';
 }
