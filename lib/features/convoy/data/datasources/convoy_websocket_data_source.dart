@@ -354,12 +354,29 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       _updateConnectionState(ConvoyConnectionState.connected);
     });
 
-    _socket!.onDisconnect((_) {
-      print('❌ WebSocket disconnected');
+    _socket!.onDisconnect((reason) {
+      print('❌ WebSocket disconnected (reason: $reason)');
       _recordConnectionLifetime();
 
       if (_intentionalDisconnect) {
         print('🔌 Intentional disconnect - not attempting to reconnect');
+        _updateConnectionState(ConvoyConnectionState.disconnected);
+        return;
+      }
+
+      // A server-initiated disconnect is terminal — do NOT reconnect. The
+      // backend force-disconnects this user's sockets on logout (BE-FIX-4,
+      // server-side `disconnectSockets`), which Socket.IO surfaces as the
+      // 'io server disconnect' reason. Reconnecting here would immediately
+      // re-handshake with a now-revoked token and churn until the short-lived
+      // guard trips; the auth/logout flow tears down the rest. Network drops
+      // ('ping timeout' / 'transport close' / 'transport error') fall through
+      // to the reconnect path below.
+      final reasonStr = reason?.toString() ?? '';
+      if (reasonStr.contains('server disconnect')) {
+        print('🔌 Server-initiated disconnect ($reasonStr) - not reconnecting');
+        _intentionalDisconnect = true;
+        _stopReconnectTimer();
         _updateConnectionState(ConvoyConnectionState.disconnected);
         return;
       }
