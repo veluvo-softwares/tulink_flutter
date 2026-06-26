@@ -223,6 +223,23 @@ class DioClient {
     return await _tokenManager.hasValidAuthToken();
   }
 
+  /// True if a (non-expired) refresh token is stored — i.e. an expired access
+  /// token is still recoverable without forcing the user to log in again.
+  Future<bool> hasRefreshToken() async {
+    return _tokenManager.hasValidRefreshToken();
+  }
+
+  /// Exchange the stored refresh token for a fresh ID token. Returns the new
+  /// token, or null if there was nothing to refresh / the refresh failed (in
+  /// which case TokenManager has already cleared tokens and fired onAuthLost).
+  Future<String?> tryRefreshToken() async {
+    try {
+      return await _tokenManager.refreshAuthToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Get token metadata for debugging
   Future<Map<String, dynamic>?> getTokenMetadata() async {
     return await _tokenManager.getTokenMetadata();

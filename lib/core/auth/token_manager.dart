@@ -87,9 +87,14 @@ class TokenManager {
       final expiresAt = tokenData['expiresAt'] as String?;
 
       if (expiresAt != null && _isTokenExpired(expiresAt)) {
-        // Token is expired, remove it
-        await clearAuthToken();
-        throw TokenFailure.accessTokenExpired;
+        // An expired ID token is normal — Firebase caps them at ~1h — and is
+        // recoverable via the (non-expiring) refresh token. Signal "no
+        // currently-valid token" by returning null WITHOUT deleting it.
+        // Deleting here is what made the startup auth gate (isSignedIn) drop a
+        // returning user at the login screen even though a valid refresh token
+        // was in storage. Recovery happens in refreshAuthToken(); the 401
+        // interceptor also refreshes on demand during active use.
+        return null;
       }
 
       return token;
