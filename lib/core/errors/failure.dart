@@ -667,3 +667,43 @@ class ConvoyFailure extends Failure {
     );
   }
 }
+
+/// Raised when `journey.start()` is rejected by the backend because the user
+/// already has an ACTIVE journey (HTTP 409, code `ALREADY_IN_ACTIVE_JOURNEY`).
+///
+/// Carries [activeJourneyId] — the journey the user already has active — so the
+/// UI can offer an "end it and start this one" switch instead of dead-ending on
+/// a generic conflict error. This is the server's authoritative single-active
+/// enforcement (BE-FIX-3); it catches cases the client-side switch guard can't
+/// know about, e.g. a stale client or a second device.
+class AlreadyInActiveJourneyFailure extends Failure {
+  const AlreadyInActiveJourneyFailure({
+    this.activeJourneyId,
+    super.message = 'You already have an active journey.',
+    super.details,
+    super.timestamp,
+  }) : super(statusCode: 409);
+
+  /// Id of the journey the user already has ACTIVE (from the 409 body). May be
+  /// null if the server resolved the conflict in the race window before we
+  /// re-read it.
+  final String? activeJourneyId;
+
+  @override
+  List<Object?> get props => [...super.props, activeJourneyId];
+
+  @override
+  AlreadyInActiveJourneyFailure copyWith({
+    String? message,
+    int? statusCode,
+    String? details,
+    DateTime? timestamp,
+  }) {
+    return AlreadyInActiveJourneyFailure(
+      activeJourneyId: activeJourneyId,
+      message: message ?? this.message,
+      details: details ?? this.details,
+      timestamp: timestamp ?? this.timestamp,
+    );
+  }
+}

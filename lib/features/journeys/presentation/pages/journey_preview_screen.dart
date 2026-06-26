@@ -230,6 +230,30 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
           );
         }
       } else {
+        // The backend enforces single-active-journey (BE-FIX-3). If it rejected
+        // the start with 409 ALREADY_IN_ACTIVE_JOURNEY — e.g. a stale client or
+        // a second device already has one active, which the client-side switch
+        // guard above can't know about — offer to end that journey and start
+        // this one instead of dead-ending on a generic error.
+        final conflictId =
+            context.read<JourneyProvider>().activeJourneyConflictId;
+        if (conflictId != null) {
+          final switched = await _confirmAndSwitchActiveJourney(conflictId);
+          if (!mounted) return;
+          if (switched) {
+            context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed(
+                '/mapview',
+                arguments: widget.journeyId,
+              );
+            }
+            return;
+          }
+          // Cancelled, or the switch itself failed — reset the start UI quietly.
+          _resetStartState();
+          return;
+        }
         // Handle start journey failure
         _handleJourneyStartFailure('Failed to start journey. Please try again.');
       }
@@ -239,16 +263,22 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     }
   }
 
-  void _handleJourneyStartFailure(String message) {
+  /// Reset the countdown / starting UI back to its idle state without showing
+  /// an error (used when the user cancels the active-journey switch prompt).
+  void _resetStartState() {
     if (!mounted) return;
-    
     setState(() {
       _isStartingJourney = false;
       _showCountdown = false;
       _showGoMessage = false;
       _countdownValue = 5;
     });
-    
+  }
+
+  void _handleJourneyStartFailure(String message) {
+    _resetStartState();
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -256,6 +286,37 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         duration: const Duration(seconds: 4),
       ),
     );
+  }
+
+  /// Offer to end the user's already-active journey (server rejected the start
+  /// with 409 ALREADY_IN_ACTIVE_JOURNEY) and start this one in its place.
+  /// Returns true only if the switch succeeded.
+  Future<bool> _confirmAndSwitchActiveJourney(String activeJourneyId) async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Already in an active journey'),
+        content: const Text(
+          'You already have an active journey (it may be running on another '
+          'device). End it and start this one instead?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('End & start this'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return false;
+    return context.read<JourneyProvider>().switchToJourney(
+          fromJourneyId: activeJourneyId,
+          toJourneyId: widget.journeyId,
+        );
   }
 
   /// Prefetch the road-following route while the countdown is running.

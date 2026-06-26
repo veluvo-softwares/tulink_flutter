@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tulink_flutter/core/common/result.dart';
+import 'package:tulink_flutter/core/errors/failure.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
 
@@ -36,6 +37,13 @@ class JourneyProvider extends ChangeNotifier {
   /// by the map screen. Cleared after consumption via [consumeLastCompletedJourney].
   Journey? _lastCompletedJourney;
   Journey? get lastCompletedJourney => _lastCompletedJourney;
+
+  /// Set when [startJourney] is rejected by the backend with
+  /// ALREADY_IN_ACTIVE_JOURNEY (409): the id of the journey the user already has
+  /// ACTIVE. Lets the UI offer an end-it-and-start-this switch. Cleared on the
+  /// next [startJourney] attempt.
+  String? _activeJourneyConflictId;
+  String? get activeJourneyConflictId => _activeJourneyConflictId;
 
 
   void _setLoading(bool value) {
@@ -123,6 +131,7 @@ class JourneyProvider extends ChangeNotifier {
   Future<bool> startJourney(String journeyId) async {
     _setLoading(true);
     _setError(null);
+    _activeJourneyConflictId = null;
 
     final result = await startJourneyUseCase(journeyId);
 
@@ -131,10 +140,28 @@ class JourneyProvider extends ChangeNotifier {
       _setLoading(false);
       return true;
     } else {
-      _setError(result.failure?.message ?? 'Unknown error');
+      final failure = result.failure;
+      if (failure is AlreadyInActiveJourneyFailure) {
+        // Backend single-active enforcement (BE-FIX-3). Stash the conflicting
+        // journey id so the UI can offer to end it and start this one.
+        _activeJourneyConflictId = failure.activeJourneyId;
+      }
+      _setError(failure?.message ?? 'Unknown error');
       _setLoading(false);
       return false;
     }
+  }
+
+  /// Resolve an ALREADY_IN_ACTIVE_JOURNEY conflict surfaced by [startJourney]:
+  /// end the currently-active journey, then start the requested one. Returns
+  /// true only if the new journey actually started.
+  Future<bool> switchToJourney({
+    required String fromJourneyId,
+    required String toJourneyId,
+  }) async {
+    final ended = await endJourney(fromJourneyId);
+    if (!ended) return false;
+    return startJourney(toJourneyId);
   }
 
   Future<bool> updateJourney({
