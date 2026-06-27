@@ -121,10 +121,20 @@ class ApiHandler {
         
       case DioExceptionType.badResponse:
         if (e.response != null) {
-          // Try to extract message from backend response
+          // Prefer the backend's typed machine code (`{ error: { code, ... } }`)
+          // when present, so callers can branch on it — auth refresh-vs-logout,
+          // maps upstream classification, journey conflicts — instead of
+          // flattening every failure by HTTP status code.
+          final typed = _failureFromResponseData(
+            e.response!.data,
+            e.response!.statusCode,
+          );
+          if (typed != null) return typed;
+
+          // No typed error body — fall back to message / status-code mapping.
           try {
             final responseData = e.response!.data;
-            if (responseData is Map<String, dynamic> && 
+            if (responseData is Map<String, dynamic> &&
                 responseData.containsKey('message')) {
               return ServerFailure(
                 message: responseData['message'] as String,
@@ -147,6 +157,70 @@ class ApiHandler {
       case DioExceptionType.unknown:
       default:
         return NetworkFailure.unknown;
+    }
+  }
+
+  /// Parse the backend's structured error envelope `{ error: { code, ... } }`
+  /// from a response body. Returns null when there is no machine `code` to act
+  /// on. Exposed so callers that don't go through [performApiCall] (e.g. the
+  /// raw-Dio journey data source handling `409 ALREADY_IN_ACTIVE_JOURNEY`) can
+  /// read `activeJourneyId` and other typed fields off the same model.
+  static ApiError? extractApiError(dynamic responseData) {
+    if (responseData is! Map<String, dynamic>) return null;
+    final errorObj = responseData['error'];
+    if (errorObj is! Map<String, dynamic>) return null;
+    if (errorObj['code'] is! String) return null;
+    try {
+      return ApiError.fromJson(errorObj);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Map a typed backend error body to a [Failure]. Returns null when the body
+  /// has no machine code (the caller then falls back to status-code mapping).
+  static Failure? _failureFromResponseData(
+    dynamic responseData,
+    int? statusCode,
+  ) {
+    final apiError = extractApiError(responseData);
+    if (apiError == null) return null;
+    final message = (responseData is Map<String, dynamic>
+            ? responseData['message'] as String?
+            : null) ??
+        apiError.details ??
+        'Request failed';
+    return _failureForCode(apiError, message, statusCode);
+  }
+
+  static Failure _failureForCode(
+    ApiError error,
+    String message,
+    int? statusCode,
+  ) {
+    switch (error.code) {
+      case ApiErrorCodes.tokenExpired:
+        // Recoverable via refresh; the auth interceptor handles the retry.
+        return AuthFailure.tokenExpired;
+      case ApiErrorCodes.tokenRevoked:
+      case ApiErrorCodes.authFailed:
+      case ApiErrorCodes.unauthorized:
+        // Not recoverable by refresh — re-auth required.
+        return AuthFailure.tokenInvalid;
+      case ApiErrorCodes.forbidden:
+        return const AuthFailure(message: 'Access forbidden');
+      case ApiErrorCodes.validationError:
+        return ValidationFailure(message: message);
+      default:
+        // Includes UPSTREAM_* and ALREADY_IN_ACTIVE_JOURNEY: preserve the
+        // machine code in `details` so it isn't lost to a generic status
+        // mapping. Endpoint-specific handlers (e.g. journey conflict) read the
+        // richer fields via [extractApiError] before reaching here.
+        return ServerFailure(
+          message: message,
+          statusCode: statusCode,
+          details: error.code,
+        );
     }
   }
 
@@ -385,7 +459,7 @@ class ApiHandler {
         case ApiErrorCodes.forbidden:
           return const AuthFailure(message: 'Access forbidden');
         case ApiErrorCodes.validationError:
-          return ValidationFailure(message: error.details);
+          return ValidationFailure(message: error.details ?? apiResponse.message);
         case ApiErrorCodes.networkError:
         case ApiErrorCodes.timeoutError:
           return NetworkFailure.timeout;
@@ -421,7 +495,7 @@ class ApiHandler {
         case ApiErrorCodes.forbidden:
           return const AuthFailure(message: 'Access forbidden');
         case ApiErrorCodes.validationError:
-          return ValidationFailure(message: error.details);
+          return ValidationFailure(message: error.details ?? apiResponse.message);
         case ApiErrorCodes.networkError:
         case ApiErrorCodes.timeoutError:
           return NetworkFailure.timeout;

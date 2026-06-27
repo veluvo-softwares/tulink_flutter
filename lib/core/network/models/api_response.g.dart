@@ -46,10 +46,12 @@ Object? _$nullableGenericToJson<T>(
 
 ApiError _$ApiErrorFromJson(Map<String, dynamic> json) => ApiError(
       code: json['code'] as String,
-      details: json['details'] as String,
+      details: json['details'] as String?,
+      activeJourneyId: json['activeJourneyId'] as String?,
     );
 
 Map<String, dynamic> _$ApiErrorToJson(ApiError instance) => <String, dynamic>{
       'code': instance.code,
       'details': instance.details,
+      'activeJourneyId': instance.activeJourneyId,
     };
