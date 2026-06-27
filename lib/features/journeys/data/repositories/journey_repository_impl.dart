@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:tulink_flutter/core/common/result.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
+import 'package:tulink_flutter/features/journeys/data/datasources/journey_exceptions.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/repositories/journey_repository.dart';
 import 'package:tulink_flutter/features/journeys/data/datasources/journey_remote_data_source.dart';
@@ -90,17 +91,28 @@ class JourneyRepositoryImpl implements JourneyRepository {
     try {
       final journey = await remoteDataSource.startJourney(journeyId);
       return (data: journey, failure: null);
+    } on AlreadyInActiveJourneyException catch (e) {
+      // Single-active-journey enforcement (BE-FIX-3): the data source already
+      // parsed the 409 envelope; translate it to a domain Failure that carries
+      // activeJourneyId so the UI can offer an end-it-and-start-this switch.
+      return (
+        data: null,
+        failure: AlreadyInActiveJourneyFailure(
+          activeJourneyId: e.activeJourneyId,
+          message: e.message ?? 'You already have an active journey.',
+        ),
+      );
     } on DioException catch (e) {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message: e.response?.data?['message']?.toString() ??
               'Failed to start journey',
         ),
       );
     } catch (e) {
       return (
-        data: null, 
+        data: null,
         failure: ServerFailure(message: e.toString()),
       );
     }

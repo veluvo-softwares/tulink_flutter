@@ -76,3 +76,24 @@ class EndJourney {
     return repository.endJourney(journeyId);
   }
 }
+
+/// Resolve an ALREADY_IN_ACTIVE_JOURNEY conflict (BE-FIX-3): end the user's
+/// currently-active journey, then start the requested one. Returns the started
+/// journey, or the first failure encountered (an end failure short-circuits the
+/// start).
+class SwitchActiveJourney {
+  final JourneyRepository repository;
+
+  SwitchActiveJourney(this.repository);
+
+  Future<Result<Journey>> call({
+    required String fromJourneyId,
+    required String toJourneyId,
+  }) async {
+    final ended = await repository.endJourney(fromJourneyId);
+    if (ended.failure != null) {
+      return (data: null, failure: ended.failure);
+    }
+    return repository.startJourney(toJourneyId);
+  }
+}
