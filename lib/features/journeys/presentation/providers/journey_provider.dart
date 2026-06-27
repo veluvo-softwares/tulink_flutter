@@ -11,6 +11,7 @@ class JourneyProvider extends ChangeNotifier {
   final StartJourney startJourneyUseCase;
   final UpdateJourney updateJourneyUseCase;
   final EndJourney endJourneyUseCase;
+  final SwitchActiveJourney switchActiveJourneyUseCase;
 
   JourneyProvider({
     required this.createJourneyUseCase,
@@ -19,6 +20,7 @@ class JourneyProvider extends ChangeNotifier {
     required this.startJourneyUseCase,
     required this.updateJourneyUseCase,
     required this.endJourneyUseCase,
+    required this.switchActiveJourneyUseCase,
   });
 
   bool _isLoading = false;
@@ -153,15 +155,32 @@ class JourneyProvider extends ChangeNotifier {
   }
 
   /// Resolve an ALREADY_IN_ACTIVE_JOURNEY conflict surfaced by [startJourney]:
-  /// end the currently-active journey, then start the requested one. Returns
-  /// true only if the new journey actually started.
+  /// end the currently-active journey, then start the requested one (via the
+  /// [SwitchActiveJourney] use case). Returns true only if the new journey
+  /// actually started.
   Future<bool> switchToJourney({
     required String fromJourneyId,
     required String toJourneyId,
   }) async {
-    final ended = await endJourney(fromJourneyId);
-    if (!ended) return false;
-    return startJourney(toJourneyId);
+    _setLoading(true);
+    _setError(null);
+    _activeJourneyConflictId = null;
+
+    final result = await switchActiveJourneyUseCase(
+      fromJourneyId: fromJourneyId,
+      toJourneyId: toJourneyId,
+    );
+
+    if (result.isSuccess && result.data != null) {
+      _currentJourney = result.data;
+      _activeJourneys.removeWhere((j) => j.id == fromJourneyId);
+      _setLoading(false);
+      return true;
+    } else {
+      _setError(result.failure?.message ?? 'Unknown error');
+      _setLoading(false);
+      return false;
+    }
   }
 
   Future<bool> updateJourney({

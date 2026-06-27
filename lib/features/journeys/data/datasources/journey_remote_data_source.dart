@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:tulink_flutter/features/home/domain/entities/journey.dart';
+import 'package:tulink_flutter/core/network/api_handler.dart';
+import 'package:tulink_flutter/core/network/models/api_response.dart';
+import 'package:tulink_flutter/features/journeys/data/datasources/journey_exceptions.dart';
 import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart';
 
 abstract class JourneyRemoteDataSource {
@@ -99,19 +101,36 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
 
   @override
   Future<JourneyModel> startJourney(String journeyId) async {
-    final response = await dio.post<Map<String, dynamic>>('/journeys/$journeyId/start');
+    try {
+      final response =
+          await dio.post<Map<String, dynamic>>('/journeys/$journeyId/start');
 
-    if (response.statusCode == 201 && response.data != null) {
-      final journeyData = response.data!['data'] as Map<String, dynamic>?;
-      if (journeyData != null) {
-        return JourneyModel.fromJson(journeyData);
+      if (response.statusCode == 201 && response.data != null) {
+        final journeyData = response.data!['data'] as Map<String, dynamic>?;
+        if (journeyData != null) {
+          return JourneyModel.fromJson(journeyData);
+        }
       }
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        message: 'Invalid response format or failed to start journey',
+      );
+    } on DioException catch (e) {
+      // Single-active-journey enforcement (BE-FIX-3): a 409 with code
+      // ALREADY_IN_ACTIVE_JOURNEY carries the offending activeJourneyId. Parse
+      // the backend error envelope here, in the data layer, and raise a typed
+      // data exception so the repository maps it to a domain Failure without
+      // touching transport details.
+      final apiError = ApiHandler.extractApiError(e.response?.data);
+      if (apiError?.code == ApiErrorCodes.alreadyInActiveJourney) {
+        throw AlreadyInActiveJourneyException(
+          activeJourneyId: apiError!.activeJourneyId,
+          message: e.response?.data?['message']?.toString(),
+        );
+      }
+      rethrow;
     }
-    throw DioException(
-      requestOptions: response.requestOptions,
-      response: response,
-      message: 'Invalid response format or failed to start journey',
-    );
   }
 
   @override

@@ -233,6 +233,7 @@ class ServiceLocator {
       startJourneyUseCase: StartJourney(_journeyRepository),
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
       endJourneyUseCase: EndJourney(_journeyRepository),
+      switchActiveJourneyUseCase: SwitchActiveJourney(_journeyRepository),
     );
     _analyticsProvider = AnalyticsProvider(
       _getJourneyHistoryUseCase,

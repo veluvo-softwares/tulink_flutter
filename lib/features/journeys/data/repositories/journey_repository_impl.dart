@@ -1,8 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:tulink_flutter/core/common/result.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
-import 'package:tulink_flutter/core/network/api_handler.dart';
-import 'package:tulink_flutter/core/network/models/api_response.dart';
+import 'package:tulink_flutter/features/journeys/data/datasources/journey_exceptions.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/repositories/journey_repository.dart';
 import 'package:tulink_flutter/features/journeys/data/datasources/journey_remote_data_source.dart';
@@ -92,22 +91,18 @@ class JourneyRepositoryImpl implements JourneyRepository {
     try {
       final journey = await remoteDataSource.startJourney(journeyId);
       return (data: journey, failure: null);
+    } on AlreadyInActiveJourneyException catch (e) {
+      // Single-active-journey enforcement (BE-FIX-3): the data source already
+      // parsed the 409 envelope; translate it to a domain Failure that carries
+      // activeJourneyId so the UI can offer an end-it-and-start-this switch.
+      return (
+        data: null,
+        failure: AlreadyInActiveJourneyFailure(
+          activeJourneyId: e.activeJourneyId,
+          message: e.message ?? 'You already have an active journey.',
+        ),
+      );
     } on DioException catch (e) {
-      // The backend enforces single-active-journey (BE-FIX-3): starting a
-      // second journey while one is ACTIVE returns 409 ALREADY_IN_ACTIVE_JOURNEY
-      // with the offending activeJourneyId. Surface it typed so the UI can offer
-      // an end-it-and-start-this switch instead of a dead-end error.
-      final apiError = ApiHandler.extractApiError(e.response?.data);
-      if (apiError?.code == ApiErrorCodes.alreadyInActiveJourney) {
-        return (
-          data: null,
-          failure: AlreadyInActiveJourneyFailure(
-            activeJourneyId: apiError!.activeJourneyId,
-            message: e.response?.data?['message']?.toString() ??
-                'You already have an active journey.',
-          ),
-        );
-      }
       return (
         data: null,
         failure: ServerFailure(
