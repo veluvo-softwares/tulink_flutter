@@ -202,9 +202,20 @@ class AuthRepositoryImpl implements AuthRepository {
       final isUserCached = await localDataSource.isUserCached();
       if (!isUserCached) return false;
 
-      // Check if token exists
+      // A currently-valid (unexpired) access token means we're good.
       final token = await dioClient.getAuthToken();
-      return token != null && token.isNotEmpty;
+      if (token != null && token.isNotEmpty) return true;
+
+      // Access token is missing or expired. This is the common case when iOS
+      // relaunches a backgrounded app after the ~1h ID-token lifetime — the
+      // session is still alive as long as we hold a refresh token. Recover it
+      // here instead of dropping the user at the login screen.
+      // tryRefreshToken() persists the rotated tokens; on a genuine failure it
+      // clears tokens and fires onAuthLost, so returning false is safe.
+      final hasRefresh = await dioClient.hasRefreshToken();
+      if (!hasRefresh) return false;
+      final fresh = await dioClient.tryRefreshToken();
+      return fresh != null && fresh.isNotEmpty;
     } catch (e) {
       return false;
     }
