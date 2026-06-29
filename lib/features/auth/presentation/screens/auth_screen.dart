@@ -1,5 +1,8 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/main.dart';
 
@@ -129,17 +132,9 @@ class _AuthScreenState extends State<AuthScreen>
                 ),
               ),
 
-              AnimatedBuilder(
-                animation: _tabController,
-                builder: (context, _) {
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: _tabController.index == 1
-                        ? _buildGuestButton()
-                        : const SizedBox.shrink(),
-                  );
-                },
-              ),
+              // Social sign-in / sign-up. Placed once, visible in both the
+              // Sign In and Sign Up tabs (social is an upsert — it serves both).
+              _buildSocialButtons(),
             ],
           ),
         ),
@@ -147,52 +142,114 @@ class _AuthScreenState extends State<AuthScreen>
     );
   }
 
-  Widget _buildGuestButton() {
+  Widget _buildSocialButtons() {
     final colors = Theme.of(context).extension<TulinkColors>()!;
 
-    return Column(
-      children: [
-        const SizedBox(height: 24),
-        Row(
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        final disabled = authProvider.isLoading;
+        return Column(
           children: [
-            const Expanded(child: Divider()),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'or',
-                style: TextStyle(color: colors.silver),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: TextStyle(color: colors.silver),
+                  ),
+                ),
+                const Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Google — white surface + official multi-color "G" mark, no
+            // recoloring (Google branding requirement).
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: disabled ? null : _handleGoogleSignIn,
+                icon: SvgPicture.asset(
+                  'assets/icons/google_logo.svg',
+                  width: 20,
+                  height: 20,
+                ),
+                label: const Text('Continue with Google'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1F1F1F),
+                  disabledBackgroundColor: Colors.white70,
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ),
             ),
-            const Expanded(child: Divider()),
+
+            // Apple — black surface + Apple logo (HIG). iOS only for now;
+            // Android Apple sign-in (web redirect) is deferred.
+            if (Platform.isIOS) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: disabled ? null : _handleAppleSignIn,
+                  icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+                  label: const Text('Continue with Apple'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.black54,
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(color: colors.brushedSteel),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ),
-        const SizedBox(height: 16),
-        Consumer<AuthProvider>(
-          builder: (context, authProvider, _) {
-            return OutlinedButton.icon(
-              onPressed: authProvider.isLoading ? null : _handleGuestSignIn,
-              icon: Icon(Icons.person_outline, color: colors.silver),
-              label: Text(
-                'Continue as Guest',
-                style: TextStyle(color: colors.silver),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: colors.silver),
-                minimumSize: const Size(double.infinity, 48),
-              ),
-            );
-          },
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Future<void> _handleGuestSignIn() async {
-    final success = await context.read<AuthProvider>().signInAsGuest();
+  Future<void> _handleGoogleSignIn() async {
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.signInWithGoogle();
 
     if (!mounted) return;
+    if (success) _navigateAfterAuth(authProvider);
+  }
 
-    if (success) {
+  Future<void> _handleAppleSignIn() async {
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.signInWithApple();
+
+    if (!mounted) return;
+    if (success) _navigateAfterAuth(authProvider);
+  }
+
+  /// Route to the same destination the email flow uses. Social emails arrive
+  /// already verified, so this lands on HomePage; the verify branch is kept for
+  /// parity/safety.
+  void _navigateAfterAuth(AuthProvider authProvider) {
+    if (!authProvider.isEmailVerified) {
+      Navigator.of(context).pushReplacementNamed(VerifyEmailScreen.routeName);
+    } else {
       Navigator.of(context).pushReplacementNamed(HomePage.routeName);
     }
   }

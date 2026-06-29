@@ -19,8 +19,14 @@ abstract class AuthRemoteDataSource {
     required String name,
   });
 
-  /// Sign in as a guest using Firebase Anonymous Authentication
-  Future<({UserModel user, String token, String? refreshToken})> signInAsGuest();
+  /// Sign in / sign up with a social provider (Google or Apple).
+  /// Posts the provider OIDC id token to the backend for exchange.
+  Future<({UserModel user, String token, String? refreshToken})> signInWithSocial({
+    required String provider,
+    required String idToken,
+    String? nonce,
+    String? displayName,
+  });
 
   /// Sign out the current user
   Future<void> signOut();
@@ -113,15 +119,29 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<({UserModel user, String token, String? refreshToken})>
-      signInAsGuest() async {
-    final responseData = await _authApiService.signInAsGuest();
+  Future<({UserModel user, String token, String? refreshToken})> signInWithSocial({
+    required String provider,
+    required String idToken,
+    String? nonce,
+    String? displayName,
+  }) async {
+    // Drop nulls so the backend DTO validation (nonce optional for Google,
+    // displayName optional) is not tripped by explicit null values.
+    final body = <String, dynamic>{
+      'provider': provider,
+      'idToken': idToken,
+      if (nonce != null) 'nonce': nonce,
+      if (displayName != null) 'displayName': displayName,
+    };
+
+    final responseData = await _authApiService.socialSignIn(body);
     final authResponse = AuthResponseModel.fromJson(responseData);
 
     print(
-      '📥 GuestSignIn API Response - ID Token: '
+      '📥 SocialSignIn ($provider) API Response - ID Token: '
       '${authResponse.tokens.idToken.substring(0, 20)}...',
     );
+    print('📥 SocialSignIn API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
 
     return (
       user: authResponse.user,

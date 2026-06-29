@@ -37,11 +37,14 @@ class AuthApiService {
     );
   }
 
-  /// Sign in as a guest using Firebase Anonymous Authentication
-  /// Returns standardized response with anonymous user and tokens
-  Future<Map<String, dynamic>> signInAsGuest() {
+  /// Exchange a provider OIDC id token (Google/Apple) for a Tu-Link session.
+  /// Returns standardized response with user and tokens.
+  Future<Map<String, dynamic>> socialSignIn(Map<String, dynamic> body) {
     return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
-      () => _dio.post<Map<String, dynamic>>(ApiRoutes.guestSignIn),
+      () => _dio.post<Map<String, dynamic>>(
+        ApiRoutes.socialSignIn,
+        data: body,
+      ),
       (data) => data,
     );
   }

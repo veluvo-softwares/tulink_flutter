@@ -419,6 +419,18 @@ class AuthFailure extends Failure {
     isRetryable: true,
   );
 
+  /// Benign sentinel: the user backed out of a native social sign-in flow
+  /// (Google/Apple). The provider ignores this — it must NEVER surface an error
+  /// toast. Const so [isCancellation] can identity-check it.
+  static const AuthFailure cancelled = AuthFailure(
+    message: '',
+    details: 'Social sign-in was cancelled by the user.',
+  );
+
+  /// True only for the [cancelled] sentinel — callers use this to silently drop
+  /// a user-cancelled flow instead of showing an error.
+  bool get isCancellation => identical(this, AuthFailure.cancelled);
+
   @override
   AuthFailure copyWith({
     String? message,

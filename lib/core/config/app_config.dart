@@ -64,6 +64,11 @@ class AppConfig {
   
   // Mapbox Configuration
   static String get mapboxAccessToken => dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '';
+
+  // Google Sign-In: the Firebase project's WEB client ID, passed to the native
+  // SDK as serverClientId so it mints an id token the backend can exchange.
+  static String get googleServerClientId =>
+      dotenv.env['GOOGLE_SERVER_CLIENT_ID'] ?? '';
   
   // WebSocket Configuration
   static String get webSocketUrl {

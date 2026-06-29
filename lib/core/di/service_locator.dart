@@ -26,6 +26,7 @@ import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
 import '../../features/auth/data/repositories/auth_repository_impl.dart';
 import '../../features/auth/data/services/auth_api_service.dart';
+import '../../features/auth/data/services/social_auth_service.dart';
 import '../../features/auth/domain/repositories/auth_repository.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/auth/presentation/providers/email_verification_provider.dart';
@@ -59,6 +60,7 @@ class ServiceLocator {
   late DioClient _dioClient;
   late Box<dynamic> _authBox;
   late AuthApiService _authApiService;
+  late SocialAuthService _socialAuthService;
   late AuthLocalDataSource _authLocalDataSource;
   late AuthRemoteDataSource _authRemoteDataSource;
   late AuthRepository _authRepository;
@@ -166,6 +168,7 @@ class ServiceLocator {
 
     // Initialize API services
     _authApiService = AuthApiService(_dioClient.dio);
+    _socialAuthService = SocialAuthService();
     _analyticsApiService = AnalyticsApiService(_dioClient.dio);
     _convoyApiService = ConvoyApiService(_dioClient.dio);
 
@@ -187,6 +190,7 @@ class ServiceLocator {
       remoteDataSource: _authRemoteDataSource,
       localDataSource: _authLocalDataSource,
       dioClient: _dioClient,
+      socialAuthService: _socialAuthService,
     );
     _mapRepository = MapRepositoryImpl(
       localDataSource: _mapLocalDataSource,

@@ -4,6 +4,8 @@ import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../models/user_model.dart';
+import '../services/social_auth_service.dart';
 
 /// Implementation of AuthRepository
 /// Follows the Repository Pattern with Clean Architecture
@@ -13,12 +15,14 @@ class AuthRepositoryImpl implements AuthRepository {
     required this.remoteDataSource,
     required this.localDataSource,
     required this.dioClient,
+    required this.socialAuthService,
   });
 
- 
+
   final AuthRemoteDataSource remoteDataSource;
   final AuthLocalDataSource localDataSource;
   final DioClient dioClient;
+  final SocialAuthService socialAuthService;
 
   @override
   Future<({UserEntity? user, String? token, Failure? failure})> signIn({
@@ -113,34 +117,72 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<({UserEntity? user, String? token, Failure? failure})>
-      signInAsGuest() async {
+      signInWithGoogle() async {
     try {
-      final result = await remoteDataSource.signInAsGuest();
-
-      // Cache the user and token locally
-      await localDataSource.cacheUser(result.user);
-      await localDataSource.cacheToken(result.token);
-      await dioClient.saveAuthToken(result.token);
-
-      // Save refresh token if provided
-      if (result.refreshToken != null) {
-        await dioClient.saveRefreshToken(result.refreshToken!);
-      }
-
-      return (
-        user: result.user.toEntity(),
-        token: result.token,
-        failure: null,
+      final google = await socialAuthService.google();
+      final result = await remoteDataSource.signInWithSocial(
+        provider: 'google',
+        idToken: google.idToken,
+        displayName: google.displayName,
       );
+      return _persistSocialSession(result);
+    } on SocialSignInCancelled {
+      // User backed out — surface a benign sentinel so the provider stays quiet.
+      return (user: null, token: null, failure: AuthFailure.cancelled);
     } on Failure catch (failure) {
       return (user: null, token: null, failure: failure);
     } catch (e) {
       return (
         user: null,
         token: null,
-        failure: const ServerFailure(message: 'Guest sign-in failed'),
+        failure: const ServerFailure(message: 'Google sign-in failed'),
       );
     }
+  }
+
+  @override
+  Future<({UserEntity? user, String? token, Failure? failure})>
+      signInWithApple() async {
+    try {
+      final apple = await socialAuthService.apple();
+      final result = await remoteDataSource.signInWithSocial(
+        provider: 'apple',
+        idToken: apple.idToken,
+        nonce: apple.rawNonce,
+        displayName: apple.displayName,
+      );
+      return _persistSocialSession(result);
+    } on SocialSignInCancelled {
+      return (user: null, token: null, failure: AuthFailure.cancelled);
+    } on Failure catch (failure) {
+      return (user: null, token: null, failure: failure);
+    } catch (e) {
+      return (
+        user: null,
+        token: null,
+        failure: const ServerFailure(message: 'Apple sign-in failed'),
+      );
+    }
+  }
+
+  /// Shared caching block for a successful social exchange — mirrors signIn().
+  Future<({UserEntity? user, String? token, Failure? failure})>
+      _persistSocialSession(
+    ({UserModel user, String token, String? refreshToken}) result,
+  ) async {
+    await localDataSource.cacheUser(result.user);
+    await localDataSource.cacheToken(result.token);
+    await dioClient.saveAuthToken(result.token);
+
+    if (result.refreshToken != null) {
+      await dioClient.saveRefreshToken(result.refreshToken!);
+    }
+
+    return (
+      user: result.user.toEntity(),
+      token: result.token,
+      failure: null,
+    );
   }
 
   @override

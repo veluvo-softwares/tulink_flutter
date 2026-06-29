@@ -5,8 +5,14 @@ import 'package:tulink_flutter/core/network/dio_client.dart';
 import 'package:tulink_flutter/features/auth/data/datasources/auth_local_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/repositories/auth_repository_impl.dart';
+import 'package:tulink_flutter/features/auth/data/services/social_auth_service.dart';
 
-@GenerateMocks([AuthRemoteDataSource, AuthLocalDataSource, DioClient])
+@GenerateMocks([
+  AuthRemoteDataSource,
+  AuthLocalDataSource,
+  DioClient,
+  SocialAuthService,
+])
 import 'auth_repository_impl_test.mocks.dart';
 
 void main() {
@@ -14,15 +20,18 @@ void main() {
   late MockAuthRemoteDataSource remote;
   late MockAuthLocalDataSource local;
   late MockDioClient dio;
+  late MockSocialAuthService social;
 
   setUp(() {
     remote = MockAuthRemoteDataSource();
     local = MockAuthLocalDataSource();
     dio = MockDioClient();
+    social = MockSocialAuthService();
     repository = AuthRepositoryImpl(
       remoteDataSource: remote,
       localDataSource: local,
       dioClient: dio,
+      socialAuthService: social,
     );
   });
 
