@@ -50,21 +50,19 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const SizedBox(height: 40),
 
-              // Tu-Link branding
+              // Tu-Link branding — app logo + tagline
               Center(
                 child: Column(
                   children: [
-                    Text(
-                      'Tu-Link',
-                      style:
-                          Theme.of(context).textTheme.headlineLarge?.copyWith(
-                                color: colors.electricRed,
-                                fontWeight: FontWeight.w800,
-                              ),
+                    Image.asset(
+                      'assets/icon/icon.png',
+                      height: 112,
+                      width: 112,
+                      fit: BoxFit.contain,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Text(
-                      'Motorsports Connection Platform',
+                      'No one left behind',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: colors.silver,
                           ),

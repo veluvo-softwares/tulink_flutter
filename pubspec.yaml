@@ -116,6 +116,7 @@ flutter:
   assets:
     - .env
     - assets/icons/
+    - assets/icon/icon.png
   
   # Tu-Link uses custom fonts from Google Fonts:
 
