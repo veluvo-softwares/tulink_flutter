@@ -92,5 +92,13 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Allow cleartext HTTP to loopback/.local only (e.g. http://localhost:3000
+	     on the iOS simulator). App Store-safe: does not weaken ATS for public
+	     hosts the way NSAllowsArbitraryLoads would. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -20,8 +20,17 @@ class AppConfig {
   static const String appVersion = '1.0.0';
   static const String appPackage = 'com.tulink.flutter';
 
+  // Optional runtime overrides for pointing the app at a local backend, e.g.
+  //   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
+  // When empty (the default), the per-environment URLs below are used.
+  static const String _apiBaseUrlOverride =
+      String.fromEnvironment('API_BASE_URL');
+  static const String _wsBaseUrlOverride =
+      String.fromEnvironment('WS_BASE_URL');
+
   // API Configuration by Environment
   static String get baseUrl {
+    if (_apiBaseUrlOverride.isNotEmpty) return _apiBaseUrlOverride;
     switch (_environment) {
       // case 'production':
       //   return 'https://api.tulink.com/v1';
@@ -72,6 +81,7 @@ class AppConfig {
   
   // WebSocket Configuration
   static String get webSocketUrl {
+    if (_wsBaseUrlOverride.isNotEmpty) return _wsBaseUrlOverride;
     switch (_environment) {
       case 'development':
       default:
