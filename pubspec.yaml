@@ -81,6 +81,9 @@ dependencies:
   firebase_crashlytics: ^5.2.2
   firebase_messaging: ^16.0.0
   geocoding: ^4.0.0
+  google_sign_in: ^7.2.0
+  sign_in_with_apple: ^8.1.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
@@ -113,6 +116,7 @@ flutter:
   assets:
     - .env
     - assets/icons/
+    - assets/icon/icon.png
   
   # Tu-Link uses custom fonts from Google Fonts:
 

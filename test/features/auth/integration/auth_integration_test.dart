@@ -3,6 +3,7 @@ import 'package:tulink_flutter/features/auth/data/services/auth_api_service.dart
 import 'package:tulink_flutter/features/auth/data/datasources/auth_local_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/repositories/auth_repository_impl.dart';
+import 'package:tulink_flutter/features/auth/data/services/social_auth_service.dart';
 import 'package:tulink_flutter/features/auth/data/models/user_model.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/core/network/dio_client.dart';
@@ -44,6 +45,7 @@ void main() {
         remoteDataSource: remoteDataSource,
         localDataSource: localDataSource,
         dioClient: dioClient,
+        socialAuthService: SocialAuthService(),
       );
       authProvider = AuthProvider(repository);
       tokenManager = TokenManager();

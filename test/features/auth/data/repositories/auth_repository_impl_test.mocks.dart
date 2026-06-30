@@ -15,6 +15,8 @@ import 'package:tulink_flutter/features/auth/data/datasources/auth_remote_data_s
     as _i4;
 import 'package:tulink_flutter/features/auth/data/models/user_model.dart'
     as _i2;
+import 'package:tulink_flutter/features/auth/data/services/social_auth_service.dart'
+    as _i9;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -160,10 +162,22 @@ class MockAuthRemoteDataSource extends _i1.Mock
 
   @override
   _i5.Future<({String? refreshToken, String token, _i2.UserModel user})>
-      signInAsGuest() => (super.noSuchMethod(
+      signInWithSocial({
+    required String? provider,
+    required String? idToken,
+    String? nonce,
+    String? displayName,
+  }) =>
+          (super.noSuchMethod(
             Invocation.method(
-              #signInAsGuest,
+              #signInWithSocial,
               [],
+              {
+                #provider: provider,
+                #idToken: idToken,
+                #nonce: nonce,
+                #displayName: displayName,
+              },
             ),
             returnValue: _i5.Future<
                 ({
@@ -175,15 +189,27 @@ class MockAuthRemoteDataSource extends _i1.Mock
               token: _i6.dummyValue<String>(
                 this,
                 Invocation.method(
-                  #signInAsGuest,
+                  #signInWithSocial,
                   [],
+                  {
+                    #provider: provider,
+                    #idToken: idToken,
+                    #nonce: nonce,
+                    #displayName: displayName,
+                  },
                 ),
               ),
               user: _FakeUserModel_0(
                 this,
                 Invocation.method(
-                  #signInAsGuest,
+                  #signInWithSocial,
                   [],
+                  {
+                    #provider: provider,
+                    #idToken: idToken,
+                    #nonce: nonce,
+                    #displayName: displayName,
+                  },
                 ),
               )
             )),
@@ -525,4 +551,64 @@ class MockDioClient extends _i1.Mock implements _i8.DioClient {
         ),
         returnValue: _i5.Future<Duration?>.value(),
       ) as _i5.Future<Duration?>);
+}
+
+/// A class which mocks [SocialAuthService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockSocialAuthService extends _i1.Mock implements _i9.SocialAuthService {
+  MockSocialAuthService() {
+    _i1.throwOnMissingStub(this);
+  }
+
+  @override
+  _i5.Future<({String? displayName, String idToken})> google() =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #google,
+          [],
+        ),
+        returnValue: _i5.Future<({String? displayName, String idToken})>.value((
+          displayName: null,
+          idToken: _i6.dummyValue<String>(
+            this,
+            Invocation.method(
+              #google,
+              [],
+            ),
+          )
+        )),
+      ) as _i5.Future<({String? displayName, String idToken})>);
+
+  @override
+  _i5.Future<({String? displayName, String idToken, String rawNonce})>
+      apple() => (super.noSuchMethod(
+            Invocation.method(
+              #apple,
+              [],
+            ),
+            returnValue: _i5.Future<
+                ({
+                  String? displayName,
+                  String idToken,
+                  String rawNonce
+                })>.value((
+              displayName: null,
+              idToken: _i6.dummyValue<String>(
+                this,
+                Invocation.method(
+                  #apple,
+                  [],
+                ),
+              ),
+              rawNonce: _i6.dummyValue<String>(
+                this,
+                Invocation.method(
+                  #apple,
+                  [],
+                ),
+              )
+            )),
+          ) as _i5.Future<
+              ({String? displayName, String idToken, String rawNonce})>);
 }

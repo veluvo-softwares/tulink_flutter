@@ -37,11 +37,14 @@ class AuthApiService {
     );
   }
 
-  /// Sign in as a guest using Firebase Anonymous Authentication
-  /// Returns standardized response with anonymous user and tokens
-  Future<Map<String, dynamic>> signInAsGuest() {
+  /// Exchange a provider OIDC id token (Google/Apple) for a Tu-Link session.
+  /// Returns standardized response with user and tokens.
+  Future<Map<String, dynamic>> socialSignIn(Map<String, dynamic> body) {
     return ApiHandler.performStandardApiCall<Map<String, dynamic>>(
-      () => _dio.post<Map<String, dynamic>>(ApiRoutes.guestSignIn),
+      () => _dio.post<Map<String, dynamic>>(
+        ApiRoutes.socialSignIn,
+        data: body,
+      ),
       (data) => data,
     );
   }
@@ -72,12 +75,14 @@ class AuthApiService {
     );
   }
 
-  /// Send password reset email
-  /// Uses standardized void response format
+  /// Send a password-reset email (the "forgot password" flow). Posts the
+  /// user's email to /auth/forgot-password; the backend emails a Firebase
+  /// reset link. (The actual new-password submission to /auth/reset-password
+  /// happens on Firebase's hosted page reached via that link.)
   Future<void> resetPassword(Map<String, dynamic> emailData) {
     return ApiHandler.performStandardVoidApiCall(
       () => _dio.post<void>(
-        ApiRoutes.resetPassword,
+        ApiRoutes.forgotPassword,
         data: emailData,
       ),
     );

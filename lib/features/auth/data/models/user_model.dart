@@ -19,7 +19,6 @@ class UserModel extends UserEntity {
     this.isEmailVerified = false,
     required this.createdAt,
     this.updatedAt,
-    this.isGuest = false,
   }) : super(
           id: id,
           email: email,
@@ -29,7 +28,6 @@ class UserModel extends UserEntity {
           isEmailVerified: isEmailVerified,
           createdAt: createdAt,
           updatedAt: updatedAt,
-          isGuest: isGuest,
         );
 
   @HiveField(0)
@@ -67,11 +65,6 @@ class UserModel extends UserEntity {
   @override
   final DateTime? updatedAt;
 
-  @HiveField(8)
-  @JsonKey(name: 'isGuest')
-  @override
-  final bool isGuest;
-
   /// Create UserModel from JSON with robust error handling
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -86,9 +79,6 @@ class UserModel extends UserEntity {
           false,
       createdAt: _parseCreatedAt(json),
       updatedAt: _parseUpdatedAt(json),
-      isGuest: json['isGuest'] as bool? ??
-          (json['displayName']?.toString() == 'Guest' &&
-              (json['email']?.toString() ?? '').isEmpty),
     );
   }
 
@@ -152,7 +142,6 @@ class UserModel extends UserEntity {
         isEmailVerified: entity.isEmailVerified,
         createdAt: entity.createdAt,
         updatedAt: entity.updatedAt,
-        isGuest: entity.isGuest,
       );
 
   /// Convert UserModel to JSON (uses generated method with JsonKey mappings)
@@ -168,7 +157,6 @@ class UserModel extends UserEntity {
         isEmailVerified: isEmailVerified,
         createdAt: createdAt,
         updatedAt: updatedAt,
-        isGuest: isGuest,
       );
 
   /// Create a copy with new values
@@ -182,7 +170,6 @@ class UserModel extends UserEntity {
     bool? isEmailVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
-    bool? isGuest,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -193,7 +180,6 @@ class UserModel extends UserEntity {
       isEmailVerified: isEmailVerified ?? this.isEmailVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      isGuest: isGuest ?? this.isGuest,
     );
   }
 }

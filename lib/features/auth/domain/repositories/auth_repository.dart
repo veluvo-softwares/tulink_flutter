@@ -18,8 +18,13 @@ abstract class AuthRepository {
     required String name,
   });
 
-  /// Sign in as a guest using Firebase Anonymous Authentication
-  Future<({UserEntity? user, String? token, Failure? failure})> signInAsGuest();
+  /// Sign in / sign up with Google. Triggers the native Google flow then
+  /// exchanges the resulting OIDC id token through the backend.
+  Future<({UserEntity? user, String? token, Failure? failure})> signInWithGoogle();
+
+  /// Sign in / sign up with Apple. Triggers the native Apple flow (with a
+  /// hashed nonce) then exchanges the identity token through the backend.
+  Future<({UserEntity? user, String? token, Failure? failure})> signInWithApple();
 
   /// Sign out the current user
   Future<({bool success, Failure? failure})> signOut();

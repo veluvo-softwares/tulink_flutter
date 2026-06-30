@@ -10,10 +10,11 @@ class ApiRoutes {
   static const String signOut = '/auth/logout';
   static const String refreshToken = '/auth/refresh';
   static const String currentUser = '/auth/profile';
+  static const String forgotPassword = '/auth/forgot-password';
   static const String resetPassword = '/auth/reset-password';
   static const String verifyEmail = '/auth/verify-email';
   static const String sendEmailVerification = '/auth/send-email-verification';
-  static const String guestSignIn = '/auth/guest-sign-in';
+  static const String socialSignIn = '/auth/social';
   static const String updateProfile = '/auth/profile';
   static const String deleteAccount = '/auth/account';
   static const String searchUser = '/auth/searchUser';

@@ -161,6 +161,19 @@ class MockConvoyRepository extends _i1.Mock implements _i8.ConvoyRepository {
       ) as _i3.Stream<String>);
 
   @override
+  _i3.Stream<String> get participantAcceptedStream => (super.noSuchMethod(
+        Invocation.getter(#participantAcceptedStream),
+        returnValue: _i3.Stream<String>.empty(),
+      ) as _i3.Stream<String>);
+
+  @override
+  _i3.Stream<Map<String, dynamic>> get journeyInviteStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#journeyInviteStream),
+        returnValue: _i3.Stream<Map<String, dynamic>>.empty(),
+      ) as _i3.Stream<Map<String, dynamic>>);
+
+  @override
   _i3.Stream<({_i4.Failure? failure, _i5.ConvoySnapshot? snapshot})>
       streamConvoyPositions(String? journeyId) => (super.noSuchMethod(
             Invocation.method(
@@ -223,6 +236,26 @@ class MockConvoyRepository extends _i1.Mock implements _i8.ConvoyRepository {
   _i3.Future<void> stopCoordination() => (super.noSuchMethod(
         Invocation.method(
           #stopCoordination,
+          [],
+        ),
+        returnValue: _i3.Future<void>.value(),
+        returnValueForMissingStub: _i3.Future<void>.value(),
+      ) as _i3.Future<void>);
+
+  @override
+  _i3.Future<void> connectUserChannel() => (super.noSuchMethod(
+        Invocation.method(
+          #connectUserChannel,
+          [],
+        ),
+        returnValue: _i3.Future<void>.value(),
+        returnValueForMissingStub: _i3.Future<void>.value(),
+      ) as _i3.Future<void>);
+
+  @override
+  _i3.Future<void> disconnectUserChannel() => (super.noSuchMethod(
+        Invocation.method(
+          #disconnectUserChannel,
           [],
         ),
         returnValue: _i3.Future<void>.value(),
