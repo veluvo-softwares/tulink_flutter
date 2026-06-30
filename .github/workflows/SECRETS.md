@@ -8,9 +8,17 @@ the encoding is implicit (matching the existing ci.yml convention).
 
 | Secret | Used by | Source |
 |---|---|---|
-| `MAPBOX_ACCESS_TOKEN` | ci, alpha-android | Mapbox account |
+| `MAPBOX_ACCESS_TOKEN` | ci, alpha-android, alpha-ios | Mapbox account |
 | `GOOGLE_SERVICES_JSON` | ci, alpha-android | Base64 of `android/app/google-services.json` |
 | `GOOGLE_SERVICE_INFO_PLIST` | ci, alpha-ios | Base64 of `ios/Runner/GoogleService-Info.plist` |
+| `GOOGLE_SERVER_CLIENT_ID` | ci, alpha-android, alpha-ios | Firebase **Web** OAuth client id (Google sign-in `serverClientId`). Plain string — written into `.env` as `GOOGLE_SERVER_CLIENT_ID`. Found in `google-services.json` under the `oauth_client` entry with `"client_type": 3`. |
+
+> **After enabling Google/Apple in Firebase**, refresh the two file secrets with the
+> newly downloaded configs (they now contain the OAuth clients):
+> ```bash
+> base64 -i ios/Runner/GoogleService-Info.plist | pbcopy   # → GOOGLE_SERVICE_INFO_PLIST
+> base64 -i android/app/google-services.json | pbcopy      # → GOOGLE_SERVICES_JSON
+> ```
 
 ## New for alpha distribution (Android)
 
