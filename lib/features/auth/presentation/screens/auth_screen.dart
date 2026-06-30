@@ -6,6 +6,7 @@ import 'package:tulink_flutter/main.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/social_auth_buttons.dart';
+import 'forgot_password_screen.dart';
 import 'sign_up_screen.dart';
 import 'verify_email_screen.dart';
 
@@ -146,15 +147,8 @@ class _AuthScreenState extends State<AuthScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {
-                            // TODO: Implement forgot password
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Forgot password feature coming soon'),
-                              ),
-                            );
-                          },
+                          onPressed: () => Navigator.of(context)
+                              .pushNamed(ForgotPasswordScreen.routeName),
                           child: const Text('Forgot Password?'),
                         ),
                       ),

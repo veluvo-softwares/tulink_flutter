@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tulink_flutter/main.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/sign_up_screen.dart';
+import 'package:tulink_flutter/features/auth/presentation/screens/forgot_password_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/screens/verify_email_screen.dart';
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
@@ -60,6 +61,12 @@ class AppRouter {
       case SignUpScreen.routeName:
         return _createRoute(
           const SignUpScreen(),
+          settings,
+        );
+
+      case ForgotPasswordScreen.routeName:
+        return _createRoute(
+          const ForgotPasswordScreen(),
           settings,
         );
 

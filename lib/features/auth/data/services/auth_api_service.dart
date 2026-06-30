@@ -75,12 +75,14 @@ class AuthApiService {
     );
   }
 
-  /// Send password reset email
-  /// Uses standardized void response format
+  /// Send a password-reset email (the "forgot password" flow). Posts the
+  /// user's email to /auth/forgot-password; the backend emails a Firebase
+  /// reset link. (The actual new-password submission to /auth/reset-password
+  /// happens on Firebase's hosted page reached via that link.)
   Future<void> resetPassword(Map<String, dynamic> emailData) {
     return ApiHandler.performStandardVoidApiCall(
       () => _dio.post<void>(
-        ApiRoutes.resetPassword,
+        ApiRoutes.forgotPassword,
         data: emailData,
       ),
     );
