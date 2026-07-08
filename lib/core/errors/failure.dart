@@ -553,6 +553,23 @@ class TokenFailure extends Failure {
     requiresReauth: true,
   );
 
+  /// A token refresh could NOT be completed for a transient reason — no
+  /// internet, a timeout, or a 5xx / 503 from the backend's refresh endpoint.
+  /// Crucially [requiresReauth] is false: the session is still valid, so callers
+  /// must fail the current request softly and keep the stored tokens rather than
+  /// signing the user out. Recovery happens on the next attempt / reconnect.
+  /// This is what prevents a brief offline blip or an upstream hiccup from
+  /// destroying an active session mid-journey.
+  static TokenFailure refreshTransient = TokenFailure(
+    message: 'Could not refresh session right now',
+    details:
+        'The token refresh failed for a transient reason (offline or server '
+        'temporarily unavailable). The session is preserved; retry shortly.',
+    timestamp: DateTime.now(),
+    tokenType: 'refresh',
+    requiresReauth: false,
+  );
+
   static TokenFailure tokenCorrupted = TokenFailure(
     message: 'Token is corrupted',
     details: 'The stored token appears to be corrupted or invalid.',
