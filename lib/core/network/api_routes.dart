@@ -55,6 +55,7 @@ class ApiRoutes {
 
   // Notification Routes
   static const String notifications = '/notifications';
+  static const String fcmToken = '/notifications/fcm-token';
   static const String notificationSettings = '/notifications/settings';
   static String markNotificationRead(String id) => '/notifications/$id/read';
   static String markNotificationUnread(String id) => '/notifications/$id/unread';

@@ -4,6 +4,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import '../auth/token_manager.dart';
 import '../config/app_config.dart';
 import '../errors/failure.dart';
+import 'request_log_filter.dart';
 
 /// A singleton Dio client with centralized configuration
 class DioClient {
@@ -182,6 +183,7 @@ class DioClient {
       compact: true,
       maxWidth: 90,
       enabled: AppConfig.enableDetailedLogging,
+      filter: shouldLogRequest,
     );
   }
 
