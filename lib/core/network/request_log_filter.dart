@@ -1,19 +1,28 @@
 import 'package:dio/dio.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
+import 'api_routes.dart';
+
+/// Endpoints whose request or response bodies carry credentials or tokens
+/// (passwords, social identity JWTs, idToken/refreshToken pairs). Exact-match
+/// so non-credential auth endpoints (`/auth/searchUser`, `/auth/profile`,
+/// `/auth/verify-email`, …) keep full logging.
+const Set<String> _credentialPaths = {
+  ApiRoutes.signIn,
+  ApiRoutes.signUp,
+  ApiRoutes.socialSignIn,
+  ApiRoutes.refreshToken,
+  ApiRoutes.forgotPassword,
+  ApiRoutes.resetPassword,
+};
+
 /// Filter used by [PrettyDioLogger] to decide whether a request, response,
 /// or error entry should be printed to the console.
 ///
-/// Returns `false` (suppress logging) for any request whose
-/// [RequestOptions.path] contains the substring `/auth` — this covers
-/// `/auth/login`, `/auth/register`, `/auth/social`, `/auth/refresh-token`,
-/// `/auth/forgot-password`, etc., regardless of any leading base-URL
-/// segments. These endpoints carry credentials, social identity JWTs, or
-/// auth tokens (idToken/refreshToken) in their request/response bodies,
-/// which must never be printed to logcat/Xcode console/CI logs.
-///
-/// All other endpoints continue to be logged in full — auth failures remain
-/// diagnosable via `AuthLogger` and repository-level logging instead.
+/// Returns `false` (suppress the entry) only for the credential-bearing
+/// endpoints in [_credentialPaths] — these must never land in logcat/Xcode
+/// console/CI logs. Failures on the suppressed endpoints stay diagnosable
+/// through the repository-level logging in the auth data layer.
 bool shouldLogRequest(RequestOptions options, FilterArgs args) {
-  return !options.path.contains('/auth');
+  return !_credentialPaths.contains(options.path);
 }
