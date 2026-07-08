@@ -6,9 +6,12 @@
 import 'dart:async' as _i5;
 
 import 'package:dio/dio.dart' as _i3;
+import 'package:firebase_messaging/firebase_messaging.dart' as _i11;
 import 'package:mockito/mockito.dart' as _i1;
 import 'package:mockito/src/dummies.dart' as _i6;
 import 'package:tulink_flutter/core/network/dio_client.dart' as _i8;
+import 'package:tulink_flutter/core/services/push_notification_service.dart'
+    as _i10;
 import 'package:tulink_flutter/features/auth/data/datasources/auth_local_data_source.dart'
     as _i7;
 import 'package:tulink_flutter/features/auth/data/datasources/auth_remote_data_source.dart'
@@ -611,4 +614,50 @@ class MockSocialAuthService extends _i1.Mock implements _i9.SocialAuthService {
             )),
           ) as _i5.Future<
               ({String? displayName, String idToken, String rawNonce})>);
+}
+
+/// A class which mocks [PushNotificationService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockPushNotificationService extends _i1.Mock
+    implements _i10.PushNotificationService {
+  MockPushNotificationService() {
+    _i1.throwOnMissingStub(this);
+  }
+
+  @override
+  _i5.Stream<_i11.RemoteMessage> get messages => (super.noSuchMethod(
+        Invocation.getter(#messages),
+        returnValue: _i5.Stream<_i11.RemoteMessage>.empty(),
+      ) as _i5.Stream<_i11.RemoteMessage>);
+
+  @override
+  _i5.Future<void> init() => (super.noSuchMethod(
+        Invocation.method(
+          #init,
+          [],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<void> removeCurrentToken() => (super.noSuchMethod(
+        Invocation.method(
+          #removeCurrentToken,
+          [],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
+
+  @override
+  _i5.Future<void> dispose() => (super.noSuchMethod(
+        Invocation.method(
+          #dispose,
+          [],
+        ),
+        returnValue: _i5.Future<void>.value(),
+        returnValueForMissingStub: _i5.Future<void>.value(),
+      ) as _i5.Future<void>);
 }

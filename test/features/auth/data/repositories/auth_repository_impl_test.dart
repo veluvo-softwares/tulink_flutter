@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:tulink_flutter/core/network/dio_client.dart';
+import 'package:tulink_flutter/core/services/push_notification_service.dart';
 import 'package:tulink_flutter/features/auth/data/datasources/auth_local_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:tulink_flutter/features/auth/data/repositories/auth_repository_impl.dart';
@@ -12,6 +13,7 @@ import 'package:tulink_flutter/features/auth/data/services/social_auth_service.d
   AuthLocalDataSource,
   DioClient,
   SocialAuthService,
+  PushNotificationService,
 ])
 import 'auth_repository_impl_test.mocks.dart';
 
@@ -21,18 +23,74 @@ void main() {
   late MockAuthLocalDataSource local;
   late MockDioClient dio;
   late MockSocialAuthService social;
+  late MockPushNotificationService push;
 
   setUp(() {
     remote = MockAuthRemoteDataSource();
     local = MockAuthLocalDataSource();
     dio = MockDioClient();
     social = MockSocialAuthService();
+    push = MockPushNotificationService();
     repository = AuthRepositoryImpl(
       remoteDataSource: remote,
       localDataSource: local,
       dioClient: dio,
       socialAuthService: social,
+      pushNotificationService: push,
     );
+  });
+
+  group('signOut/deleteAccount — FCM token unlink', () {
+    void stubLocalTeardown() {
+      when(local.clearCachedUser()).thenAnswer((_) async {});
+      when(local.clearCachedToken()).thenAnswer((_) async {});
+      when(dio.clearTokens()).thenAnswer((_) async {});
+    }
+
+    test('signOut unlinks the device push token while still authenticated',
+        () async {
+      when(dio.isAuthenticated()).thenAnswer((_) async => true);
+      when(push.removeCurrentToken()).thenAnswer((_) async {});
+      when(remote.signOut()).thenAnswer((_) async {});
+      stubLocalTeardown();
+
+      final result = await repository.signOut();
+
+      expect(result.success, isTrue);
+      verifyInOrder([
+        push.removeCurrentToken(),
+        remote.signOut(),
+        dio.clearTokens(),
+      ]);
+    });
+
+    test('signOut skips the unlink when no usable session remains', () async {
+      when(dio.isAuthenticated()).thenAnswer((_) async => false);
+      when(dio.hasRefreshToken()).thenAnswer((_) async => false);
+      when(remote.signOut()).thenAnswer((_) async {});
+      stubLocalTeardown();
+
+      final result = await repository.signOut();
+
+      expect(result.success, isTrue);
+      verifyNever(push.removeCurrentToken());
+    });
+
+    test('deleteAccount unlinks the device push token before deletion',
+        () async {
+      when(dio.isAuthenticated()).thenAnswer((_) async => true);
+      when(push.removeCurrentToken()).thenAnswer((_) async {});
+      when(remote.deleteAccount()).thenAnswer((_) async {});
+      stubLocalTeardown();
+
+      final result = await repository.deleteAccount();
+
+      expect(result.success, isTrue);
+      verifyInOrder([
+        push.removeCurrentToken(),
+        remote.deleteAccount(),
+      ]);
+    });
   });
 
   group('isSignedIn — iOS resume recovery', () {

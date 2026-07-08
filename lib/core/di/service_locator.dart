@@ -191,6 +191,7 @@ class ServiceLocator {
       localDataSource: _authLocalDataSource,
       dioClient: _dioClient,
       socialAuthService: _socialAuthService,
+      pushNotificationService: _pushNotificationService,
     );
     _mapRepository = MapRepositoryImpl(
       localDataSource: _mapLocalDataSource,

@@ -1,5 +1,6 @@
 import '../../../../core/errors/failure.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/services/push_notification_service.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_data_source.dart';
@@ -16,6 +17,7 @@ class AuthRepositoryImpl implements AuthRepository {
     required this.localDataSource,
     required this.dioClient,
     required this.socialAuthService,
+    this.pushNotificationService,
   });
 
 
@@ -23,6 +25,10 @@ class AuthRepositoryImpl implements AuthRepository {
   final AuthLocalDataSource localDataSource;
   final DioClient dioClient;
   final SocialAuthService socialAuthService;
+
+  /// Optional so existing tests can construct the repository without it; the
+  /// service locator always supplies the real instance in the running app.
+  final PushNotificationService? pushNotificationService;
 
   @override
   Future<({UserEntity? user, String? token, Failure? failure})> signIn({
@@ -188,6 +194,17 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<({bool success, Failure? failure})> signOut() async {
     try {
+      // Unlink this device's push token BEFORE tearing down the session — the
+      // DELETE endpoint is auth-guarded. Skipped when no usable session
+      // remains: attempting it would only send the auth interceptor down its
+      // doomed refresh path, which clears tokens and fires onAuthLost in the
+      // middle of an intentional sign-out. Best-effort and time-bounded, so it
+      // can't block sign-out.
+      if (await dioClient.isAuthenticated() ||
+          await dioClient.hasRefreshToken()) {
+        await pushNotificationService?.removeCurrentToken();
+      }
+
       // Attempt remote sign out (optional, can continue if fails)
       try {
         await remoteDataSource.signOut();
@@ -345,6 +362,14 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<({bool success, Failure? failure})> deleteAccount() async {
     try {
+      // Same push-token unlink as signOut(): the device must not keep
+      // receiving pushes addressed to the deleted account, and the backend
+      // may not cascade token rows on user deletion.
+      if (await dioClient.isAuthenticated() ||
+          await dioClient.hasRefreshToken()) {
+        await pushNotificationService?.removeCurrentToken();
+      }
+
       await remoteDataSource.deleteAccount();
 
       // Clear all local data
