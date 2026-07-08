@@ -262,6 +262,7 @@ class TokenManager {
       refreshToken = null;
     }
 
+    // No refresh token at all is genuinely terminal — nothing to recover from.
     if (refreshToken == null || refreshToken.isEmpty) {
       await _failRefresh();
     }
@@ -284,30 +285,43 @@ class TokenManager {
         data: {'refreshToken': refreshToken},
       );
 
-      if (response.statusCode != 200 || response.data == null) {
-        await _failRefresh();
-      }
+      // A 2xx that isn't a usable body is a server-contract anomaly, not a dead
+      // session — treat as transient so we never log out on a malformed 200.
+      final data = response.data?['data'];
+      final newIdToken = data is Map<String, dynamic> ? data['idToken'] : null;
+      final newRefreshToken =
+          data is Map<String, dynamic> ? data['refreshToken'] : null;
 
-      final data = response.data!['data'];
-      if (data is! Map<String, dynamic>) {
-        await _failRefresh();
-      }
-
-      final newIdToken = data['idToken'];
-      final newRefreshToken = data['refreshToken'];
-
-      if (newIdToken is! String || newIdToken.isEmpty ||
-          newRefreshToken is! String || newRefreshToken.isEmpty) {
-        await _failRefresh();
+      if (newIdToken is! String ||
+          newIdToken.isEmpty ||
+          newRefreshToken is! String ||
+          newRefreshToken.isEmpty) {
+        throw TokenFailure.refreshTransient;
       }
 
       await saveAuthToken(newIdToken);
       await saveRefreshToken(newRefreshToken);
 
       return newIdToken;
-    } catch (e) {
-      if (e is TokenFailure) rethrow;
-      await _failRefresh();
+    } on TokenFailure {
+      rethrow;
+    } on DioException catch (e) {
+      // Classify the failure. ONLY a definitive auth rejection from the refresh
+      // endpoint (401/403) means the refresh token is dead → clear + reauth.
+      // Everything else — offline, timeout, connection error, or a 5xx/503
+      // (which the backend now returns for transient upstream failures) — is
+      // recoverable: keep the session and fail this attempt softly.
+      final status = e.response?.statusCode;
+      final isDefinitiveAuthRejection = status == 401 || status == 403;
+
+      if (isDefinitiveAuthRejection) {
+        await _failRefresh();
+      }
+      throw TokenFailure.refreshTransient;
+    } catch (_) {
+      // Unknown/non-Dio error — bias toward preserving the session rather than
+      // signing the user out on something we can't positively classify.
+      throw TokenFailure.refreshTransient;
     }
   }
 

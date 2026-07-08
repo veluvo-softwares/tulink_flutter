@@ -66,12 +66,19 @@ class DioClient {
               options.headers['Authorization'] = 'Bearer $fresh';
               handler.next(options);
               return;
-            } on TokenFailure {
+            } on TokenFailure catch (refreshFailure) {
+              // Only a terminal (requiresReauth) failure rejects as an auth
+              // error; a transient one fails as a network error so the session
+              // — and the stored tokens — survive.
               handler.reject(
                 DioException(
                   requestOptions: options,
-                  type: DioExceptionType.badResponse,
-                  error: AuthFailure.refreshTokenExpired,
+                  type: refreshFailure.requiresReauth
+                      ? DioExceptionType.badResponse
+                      : DioExceptionType.connectionError,
+                  error: refreshFailure.requiresReauth
+                      ? AuthFailure.refreshTokenExpired
+                      : NetworkFailure.connectionError,
                 ),
               );
               return;
@@ -119,7 +126,23 @@ class DioClient {
           final response = await _dio.fetch<dynamic>(retryOptions);
           handler.resolve(response);
           return;
-        } on TokenFailure {
+        } on TokenFailure catch (failure) {
+          if (!failure.requiresReauth) {
+            // Transient refresh failure (offline, timeout, or a 5xx/503 from the
+            // refresh endpoint). The session is still valid — do NOT clear tokens
+            // or log out. Fail only THIS request; the next attempt or a reconnect
+            // recovers. This is the fix for spurious offline / mid-journey logouts.
+            handler.reject(
+              DioException(
+                requestOptions: error.requestOptions,
+                response: error.response,
+                type: DioExceptionType.connectionError,
+                error: NetworkFailure.connectionError,
+              ),
+            );
+            return;
+          }
+          // Terminal: the refresh token is genuinely dead — end the session.
           await _tokenManager.clearAllTokens();
           _tokenManager.onAuthLost?.call();
           handler.reject(
