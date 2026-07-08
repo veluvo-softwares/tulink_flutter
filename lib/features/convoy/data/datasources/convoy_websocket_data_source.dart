@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../models/member_position_model.dart';
@@ -238,6 +239,16 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _updateConnectionState(ConvoyConnectionState.disconnected);
   }
 
+  /// Temporary room-join race diagnostics ([ROOM-DEBUG] — mirrors the backend
+  /// gateway's instrumentation). Debug builds only: event payloads must not
+  /// reach release logs. Delete this and its call sites once the race is
+  /// confirmed fixed.
+  void _roomDebug(String message) {
+    if (kDebugMode) {
+      print('[ROOM-DEBUG] $message @ ${DateTime.now().toIso8601String()}');
+    }
+  }
+
   @override
   Future<void> joinJourney(String journeyId) async {
     if (!isConnected) {
@@ -257,13 +268,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     late void Function(dynamic) onJoined;
     onJoined = (data) {
       _socket!.off('joined-journey', onJoined);
+      _roomDebug('✅ joined-journey ACK for $journeyId');
       if (!completer.isCompleted) completer.complete();
     };
 
     _socket!.on('joined-journey', onJoined);
     _socket!.emit('join-journey', {'journeyId': journeyId});
 
-    print('🔌 Joining journey: $journeyId');
+    _roomDebug('🔌 emit join-journey $journeyId');
 
     // 10-second timeout — if joined-journey never arrives (e.g. server rejected
     // with an error event), log a warning and continue so a slow server doesn't
@@ -457,19 +469,26 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     });
 
     _socket!.on('journey-started', (data) {
-      print('🚀 Journey started event received: $data');
+      _roomDebug(
+          '🚀 journey-started RECV currentJourney=$_currentJourneyId data=$data');
       final journeyId = _currentJourneyId;
       if (journeyId != null && !_journeyStartedController.isClosed) {
         _journeyStartedController.add(journeyId);
+      } else {
+        _roomDebug('⚠️ journey-started DROPPED (currentJourneyId=$journeyId)');
       }
     });
 
     _socket!.on('participant-accepted', (data) {
       final userId = data is Map ? data['userId'] : null;
-      print('🤝 Participant accepted: $userId');
+      _roomDebug(
+          '🤝 participant-accepted RECV userId=$userId currentJourney=$_currentJourneyId');
       final journeyId = _currentJourneyId;
       if (journeyId != null && !_participantAcceptedController.isClosed) {
         _participantAcceptedController.add(journeyId);
+      } else {
+        _roomDebug(
+            '⚠️ participant-accepted DROPPED (currentJourneyId=$journeyId)');
       }
     });
 
