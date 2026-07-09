@@ -74,6 +74,18 @@ class PushNotificationService {
 
   Future<void> _registerCurrentToken() async {
     try {
+      if (Platform.isIOS && await _messaging.getAPNSToken() == null) {
+        // On iOS, getToken() requires the native APNs device token to be set
+        // first. That arrives asynchronously (a round-trip to APNs) after
+        // requestPermission() resolves, so calling getToken() immediately
+        // after almost always throws. There's no completion callback for
+        // this, so poll briefly rather than failing the first attempt.
+        if (!await _waitForApnsToken()) {
+          print('❌ APNs token not available after waiting — skipping FCM registration');
+          return;
+        }
+      }
+
       final token = await _messaging.getToken();
       if (token != null) {
         await _registerToken(token);
@@ -81,6 +93,14 @@ class PushNotificationService {
     } catch (e) {
       print('❌ Failed to get FCM token: $e');
     }
+  }
+
+  Future<bool> _waitForApnsToken() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (await _messaging.getAPNSToken() != null) return true;
+    }
+    return false;
   }
 
   Future<void> _registerToken(String token) async {
