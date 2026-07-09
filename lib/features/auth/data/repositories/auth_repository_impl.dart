@@ -138,6 +138,9 @@ class AuthRepositoryImpl implements AuthRepository {
     } on Failure catch (failure) {
       return (user: null, token: null, failure: failure);
     } catch (e) {
+      print(
+        '❌ Google sign-in failed with unmapped exception: ${e.runtimeType}: $e',
+      );
       return (
         user: null,
         token: null,
@@ -163,6 +166,9 @@ class AuthRepositoryImpl implements AuthRepository {
     } on Failure catch (failure) {
       return (user: null, token: null, failure: failure);
     } catch (e) {
+      print(
+        '❌ Apple sign-in failed with unmapped exception: ${e.runtimeType}: $e',
+      );
       return (
         user: null,
         token: null,
