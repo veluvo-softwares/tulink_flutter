@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!-- Debug/Profile only (local Xcode runs, Development provisioning -> APNs
+     sandbox). Release builds (TestFlight/App Store) use
+     Runner-Release.entitlements with aps-environment=production instead —
+     see CODE_SIGN_ENTITLEMENTS per XCBuildConfiguration in project.pbxproj.
+     Do not use this file's aps-environment value for distribution builds:
+     Xcode does NOT auto-flip it during a manual/CI re-sign of an already
+     archived (--no-codesign) build. -->
 <dict>
 	<key>aps-environment</key>
 	<string>development</string>
