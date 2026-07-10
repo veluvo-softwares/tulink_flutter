@@ -155,7 +155,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context
             .read<JourneyProvider>()
             .fetchJourneyById(journeyId)
-            .then((_) {
+            .then((_) async {
+          if (!mounted) return;
+          // Gate location before starting coordination — matches
+          // journey_preview_screen's handler for the same event. Both screens
+          // can be mounted at once (this one underneath, in the Navigator
+          // stack) and react to the same journey-started broadcast; routing
+          // both through the shared guarded permission request (see
+          // LocationPermissionService.requestPermissionGuarded) keeps a
+          // concurrent gate from stacking a second native dialog.
+          if (!await ensureLocationReady(context)) return;
           if (!mounted) return;
           context.read<ConvoyProvider>().startCoordination(journeyId);
           Navigator.of(context).pushNamed('/mapview');

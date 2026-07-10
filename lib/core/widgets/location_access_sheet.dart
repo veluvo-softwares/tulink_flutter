@@ -33,9 +33,16 @@ Future<bool> ensureLocationReady(BuildContext context) async {
 
   // 2. App-level permission. Request inline on a first 'denied'; anything still
   //    not granted falls through to the settings hand-off.
+  //
+  // Uses the shared guarded request (not Geolocator.requestPermission()
+  // directly) because multiple screens can react to the same event (e.g. the
+  // home screen and this journey-preview screen both listen for
+  // journey-started) and each try to gate location around the same moment —
+  // without the shared guard, two concurrent native requests stack two OS
+  // permission dialogs.
   var permission = await Geolocator.checkPermission();
   if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
+    permission = await LocationPermissionService.requestPermissionGuarded();
   }
 
   final granted = permission == LocationPermission.whileInUse ||
@@ -91,7 +98,7 @@ Future<void> maybeShowLocationPriming(BuildContext context) async {
   );
 
   if (proceed == true) {
-    await Geolocator.requestPermission();
+    await LocationPermissionService.requestPermissionGuarded();
   }
 }
 
