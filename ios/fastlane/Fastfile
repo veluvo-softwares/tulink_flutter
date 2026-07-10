@@ -75,6 +75,18 @@ platform :ios do
         output_name: "Runner.ipa",
       )
 
+      # TEMPORARY DIAGNOSTIC: print the entitlements actually baked into the
+      # signed IPA about to be uploaded, to confirm with certainty whether
+      # aps-environment/applesignin are correct in the real artifact rather
+      # than inferring it from source files and profile decodes alone.
+      sh(
+        "rm -rf /tmp/ipa_inspect && mkdir -p /tmp/ipa_inspect && " \
+        "unzip -q ../build/ios/ipa/Runner.ipa -d /tmp/ipa_inspect && " \
+        "echo '--- ENTITLEMENTS IN SIGNED IPA ---' && " \
+        "codesign -d --entitlements :- /tmp/ipa_inspect/Payload/Runner.app && " \
+        "echo '--- END ENTITLEMENTS ---'",
+      )
+
       upload_to_testflight(
         api_key: api_key,
         ipa: "../build/ios/ipa/Runner.ipa",
