@@ -96,6 +96,17 @@ jobs:
           echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode > $HOME/ios-signing/asc-api-key.p8
           echo "APP_STORE_CONNECT_API_KEY_PATH=$HOME/ios-signing/asc-api-key.p8" >> $GITHUB_ENV
 
+      # Must run BEFORE `flutter build ipa` — entitlements (aps-environment,
+      # Sign in with Apple) only get embedded in the app bundle if the
+      # archive step itself codesigns, which requires the cert + profile to
+      # already be installed. See the comment on the `prepare_signing` lane.
+      - name: Prepare iOS signing keychain
+        working-directory: ios
+        env:
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+        run: bundle exec fastlane ios prepare_signing
+
       - name: Compute build number
         run: echo "BUILD_NUMBER=$((${{ github.run_number }} + 1000))" >> $GITHUB_ENV
 
@@ -105,19 +116,34 @@ jobs:
       - name: Pod install
         run: cd ios && pod install
 
+      # No --no-codesign: the Runner target's Release config is Manual-signed
+      # (see project.pbxproj) against the profile installed in the previous
+      # step, so this single command both archives AND exports a fully,
+      # correctly-signed IPA — codesigning actually runs, so entitlements
+      # get embedded for real.
       - name: Build signed archive
-        run: flutter build ipa --release --no-codesign --build-number=$BUILD_NUMBER --build-name=1.0.1
+        run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist --build-number=$BUILD_NUMBER --build-name=1.0.1
 
-      - name: Distribute via Fastlane
+      - name: Locate signed IPA
+        run: |
+          IPA_PATH=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' | head -1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "::error::No .ipa found in build/ios/ipa"
+            exit 1
+          fi
+          echo "IOS_IPA_PATH=$(cd "$(dirname "$IPA_PATH")" && pwd)/$(basename "$IPA_PATH")" >> $GITHUB_ENV
+
+      - name: Upload to TestFlight via Fastlane
         working-directory: ios
         env:
-          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
-          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
-          IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes || github.event.head_commit.message }}
         run: bundle exec fastlane ios testflight
+
+      - name: Cleanup signing keychain
+        if: always()
+        working-directory: ios
+        run: bundle exec fastlane ios cleanup_signing
 
       - name: Cleanup secrets
         if: always()
