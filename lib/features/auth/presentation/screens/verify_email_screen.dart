@@ -5,7 +5,6 @@ import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/email_verification_provider.dart';
-import 'package:tulink_flutter/features/auth/presentation/screens/auth_screen.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
@@ -42,10 +41,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     final success = await context.read<AuthProvider>().signOut();
     if (!mounted) return;
     if (success) {
-      await Navigator.of(context).pushNamedAndRemoveUntil(
-        AuthScreen.routeName,
-        (route) => false,
-      );
+      // This screen is always reached inline within HomePage's
+      // Consumer<AuthProvider> at '/home' — that Consumer already reacted to
+      // isSignedIn flipping false above and reactively swapped its child back
+      // to AuthScreen. Pushing a standalone AuthScreen route here used to
+      // fight that reactive swap (a duplicate route momentarily coexisting
+      // with the reactively-updated one) and could double-mount screens; a
+      // no-op pop is enough since we're already at the first (only) route.
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       CarToastService.showError("Couldn't sign out — please try again");
     }

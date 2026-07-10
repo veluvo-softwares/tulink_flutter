@@ -3,11 +3,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
-import 'package:tulink_flutter/main.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
-import '../screens/verify_email_screen.dart';
 
 /// "or" divider + Continue with Google / Apple buttons. Self-contained: drives
 /// the AuthProvider social flows and navigates on success, so it can be dropped
@@ -20,22 +18,28 @@ class SocialAuthButtons extends StatelessWidget {
     final auth = context.read<AuthProvider>();
     final ok = await auth.signInWithGoogle();
     if (!context.mounted) return;
-    if (ok) _navigate(context, auth);
+    if (ok) _navigate(context);
   }
 
   Future<void> _apple(BuildContext context) async {
     final auth = context.read<AuthProvider>();
     final ok = await auth.signInWithApple();
     if (!context.mounted) return;
-    if (ok) _navigate(context, auth);
+    if (ok) _navigate(context);
   }
 
-  /// Social emails arrive already verified, so this lands on HomePage; the
-  /// verify branch is kept for parity with the email flow.
-  void _navigate(BuildContext context, AuthProvider auth) {
-    Navigator.of(context).pushReplacementNamed(
-      auth.isEmailVerified ? HomePage.routeName : VerifyEmailScreen.routeName,
-    );
+  /// This widget is used both inline within AuthScreen (rendered directly at
+  /// '/home' by HomePage's Consumer<AuthProvider>) and within SignUpScreen
+  /// (pushed on top of '/home'). Either way, HomePage's own Consumer already
+  /// reacted to the auth state change above and reactively swapped its inline
+  /// child to VerifyEmailScreen/MainNavigationScreen — popping back to the
+  /// first route is a no-op in the inline case and reveals the
+  /// already-updated Home when reached via SignUpScreen. Explicitly pushing a
+  /// HomePage/VerifyEmailScreen route here raced that reactive swap and
+  /// double-mounted HomeScreen (see
+  /// .planning/debug/resolved/location-permission-prompt-sh.md).
+  void _navigate(BuildContext context) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override

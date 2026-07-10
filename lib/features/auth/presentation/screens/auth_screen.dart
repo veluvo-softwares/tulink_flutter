@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:tulink_flutter/main.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/social_auth_buttons.dart';
 import 'forgot_password_screen.dart';
 import 'sign_up_screen.dart';
-import 'verify_email_screen.dart';
 
 /// Sign-in screen. Sign-up now lives on its own [SignUpScreen], reached via the
 /// link at the bottom. Social sign-in sits directly below the Sign In button.
@@ -218,11 +216,16 @@ class _AuthScreenState extends State<AuthScreen> {
     if (success) {
       // Trigger the OS "save password?" prompt for the password manager.
       TextInput.finishAutofillContext();
-      Navigator.of(context).pushReplacementNamed(
-        authProvider.isEmailVerified
-            ? HomePage.routeName
-            : VerifyEmailScreen.routeName,
-      );
+      // HomePage's own Consumer<AuthProvider> (lib/main.dart) already reacts
+      // to the state change above and swaps this inline AuthScreen for
+      // VerifyEmailScreen/MainNavigationScreen — no explicit navigation is
+      // needed. Explicitly pushing HomePage.routeName here raced that
+      // reactive swap (both the pre-existing '/home' route and the newly
+      // pushed one ended up mounted during the transition) and double-mounted
+      // HomeScreen, showing the location-priming sheet twice. popUntil is a
+      // no-op when AuthScreen is inline (the common case) and correctly
+      // reveals the already-updated Home when reached via SignUpScreen.
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

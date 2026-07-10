@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:tulink_flutter/main.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/social_auth_buttons.dart';
-import 'verify_email_screen.dart';
 
 /// Standalone sign-up screen, reached from the sign-in screen's "Sign Up" link.
 /// Replaces the former Sign In / Sign Up tab on [AuthScreen].
@@ -243,11 +241,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (success) {
       // Trigger the OS "save password?" prompt for the password manager.
       TextInput.finishAutofillContext();
-      Navigator.of(context).pushReplacementNamed(
-        authProvider.isEmailVerified
-            ? HomePage.routeName
-            : VerifyEmailScreen.routeName,
-      );
+      // SignUpScreen is pushed on top of '/home' (from AuthScreen's "Sign Up"
+      // link). HomePage's own Consumer<AuthProvider> already reacted to the
+      // state change above and reactively swapped its inline child to
+      // VerifyEmailScreen/MainNavigationScreen underneath — popping back
+      // reveals it. Explicitly pushing HomePage.routeName here raced that
+      // reactive swap and double-mounted HomeScreen (see
+      // .planning/debug/resolved/location-permission-prompt-sh.md).
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
