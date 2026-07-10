@@ -49,6 +49,18 @@ class ConvoyProvider extends ChangeNotifier {
   /// while the WebSocket was still subscribed to journey B.
   String? _currentJourneyId;
 
+  /// In-flight guard for [startCoordination]. Multiple call sites
+  /// (journey_preview_screen right before navigating to the map, and the map
+  /// screen's own _onMapCreated right after) can invoke startCoordination()
+  /// for the same journey within milliseconds of each other, unawaited. Without
+  /// this guard, a second call arriving while the first is still awaiting the
+  /// location permission result would independently call
+  /// Geolocator.requestPermission() a second time, stacking two native OS
+  /// permission dialogs. Concurrent calls for the same journey now await the
+  /// same in-progress Future instead of racing it.
+  Future<void>? _coordinationStartFuture;
+  String? _coordinationStartJourneyId;
+
   /// Tracks consecutive publish failures — used to bail out on a backend
   /// that's permanently refusing publishes (journey ended, auth dead, etc.)
   /// rather than spinning forever.
@@ -143,10 +155,26 @@ class ConvoyProvider extends ChangeNotifier {
   /// Idempotent: if we're already coordinating the same journey, this is a
   /// no-op. If we're coordinating a *different* journey, that one is stopped
   /// first to avoid leaking subscriptions / GPS streams across journeys.
+  ///
+  /// Concurrency-safe: multiple call sites can (and do) call this for the same
+  /// journey within the same navigation transition — e.g. journey_preview_screen
+  /// right before pushing the map route, and the map screen's own
+  /// _onMapCreated right after it mounts. A second call for the same journey
+  /// that arrives while the first is still starting up awaits the SAME
+  /// in-flight Future instead of independently re-running the permission
+  /// request, which would otherwise call Geolocator.requestPermission() twice
+  /// and stack two native OS permission dialogs.
   Future<void> startCoordination(String journeyId) async {
     // Already fully coordinating (subscribed + publishing GPS) — nothing to do.
     if (_currentJourneyId == journeyId && _isSubscribed && _isPublishing) {
       return;
+    }
+
+    // Already starting coordination for this journey — join the in-flight
+    // call rather than racing it.
+    if (_coordinationStartJourneyId == journeyId &&
+        _coordinationStartFuture != null) {
+      return _coordinationStartFuture;
     }
 
     // Switching journeys — tear down the previous one cleanly.
@@ -158,6 +186,23 @@ class ConvoyProvider extends ChangeNotifier {
       await stopCoordination();
     }
 
+    _coordinationStartJourneyId = journeyId;
+    final startFuture = _startCoordinationInternal(journeyId);
+    _coordinationStartFuture = startFuture;
+    try {
+      await startFuture;
+    } finally {
+      // Only clear if we're still the owning in-flight call — a subsequent
+      // startCoordination() for a different journey may have already
+      // replaced these fields.
+      if (_coordinationStartJourneyId == journeyId) {
+        _coordinationStartFuture = null;
+        _coordinationStartJourneyId = null;
+      }
+    }
+  }
+
+  Future<void> _startCoordinationInternal(String journeyId) async {
     try {
       _clearError();
       _currentJourneyId = journeyId;

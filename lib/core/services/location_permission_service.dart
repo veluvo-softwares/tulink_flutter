@@ -3,9 +3,41 @@ import '../errors/failure.dart';
 
 /// Service for handling location permissions for convoy coordination
 class LocationPermissionService {
-  static const String _locationDeniedMessage = 
+  static const String _locationDeniedMessage =
       'Location access is required for convoy coordination. '
       'Please enable location permissions in your device settings.';
+
+  /// In-flight guard shared by EVERY call site that asks the OS for location
+  /// permission (this service, [ensureLocationReady], and the priming sheet
+  /// in `location_access_sheet.dart`). The native permission request is a
+  /// single app-wide resource on both platforms: on Android, a second
+  /// concurrent `requestPermissions()` call while one is already pending
+  /// stacks a duplicate dialog; on iOS, geolocator's native handler outright
+  /// errors the second caller and orphans its Future. Multiple independent
+  /// screens can legitimately react to the same event (e.g. both the home
+  /// screen and the journey-preview screen listen for `journey-started` and
+  /// each try to gate location before navigating), so call sites cannot all
+  /// be trusted to sequence themselves — the guard has to live at the lowest
+  /// shared layer. Route every request through [requestPermissionGuarded]
+  /// instead of calling `Geolocator.requestPermission()` directly.
+  static Future<LocationPermission>? _pendingPermissionRequest;
+
+  /// Request OS location permission, coalescing concurrent callers onto a
+  /// single in-flight native request instead of each triggering their own
+  /// (which stacks duplicate permission dialogs). See [_pendingPermissionRequest].
+  static Future<LocationPermission> requestPermissionGuarded() {
+    final pending = _pendingPermissionRequest;
+    if (pending != null) return pending;
+
+    final request = Geolocator.requestPermission();
+    _pendingPermissionRequest = request;
+    request.whenComplete(() {
+      if (identical(_pendingPermissionRequest, request)) {
+        _pendingPermissionRequest = null;
+      }
+    });
+    return request;
+  }
 
   /// Check and request location permissions for convoy coordination
   static Future<({bool granted, Failure? failure})> requestLocationPermission() async {
@@ -21,12 +53,12 @@ class LocationPermissionService {
 
       // Check current permission status
       var permission = await Geolocator.checkPermission();
-      
+
       // Handle denied permission by requesting
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        permission = await requestPermissionGuarded();
       }
-      
+
       // Check final permission status
       switch (permission) {
         case LocationPermission.denied:
@@ -128,7 +160,7 @@ class LocationPermissionService {
       // Android 10 shows the background dialog here; Android 11+ may keep
       // whileInUse and require the user to choose "Allow all the time" in
       // Settings; iOS surfaces the always-permission prompt.
-      final escalated = await Geolocator.requestPermission();
+      final escalated = await requestPermissionGuarded();
       if (escalated == LocationPermission.always) {
         return (granted: true, failure: null);
       }
