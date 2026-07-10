@@ -79,9 +79,14 @@ platform :ios do
       # signed IPA about to be uploaded, to confirm with certainty whether
       # aps-environment/applesignin are correct in the real artifact rather
       # than inferring it from source files and profile decodes alone.
+      # Uses the actual IPA_OUTPUT_PATH from build_app's lane context (an
+      # absolute path) rather than a hardcoded relative one — sh() runs from
+      # ios/fastlane/, not ios/, so relative paths here don't match
+      # build_app's own (which resolves against the job's working-directory).
+      ipa_path = lane_context[SharedValues::IPA_OUTPUT_PATH]
       sh(
         "rm -rf /tmp/ipa_inspect && mkdir -p /tmp/ipa_inspect && " \
-        "unzip -q ../build/ios/ipa/Runner.ipa -d /tmp/ipa_inspect && " \
+        "unzip -q '#{ipa_path}' -d /tmp/ipa_inspect && " \
         "echo '--- ENTITLEMENTS IN SIGNED IPA ---' && " \
         "codesign -d --entitlements :- /tmp/ipa_inspect/Payload/Runner.app && " \
         "echo '--- END ENTITLEMENTS ---'",
