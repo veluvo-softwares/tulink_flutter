@@ -26,10 +26,10 @@ class ConvoyProvider extends ChangeNotifier {
     required PublishMyPosition publishMyPosition,
     required FetchLatestSnapshot fetchLatestSnapshot,
     required ConvoyRepository repository,
-  })  : _streamConvoyPositions = streamConvoyPositions,
-        _publishMyPosition = publishMyPosition,
-        _fetchLatestSnapshot = fetchLatestSnapshot,
-        _repository = repository;
+  }) : _streamConvoyPositions = streamConvoyPositions,
+       _publishMyPosition = publishMyPosition,
+       _fetchLatestSnapshot = fetchLatestSnapshot,
+       _repository = repository;
 
   final StreamConvoyPositions _streamConvoyPositions;
   final PublishMyPosition _publishMyPosition;
@@ -88,7 +88,8 @@ class ConvoyProvider extends ChangeNotifier {
   static const Duration _snapshotNotifyInterval = Duration(milliseconds: 300);
 
   // Convoy stream subscriptions
-  StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>? _convoySubscription;
+  StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>?
+  _convoySubscription;
   StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
   StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
   StreamSubscription<ParticipantArrivedEvent>? _participantArrivedSubscription;
@@ -208,11 +209,16 @@ class ConvoyProvider extends ChangeNotifier {
       _currentJourneyId = journeyId;
 
       // Check permissions first
-      final permissionResult = await LocationPermissionService.requestLocationPermission();
+      final permissionResult =
+          await LocationPermissionService.requestLocationPermission();
       if (!permissionResult.granted) {
-        _setError(permissionResult.failure?.message ?? 'Location permissions required for convoy coordination');
+        _setError(
+          permissionResult.failure?.message ??
+              'Location permissions required for convoy coordination',
+        );
         _currentJourneyId = null;
-        throw permissionResult.failure ?? ConvoyFailure.locationPermissionDenied;
+        throw permissionResult.failure ??
+            ConvoyFailure.locationPermissionDenied;
       }
 
       // Start location publishing (GPS)
@@ -226,15 +232,16 @@ class ConvoyProvider extends ChangeNotifier {
 
       _isSubscribed = true;
       notifyListeners();
-
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
       _currentJourneyId = null;
-      final failure = e is Failure ? e : ConvoyFailure(
-        message: 'Failed to start convoy coordination',
-        details: 'An unexpected error occurred: $e',
-        timestamp: DateTime.now(),
-      );
+      final failure = e is Failure
+          ? e
+          : ConvoyFailure(
+              message: 'Failed to start convoy coordination',
+              details: 'An unexpected error occurred: $e',
+              timestamp: DateTime.now(),
+            );
       _setError(failure.message);
     }
   }
@@ -273,21 +280,29 @@ class ConvoyProvider extends ChangeNotifier {
 
   /// Join a journey room to receive real-time events without starting GPS.
   /// Used by members waiting on the home screen for the leader to start.
-  Future<void> joinJourneyRoom(String journeyId) async {
-    if (_currentJourneyId == journeyId && _isSubscribed) return;
+  Future<bool> joinJourneyRoom(String journeyId) async {
+    if (_currentJourneyId == journeyId && _isSubscribed) return true;
 
     try {
       _clearError();
       _currentJourneyId = journeyId;
 
+      // Do not mark listener mode ready until the server confirms room
+      // membership. Previously _startConvoyStream kicked off its async socket
+      // setup in the background and this method returned immediately, so a
+      // leader could start before the follower was actually in the room.
+      await _repository.joinJourneyRoom(journeyId);
       _startConvoyStream(journeyId);
 
       _isSubscribed = true;
       notifyListeners();
       print('✅ ConvoyProvider: joined journey room $journeyId (listener mode)');
+      return true;
     } catch (e) {
       print('❌ ConvoyProvider: failed to join room: $e');
       _currentJourneyId = null;
+      _setError('Live updates are reconnecting');
+      return false;
     }
   }
 
@@ -295,12 +310,12 @@ class ConvoyProvider extends ChangeNotifier {
   /// Cancels GPS publishing and real-time streaming
   Future<void> stopCoordination() async {
     print('🛑 ConvoyProvider: Stopping coordination...');
-    
+
     // Stop location publishing
     await _locationSubscription?.cancel();
     _locationSubscription = null;
     _isPublishing = false;
-    
+
     // Stop the fixed-cadence beacon timer
     _publishTimer?.cancel();
     _publishTimer = null;
@@ -312,7 +327,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop convoy streaming
     await _convoySubscription?.cancel();
     _convoySubscription = null;
-    
+
     // Stop connection state monitoring
     await _connectionSubscription?.cancel();
     _connectionSubscription = null;
@@ -333,7 +348,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop participant-accepted monitoring
     await _participantAcceptedSubscription?.cancel();
     _participantAcceptedSubscription = null;
-    
+
     // Stop the repository coordination (WebSocket, etc.)
     try {
       await _repository.stopCoordination();
@@ -341,7 +356,7 @@ class ConvoyProvider extends ChangeNotifier {
     } catch (e) {
       print('⚠️ ConvoyProvider: Failed to stop repository coordination: $e');
     }
-    
+
     _isSubscribed = false;
 
     // Reset state
@@ -359,7 +374,6 @@ class ConvoyProvider extends ChangeNotifier {
     print('✅ ConvoyProvider: Coordination stopped completely');
     notifyListeners();
   }
-
 
   /// Build platform-specific location settings that keep GPS alive while the
   /// app is backgrounded or the screen is off during a journey.
@@ -382,7 +396,8 @@ class ConvoyProvider extends ChangeNotifier {
         forceLocationManager: false,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: 'Journey in progress',
-          notificationText: 'Tu-Link is sharing your location with your convoy.',
+          notificationText:
+              'Tu-Link is sharing your location with your convoy.',
           enableWakeLock: true,
           setOngoing: true,
         ),
@@ -421,15 +436,16 @@ class ConvoyProvider extends ChangeNotifier {
         print('⚠️ Failed to get initial position: $e');
       }
 
-      _locationSubscription = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen(
-        (Position position) => _handleLocationUpdate(journeyId, position),
-        onError: (error) {
-          print('❌ Location stream error: $error');
-          _setError('GPS error: $error');
-        },
-      );
+      _locationSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: locationSettings,
+          ).listen(
+            (Position position) => _handleLocationUpdate(journeyId, position),
+            onError: (error) {
+              print('❌ Location stream error: $error');
+              _setError('GPS error: $error');
+            },
+          );
 
       // Fixed-cadence beacon: republish the last known position on a steady
       // interval even while stationary, so parked / just-joined members stay
@@ -443,7 +459,6 @@ class ConvoyProvider extends ChangeNotifier {
 
       _isPublishing = true;
       notifyListeners();
-      
     } catch (e) {
       print('❌ Failed to start location stream: $e');
       throw ConvoyFailure.locationServiceDisabled;
@@ -453,7 +468,10 @@ class ConvoyProvider extends ChangeNotifier {
   /// Handle a new GPS location from the movement stream. Caches the position
   /// for the periodic beacon and publishes immediately (throttled to 1/sec)
   /// for responsive live tracking while moving.
-  Future<void> _handleLocationUpdate(String journeyId, Position position) async {
+  Future<void> _handleLocationUpdate(
+    String journeyId,
+    Position position,
+  ) async {
     _lastKnownPosition = position;
 
     final now = DateTime.now();
@@ -471,7 +489,7 @@ class ConvoyProvider extends ChangeNotifier {
   /// Check if update should be throttled (max 1 per second)
   bool _shouldThrottleUpdate(DateTime now, bool isMoving) {
     if (_lastPublishTime == null) return false;
-    
+
     final timeSinceLastPublish = now.difference(_lastPublishTime!);
     return timeSinceLastPublish.inMilliseconds < 1000; // Max 1 per second
   }
@@ -485,7 +503,11 @@ class ConvoyProvider extends ChangeNotifier {
   ///
   /// Transient failures (network, rate limit) are logged and retried on the
   /// next GPS tick.
-  Future<void> _publishLocation(String journeyId, Position position, bool isMoving) async {
+  Future<void> _publishLocation(
+    String journeyId,
+    Position position,
+    bool isMoving,
+  ) async {
     // Guard against stale callbacks after stopCoordination.
     if (_currentJourneyId != journeyId) return;
 
@@ -502,7 +524,9 @@ class ConvoyProvider extends ChangeNotifier {
         journeyId: journeyId,
         latitude: position.latitude,
         longitude: position.longitude,
-        timestamp: position.timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
+        timestamp:
+            position.timestamp?.millisecondsSinceEpoch ??
+            DateTime.now().millisecondsSinceEpoch,
         accuracy: position.accuracy,
         altitude: position.altitude,
         heading: position.heading,
@@ -540,13 +564,17 @@ class ConvoyProvider extends ChangeNotifier {
     if (failure == null) return;
 
     if (_isSilentTerminalFailure(failure)) {
-      print('🤫 Silent terminal failure — stopping coordination without UI surface');
+      print(
+        '🤫 Silent terminal failure — stopping coordination without UI surface',
+      );
       await stopCoordination();
       return;
     }
 
     if (_isTerminalPublishFailure(failure)) {
-      print('🛑 Terminal publish failure (${failure.message}) — stopping coordination');
+      print(
+        '🛑 Terminal publish failure (${failure.message}) — stopping coordination',
+      );
       _setError(failure.message);
       await stopCoordination();
       return;
@@ -559,7 +587,9 @@ class ConvoyProvider extends ChangeNotifier {
     );
 
     if (_consecutivePublishFailures >= _maxConsecutivePublishFailures) {
-      print('🛑 Publish failure circuit breaker tripped — stopping coordination');
+      print(
+        '🛑 Publish failure circuit breaker tripped — stopping coordination',
+      );
       _setError('Connection lost. Tap to reconnect.');
       await stopCoordination();
     }
@@ -610,7 +640,9 @@ class ConvoyProvider extends ChangeNotifier {
       },
       onError: (error) {
         print('❌ Convoy stream error: $error');
-        final failure = error is Failure ? error : ConvoyFailure.rtdbConnectionFailed;
+        final failure = error is Failure
+            ? error
+            : ConvoyFailure.rtdbConnectionFailed;
         _setError(failure.message);
         notifyListeners();
       },
@@ -637,7 +669,9 @@ class ConvoyProvider extends ChangeNotifier {
         // Ignore stale events from a previous journey.
         if (event.journeyId != _currentJourneyId) return;
 
-        print('🏁 ConvoyProvider: journey-ended received for ${event.journeyId}');
+        print(
+          '🏁 ConvoyProvider: journey-ended received for ${event.journeyId}',
+        );
         _lastJourneyEndedEvent = event;
         _setError('Journey ended');
         await stopCoordination();
@@ -647,7 +681,6 @@ class ConvoyProvider extends ChangeNotifier {
         print('❌ journey-ended stream error: $error');
       },
     );
-
 
     // Per-participant arrival updates. On allArrived we stop publishing GPS
     // immediately — the backend auto-completes the journey and the
@@ -659,7 +692,9 @@ class ConvoyProvider extends ChangeNotifier {
         _lastArrivalEvent = event;
 
         if (event.allArrived) {
-          print('🏁 ConvoyProvider: all participants arrived — stopping publishing');
+          print(
+            '🏁 ConvoyProvider: all participants arrived — stopping publishing',
+          );
           await _stopLocationPublishing();
         }
 
@@ -683,19 +718,19 @@ class ConvoyProvider extends ChangeNotifier {
       },
     );
 
-    _participantAcceptedSubscription =
-        _repository.participantAcceptedStream.listen(
-      (journeyId) {
-        if (journeyId == _currentJourneyId) {
-          print('🤝 ConvoyProvider: participant-accepted for $journeyId');
-          _participantAcceptedTick++;
-          notifyListeners();
-        }
-      },
-      onError: (Object error) {
-        print('❌ participant-accepted stream error: $error');
-      },
-    );
+    _participantAcceptedSubscription = _repository.participantAcceptedStream
+        .listen(
+          (journeyId) {
+            if (journeyId == _currentJourneyId) {
+              print('🤝 ConvoyProvider: participant-accepted for $journeyId');
+              _participantAcceptedTick++;
+              notifyListeners();
+            }
+          },
+          onError: (Object error) {
+            print('❌ participant-accepted stream error: $error');
+          },
+        );
   }
 
   /// Schedule a coalesced `notifyListeners()` for snapshot updates. If a
@@ -763,13 +798,13 @@ class ConvoyProvider extends ChangeNotifier {
   /// Get convoy snapshot for display (excludes current user from markers)
   ConvoySnapshot? getDisplaySnapshot(String currentUserId) {
     if (_snapshot == null) return null;
-    
+
     // Mapbox built-in location component shows the user's own position,
     // so we exclude them from the convoy markers to avoid a duplicate dot.
     return _snapshot!.filterOutUser(currentUserId);
   }
 
-  /// Get convoy snapshot for member counting (includes current user)  
+  /// Get convoy snapshot for member counting (includes current user)
   ConvoySnapshot? getFullSnapshot() {
     return _snapshot;
   }

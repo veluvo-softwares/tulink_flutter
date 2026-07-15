@@ -59,9 +59,9 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
 
   Future<void> _invite(UserSearchResult user) async {
     final success = await context.read<InviteProvider>().sendInvite(
-          journeyId: widget.journeyId,
-          invitedUserId: user.uid,
-        );
+      journeyId: widget.journeyId,
+      invitedUserId: user.uid,
+    );
 
     if (!mounted) return;
 
@@ -78,7 +78,13 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
   bool _isAlreadyParticipant(String uid, List<Participant>? participants) {
     if (participants == null) return false;
     return participants.any(
-      (p) => p.userId == uid && p.status.toUpperCase() != 'LEFT',
+      (p) =>
+          p.userId == uid &&
+          const {
+            'ACCEPTED',
+            'ACTIVE',
+            'ARRIVED',
+          }.contains(p.status.toUpperCase()),
     );
   }
 
@@ -149,8 +155,9 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
                     onChanged: _onSearchChanged,
                     decoration: InputDecoration(
                       hintText: 'Search by name or username...',
-                      hintStyle:
-                          TextStyle(color: colors.silver.withOpacity(0.6)),
+                      hintStyle: TextStyle(
+                        color: colors.silver.withOpacity(0.6),
+                      ),
                       prefixIcon: Icon(Icons.search, color: colors.silver),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
@@ -187,11 +194,7 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
               // Search results or participants list
               Expanded(
                 child: _searchController.text.trim().length >= 2
-                    ? _buildSearchResults(
-                        inviteProvider,
-                        participants,
-                        colors,
-                      )
+                    ? _buildSearchResults(inviteProvider, participants, colors)
                     : _buildParticipantsList(participants, colors),
               ),
             ],
@@ -262,10 +265,13 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
             itemCount: inviteProvider.searchResults.length,
             itemBuilder: (context, index) {
               final user = inviteProvider.searchResults[index];
-              final alreadyParticipant =
-                  _isAlreadyParticipant(user.uid, participants);
-              final alreadyInvited =
-                  inviteProvider.invitedUserIds.contains(user.uid);
+              final alreadyParticipant = _isAlreadyParticipant(
+                user.uid,
+                participants,
+              );
+              final alreadyInvited = inviteProvider.invitedUserIds.contains(
+                user.uid,
+              );
 
               return _UserSearchCard(
                 user: user,
@@ -408,10 +414,16 @@ class _InviteParticipantsScreenState extends State<InviteParticipantsScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: _statusColor(p.status, colors).withOpacity(0.15),
+                          color: _statusColor(
+                            p.status,
+                            colors,
+                          ).withOpacity(0.15),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: _statusColor(p.status, colors).withOpacity(0.4),
+                            color: _statusColor(
+                              p.status,
+                              colors,
+                            ).withOpacity(0.4),
                           ),
                         ),
                         child: Text(
@@ -458,112 +470,130 @@ class _UserSearchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final canInvite = !alreadyParticipant && !alreadyInvited;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: colors.cardDark,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          // Avatar with initials
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colors.brushedSteel,
-              shape: BoxShape.circle,
-              border: Border.all(color: colors.silver.withOpacity(0.2)),
-            ),
-            child: Center(
-              child: Text(
-                getInitials(user.displayName),
-                style: TextStyle(
-                  color: colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+    final status = alreadyParticipant
+        ? 'In journey'
+        : alreadyInvited
+        ? 'Invited, awaiting response'
+        : 'Can be invited';
+
+    return Semantics(
+      label: '${user.displayName}, ${user.email}, $status',
+      container: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: colors.cardDark,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            // Avatar with initials
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colors.brushedSteel,
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.silver.withOpacity(0.2)),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // User info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.displayName,
+              child: Center(
+                child: Text(
+                  getInitials(user.displayName),
                   style: TextStyle(
                     color: colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  user.email,
-                  style: TextStyle(
-                    color: colors.silver,
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (user.phoneNumber != null) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    user.phoneNumber!,
-                    style: TextStyle(
-                      color: colors.silver.withOpacity(0.7),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Invite button
-          if (alreadyParticipant)
-            _StatusChip(label: 'In Journey', color: colors.tulinkBlue, colors: colors)
-          else if (alreadyInvited)
-            _StatusChip(label: 'Invited', color: Colors.orange, colors: colors)
-          else
-            ElevatedButton(
-              onPressed: isInviting ? null : onInvite,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: colors.electricRed,
-                disabledBackgroundColor: colors.brushedSteel,
-                foregroundColor: colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              child: isInviting
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Invite',
+            ),
+            const SizedBox(width: 12),
+            // User info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName,
+                    style: TextStyle(
+                      color: colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    user.email,
+                    style: TextStyle(color: colors.silver, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (user.phoneNumber != null) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      user.phoneNumber!,
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                        color: colors.silver.withOpacity(0.7),
+                        fontSize: 11,
                       ),
                     ),
+                  ],
+                ],
+              ),
             ),
-        ],
+            const SizedBox(width: 8),
+            // Invite button
+            if (alreadyParticipant)
+              _StatusChip(
+                label: 'In Journey',
+                color: colors.tulinkBlue,
+                colors: colors,
+              )
+            else if (alreadyInvited)
+              _StatusChip(
+                label: 'Invited',
+                color: Colors.orange,
+                colors: colors,
+              )
+            else
+              ElevatedButton(
+                onPressed: isInviting ? null : onInvite,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.electricRed,
+                  disabledBackgroundColor: colors.brushedSteel,
+                  foregroundColor: colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: isInviting
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'Invite',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+          ],
+        ),
       ),
     );
   }

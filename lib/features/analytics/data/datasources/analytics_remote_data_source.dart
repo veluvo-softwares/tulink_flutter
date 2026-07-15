@@ -26,24 +26,23 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
 
   AnalyticsRemoteDataSourceImpl(this._analyticsApiService);
 
-
   @override
   Future<List<JourneyModel>> getJourneyHistory({int limit = 20}) async {
     print('📡 Fetching journey history from API with limit: $limit');
-    
+
     // Execute API call using standardized response
-    final responseData = await _analyticsApiService.getUserJourneyHistory(limit: limit);
-    
-    print('📡 Journey history API response type: ${responseData.runtimeType}');
-    print('📡 Journey history API response: $responseData');
-    
+    final responseData = await _analyticsApiService.getUserJourneyHistory(
+      limit: limit,
+    );
+
     // responseData IS the data (ApiHandler.performStandardApiCall already extracted it)
     // Handle if the response is directly a list or has a 'data' field
     List<dynamic> journeysData;
-    
+
     if (responseData is List) {
       journeysData = responseData as List<dynamic>;
-    } else if (responseData is Map<String, dynamic> && responseData.containsKey('data')) {
+    } else if (responseData is Map<String, dynamic> &&
+        responseData.containsKey('data')) {
       final data = responseData['data'];
       if (data is List) {
         journeysData = data as List<dynamic>;
@@ -55,9 +54,9 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
       print('❌ Response is neither List nor Map with data field');
       return [];
     }
-    
+
     print('✅ Parsed ${journeysData.length} journey items from history API');
-    
+
     return journeysData
         .map((json) => JourneyModel.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -66,8 +65,10 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
   @override
   Future<JourneyModel> getJourneyAnalytics(String journeyId) async {
     // Execute API call using standardized response
-    final responseData = await _analyticsApiService.getJourneyAnalytics(journeyId);
-    
+    final responseData = await _analyticsApiService.getJourneyAnalytics(
+      journeyId,
+    );
+
     // responseData IS the data (ApiHandler already extracted it from response.data)
     return JourneyModel.fromJson(responseData);
   }
@@ -75,8 +76,9 @@ class AnalyticsRemoteDataSourceImpl implements AnalyticsRemoteDataSource {
   @override
   Future<JourneySummaryModel?> getJourneySummary(String journeyId) async {
     try {
-      final responseData =
-          await _analyticsApiService.getJourneySummary(journeyId);
+      final responseData = await _analyticsApiService.getJourneySummary(
+        journeyId,
+      );
       return JourneySummaryModel.fromJson(responseData);
     } catch (e) {
       print('⚠️ Failed to fetch journey summary: $e');

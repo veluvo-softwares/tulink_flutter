@@ -21,18 +21,18 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     required ConvoyRemoteDataSource remoteDataSource,
     required ConvoyWebSocketDataSource webSocketDataSource,
     required TokenManager tokenManager,
-  })  : _remoteDataSource = remoteDataSource,
-        _webSocketDataSource = webSocketDataSource,
-        _tokenManager = tokenManager;
+  }) : _remoteDataSource = remoteDataSource,
+       _webSocketDataSource = webSocketDataSource,
+       _tokenManager = tokenManager;
 
   final ConvoyRemoteDataSource _remoteDataSource;
   final ConvoyWebSocketDataSource _webSocketDataSource;
   final TokenManager _tokenManager;
 
   StreamSubscription<ConvoySnapshot>? _webSocketSubscription;
-  final StreamController<({ConvoySnapshot? snapshot, Failure? failure})> _snapshotController = 
-      StreamController.broadcast();
-  
+  final StreamController<({ConvoySnapshot? snapshot, Failure? failure})>
+  _snapshotController = StreamController.broadcast();
+
   Timer? _fallbackPollingTimer;
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
@@ -44,12 +44,14 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   bool _terminalFailureDetected = false;
 
   @override
-  Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(String journeyId) {
+  Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(
+    String journeyId,
+  ) {
     _currentJourneyId = journeyId;
-    
+
     // Start both WebSocket connection and initial REST fetch
     _startCoordination(journeyId);
-    
+
     return _snapshotController.stream;
   }
 
@@ -72,23 +74,24 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
       // First: Get immediate snapshot via REST (cold start)
       _fetchInitialSnapshot(journeyId);
-      
+
       // Second: Connect WebSocket for real-time updates
       await _connectWebSocket();
-      
+
       // Third: Join journey room for live updates
       await _webSocketDataSource.joinJourney(journeyId);
-      
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
-      final failure = e is Failure ? e : ConvoyFailure(
-        message: 'Failed to start convoy coordination',
-        details: 'Could not connect to live updates: $e',
-        timestamp: DateTime.now(),
-        isRetryable: true,
-      );
+      final failure = e is Failure
+          ? e
+          : ConvoyFailure(
+              message: 'Failed to start convoy coordination',
+              details: 'Could not connect to live updates: $e',
+              timestamp: DateTime.now(),
+              isRetryable: true,
+            );
       _snapshotController.add((snapshot: null, failure: failure));
-      
+
       // Fall back to REST polling
       _startRestFallbackPolling(journeyId);
     }
@@ -109,7 +112,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
       // Connect to WebSocket
       await _webSocketDataSource.connect(token);
-      
+
       // Setup convoy updates stream
       _webSocketSubscription?.cancel();
       _webSocketSubscription = _webSocketDataSource.convoyUpdatesStream.listen(
@@ -121,26 +124,28 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
         onError: (error) {
           print('❌ WebSocket convoy updates error: $error');
           _isWebSocketConnected = false;
-          final failure = error is Failure ? error : ConvoyFailure(
-            message: 'WebSocket update failed',
-            details: 'Error receiving convoy updates: $error',
-            timestamp: DateTime.now(),
-            isRetryable: true,
-          );
+          final failure = error is Failure
+              ? error
+              : ConvoyFailure(
+                  message: 'WebSocket update failed',
+                  details: 'Error receiving convoy updates: $error',
+                  timestamp: DateTime.now(),
+                  isRetryable: true,
+                );
           _snapshotController.add((snapshot: null, failure: failure));
-          
+
           // Start fallback polling
           if (_currentJourneyId != null) {
             _startRestFallbackPolling(_currentJourneyId!);
           }
         },
       );
-      
+
       // Monitor connection state
       _webSocketDataSource.connectionStateStream.listen((state) {
         _isWebSocketConnected = state == ConvoyConnectionState.connected;
-        
-        if (state == ConvoyConnectionState.reconnecting || 
+
+        if (state == ConvoyConnectionState.reconnecting ||
             state == ConvoyConnectionState.error) {
           // Start REST fallback during reconnection
           if (_currentJourneyId != null) {
@@ -148,7 +153,6 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
           }
         }
       });
-      
     } catch (e) {
       print('❌ WebSocket connection failed: $e');
       _isWebSocketConnected = false;
@@ -164,12 +168,14 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       print('📍 Initial snapshot loaded: ${snapshot.members.length} members');
     } catch (e) {
       print('⚠️ Failed to fetch initial snapshot: $e');
-      final failure = e is Failure ? e : ConvoyFailure(
-        message: 'Failed to load convoy data',
-        details: 'Could not fetch initial convoy snapshot: $e',
-        timestamp: DateTime.now(),
-        isRetryable: true,
-      );
+      final failure = e is Failure
+          ? e
+          : ConvoyFailure(
+              message: 'Failed to load convoy data',
+              details: 'Could not fetch initial convoy snapshot: $e',
+              timestamp: DateTime.now(),
+              isRetryable: true,
+            );
       _snapshotController.add((snapshot: null, failure: failure));
     }
   }
@@ -183,7 +189,9 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
     print('🔄 Starting REST fallback polling');
 
-    _fallbackPollingTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    _fallbackPollingTimer = Timer.periodic(const Duration(seconds: 3), (
+      _,
+    ) async {
       try {
         final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
         _snapshotController.add((snapshot: snapshot, failure: null));
@@ -194,9 +202,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
           _terminalFailureDetected = true;
           _stopRestFallbackPolling();
           if (!_snapshotController.isClosed) {
-            _snapshotController.add(
-              (snapshot: null, failure: e is Failure ? e : ConvoyFailure.publishLocationFailed),
-            );
+            _snapshotController.add((
+              snapshot: null,
+              failure: e is Failure ? e : ConvoyFailure.publishLocationFailed,
+            ));
           }
         }
       }
@@ -262,7 +271,6 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       // Publish via REST API as fallback or primary method
       await _remoteDataSource.publishLocation(locationUpdate);
       return (success: true, failure: null);
-      
     } catch (e) {
       print('❌ Failed to publish location: $e');
       final failure = e is Failure ? e : ConvoyFailure.publishLocationFailed;
@@ -271,18 +279,22 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   }
 
   @override
-  Future<({ConvoySnapshot? snapshot, Failure? failure})> fetchLatestSnapshot(String journeyId) async {
+  Future<({ConvoySnapshot? snapshot, Failure? failure})> fetchLatestSnapshot(
+    String journeyId,
+  ) async {
     try {
       final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
       return (snapshot: snapshot, failure: null);
     } catch (e) {
       print('❌ Failed to fetch latest snapshot: $e');
-      final failure = e is Failure ? e : ConvoyFailure(
-        message: 'Failed to fetch convoy data',
-        details: 'Could not load latest convoy positions: $e',
-        timestamp: DateTime.now(),
-        isRetryable: true,
-      );
+      final failure = e is Failure
+          ? e
+          : ConvoyFailure(
+              message: 'Failed to fetch convoy data',
+              details: 'Could not load latest convoy positions: $e',
+              timestamp: DateTime.now(),
+              isRetryable: true,
+            );
       return (snapshot: null, failure: failure);
     }
   }
@@ -310,6 +322,13 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   @override
   Stream<Map<String, dynamic>> get journeyInviteStream =>
       _webSocketDataSource.journeyInviteStream;
+
+  @override
+  Future<void> joinJourneyRoom(String journeyId) async {
+    _currentJourneyId = journeyId;
+    await _connectWebSocket();
+    await _webSocketDataSource.joinJourney(journeyId);
+  }
 
   @override
   Future<void> connectUserChannel() async {
@@ -342,7 +361,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   @override
   Future<void> stopCoordination() async {
     print('🛑 Stopping convoy coordination...');
-    
+
     // Leave journey room if active
     if (_currentJourneyId != null) {
       try {
@@ -352,10 +371,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
         print('⚠️ Failed to leave journey: $e');
       }
     }
-    
+
     // Stop REST fallback polling
     _stopRestFallbackPolling();
-    
+
     // Cancel WebSocket subscription
     await _webSocketSubscription?.cancel();
     _webSocketSubscription = null;
@@ -373,7 +392,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     _isWebSocketConnected = false;
     _currentJourneyId = null;
     _terminalFailureDetected = false;
-    
+
     print('✅ Convoy coordination stopped completely');
   }
 }

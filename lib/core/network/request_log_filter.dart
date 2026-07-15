@@ -4,7 +4,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import 'api_routes.dart';
 
 /// Endpoints whose request or response bodies carry credentials or tokens
-/// (passwords, social identity JWTs, idToken/refreshToken pairs). Exact-match
+/// (passwords, social identity JWTs, idToken/refreshToken pairs, FCM tokens). Exact-match
 /// so non-credential auth endpoints (`/auth/searchUser`, `/auth/profile`,
 /// `/auth/verify-email`, …) keep full logging.
 const Set<String> _credentialPaths = {
@@ -14,6 +14,7 @@ const Set<String> _credentialPaths = {
   ApiRoutes.refreshToken,
   ApiRoutes.forgotPassword,
   ApiRoutes.resetPassword,
+  ApiRoutes.fcmToken,
 };
 
 /// Filter used by [PrettyDioLogger] to decide whether a request, response,

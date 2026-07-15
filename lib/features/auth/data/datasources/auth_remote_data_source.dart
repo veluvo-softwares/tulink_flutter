@@ -21,7 +21,8 @@ abstract class AuthRemoteDataSource {
 
   /// Sign in / sign up with a social provider (Google or Apple).
   /// Posts the provider OIDC id token to the backend for exchange.
-  Future<({UserModel user, String token, String? refreshToken})> signInWithSocial({
+  Future<({UserModel user, String token, String? refreshToken})>
+  signInWithSocial({
     required String provider,
     required String idToken,
     String? nonce,
@@ -50,10 +51,7 @@ abstract class AuthRemoteDataSource {
   Future<bool> checkEmailVerification();
 
   /// Update user profile
-  Future<UserModel> updateProfile({
-    String? name,
-    String? profilePicture,
-  });
+  Future<UserModel> updateProfile({String? name, String? profilePicture});
 
   /// Delete user account
   Future<void> deleteAccount();
@@ -81,10 +79,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     // Parse the response using our DTOs
     final authResponse = AuthResponseModel.fromJson(responseData);
-    
-    print('📥 SignIn API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
-    print('📥 SignIn API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
-    
+
     return (
       user: authResponse.user,
       token: authResponse.tokens.idToken,
@@ -107,10 +102,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     // Parse the response using our DTOs
     final authResponse = AuthResponseModel.fromJson(responseData);
-    
-    print('📥 SignUp API Response - ID Token: ${authResponse.tokens.idToken.substring(0, 20)}...');
-    print('📥 SignUp API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
-    
+
     return (
       user: authResponse.user,
       token: authResponse.tokens.idToken,
@@ -119,7 +111,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<({UserModel user, String token, String? refreshToken})> signInWithSocial({
+  Future<({UserModel user, String token, String? refreshToken})>
+  signInWithSocial({
     required String provider,
     required String idToken,
     String? nonce,
@@ -136,12 +129,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     final responseData = await _authApiService.socialSignIn(body);
     final authResponse = AuthResponseModel.fromJson(responseData);
-
-    print(
-      '📥 SocialSignIn ($provider) API Response - ID Token: '
-      '${authResponse.tokens.idToken.substring(0, 20)}...',
-    );
-    print('📥 SocialSignIn API Response - Refresh Token: ${authResponse.tokens.refreshToken}');
 
     return (
       user: authResponse.user,
@@ -160,7 +147,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<UserModel> getCurrentUser() async {
     // Execute API call using standardized response
     final responseData = await _authApiService.getCurrentUser();
-    
+
     // The API returns just the user data for this endpoint
     return UserModel.fromJson(responseData);
   }
@@ -169,7 +156,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<String> refreshToken() async {
     // Execute API call using standardized response
     final responseData = await _authApiService.refreshToken();
-    
+
     // Parse tokens response
     final tokens = responseData['tokens'] as Map<String, dynamic>;
     return tokens['idToken'] as String;
@@ -210,7 +197,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     // Execute API call using standardized response
     final responseData = await _authApiService.updateProfile(profileData);
-    
+
     // Parse user data directly
     return UserModel.fromJson(responseData);
   }
@@ -231,11 +218,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   /// Get paginated notifications (example of pagination)
-  Future<({List<Map<String, dynamic>> notifications, bool hasMore})> getNotifications({
-    int page = 1,
-    int limit = 20,
-    String? filter,
-  }) async {
+  Future<({List<Map<String, dynamic>> notifications, bool hasMore})>
+  getNotifications({int page = 1, int limit = 20, String? filter}) async {
     final response = await _authApiService.getNotifications(
       page: page,
       limit: limit,

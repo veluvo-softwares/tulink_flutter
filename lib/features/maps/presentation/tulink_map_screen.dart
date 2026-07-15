@@ -103,12 +103,13 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   /// journey is active — otherwise both render and you see the red + blue
   /// double-marker. See [_setBuiltInPuckEnabled].
   bool? _puckEnabled;
+  geo.Position? _lastRawPuckPosition;
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
-    _pointAnnotationManager = 
-        await mapboxMap.annotations.createPointAnnotationManager();
-    
+    _pointAnnotationManager = await mapboxMap.annotations
+        .createPointAnnotationManager();
+
     // Enable user location with defensive guards
     await _enableUserLocation(mapboxMap);
 
@@ -147,17 +148,19 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
           _isProgrammaticCameraMove = true;
           try {
-            await _mapboxMap!.setCamera(CameraOptions(
-              center: Point(
-                  coordinates: Position(pos.longitude, pos.latitude)),
-              bearing: pos.heading,
-              zoom: 16.0,
-              pitch: 45.0,
-            ));
+            await _mapboxMap!.setCamera(
+              CameraOptions(
+                center: Point(
+                  coordinates: Position(pos.longitude, pos.latitude),
+                ),
+                bearing: pos.heading,
+                zoom: 16.0,
+                pitch: 45.0,
+              ),
+            );
           } finally {
             _isProgrammaticCameraMove = false;
           }
-
         });
       }
     }
@@ -175,9 +178,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     const ringId = 'journey-destination-ring';
     const dotId = 'journey-destination-dot';
 
-    try { await _mapboxMap!.style.removeStyleLayer(ringId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleLayer(dotId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(ringId);
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(dotId);
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleSource(sourceId);
+    } catch (_) {}
 
     try {
       final geoJson = jsonEncode({
@@ -197,29 +206,35 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       );
 
       // Outer pulse ring — Electric Red at 20% opacity
-      await _mapboxMap!.style.addLayer(CircleLayer(
-        id: ringId,
-        sourceId: sourceId,
-        circleRadius: 16.0,
-        circleColor: 0x33E8002D,
-        circleStrokeColor: 0xFFE8002D,
-        circleStrokeWidth: 2.5,
-        circleOpacity: 1.0,
-      ));
+      await _mapboxMap!.style.addLayer(
+        CircleLayer(
+          id: ringId,
+          sourceId: sourceId,
+          circleRadius: 16.0,
+          circleColor: 0x33E8002D,
+          circleStrokeColor: 0xFFE8002D,
+          circleStrokeWidth: 2.5,
+          circleOpacity: 1.0,
+        ),
+      );
 
       // Inner solid dot
-      await _mapboxMap!.style.addLayer(CircleLayer(
-        id: dotId,
-        sourceId: sourceId,
-        circleRadius: 8.0,
-        circleColor: 0xFFE8002D,
-        circleStrokeColor: 0xFFFFFFFF,
-        circleStrokeWidth: 2.0,
-        circleOpacity: 1.0,
-      ));
+      await _mapboxMap!.style.addLayer(
+        CircleLayer(
+          id: dotId,
+          sourceId: sourceId,
+          circleRadius: 8.0,
+          circleColor: 0xFFE8002D,
+          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeWidth: 2.0,
+          circleOpacity: 1.0,
+        ),
+      );
 
-      print('✅ Destination pin drawn at '
-          '${journey.destination.latitude}, ${journey.destination.longitude}');
+      print(
+        '✅ Destination pin drawn at '
+        '${journey.destination.latitude}, ${journey.destination.longitude}',
+      );
     } catch (e) {
       print('⚠️ Failed to draw destination pin: $e');
     }
@@ -234,22 +249,27 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     geo.Position? pos;
     try {
       pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings:
-            const geo.LocationSettings(accuracy: geo.LocationAccuracy.high),
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.high,
+        ),
       );
     } catch (e) {
-      print('⚠️ Could not get position for camera fit — centering on destination');
+      print(
+        '⚠️ Could not get position for camera fit — centering on destination',
+      );
       _isProgrammaticCameraMove = true;
       try {
-        await _mapboxMap!.setCamera(CameraOptions(
-          center: Point(
-            coordinates: Position(
-              journey.destination.longitude,
-              journey.destination.latitude,
+        await _mapboxMap!.setCamera(
+          CameraOptions(
+            center: Point(
+              coordinates: Position(
+                journey.destination.longitude,
+                journey.destination.latitude,
+              ),
             ),
+            zoom: 13.0,
           ),
-          zoom: 13.0,
-        ));
+        );
       } finally {
         _isProgrammaticCameraMove = false;
       }
@@ -291,18 +311,22 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       }
       print('✅ Camera fitted to journey bounds');
     } catch (e) {
-      print('⚠️ cameraForCoordinateBounds failed: $e — falling back to destination center');
+      print(
+        '⚠️ cameraForCoordinateBounds failed: $e — falling back to destination center',
+      );
       _isProgrammaticCameraMove = true;
       try {
-        await _mapboxMap!.setCamera(CameraOptions(
-          center: Point(
-            coordinates: Position(
-              journey.destination.longitude,
-              journey.destination.latitude,
+        await _mapboxMap!.setCamera(
+          CameraOptions(
+            center: Point(
+              coordinates: Position(
+                journey.destination.longitude,
+                journey.destination.latitude,
+              ),
             ),
+            zoom: 13.0,
           ),
-          zoom: 13.0,
-        ));
+        );
       } finally {
         _isProgrammaticCameraMove = false;
       }
@@ -344,7 +368,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
     // Use the prefetched route if it matches this destination — no network call.
     RouteResultModel? route = mapProvider.currentRoute;
-    final isCachedForThisDestination = route != null &&
+    final isCachedForThisDestination =
+        route != null &&
         route.coordinates.isNotEmpty &&
         _coordinatesMatch(
           route.coordinates.last,
@@ -371,9 +396,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     const bgId = 'actual-route-bg';
     const lineId = 'actual-route-line';
 
-    try { await _mapboxMap!.style.removeStyleLayer(lineId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleLayer(bgId); } catch (_) {}
-    try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(lineId);
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(bgId);
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleSource(sourceId);
+    } catch (_) {}
 
     try {
       final geoJson = jsonEncode({
@@ -390,30 +421,36 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       );
 
       // Shadow line for depth
-      await _mapboxMap!.style.addLayer(LineLayer(
-        id: bgId,
-        sourceId: sourceId,
-        lineCap: LineCap.ROUND,
-        lineJoin: LineJoin.ROUND,
-        lineWidth: 8.0,
-        lineColor: 0xFF000000,
-        lineOpacity: 0.25,
-      ));
+      await _mapboxMap!.style.addLayer(
+        LineLayer(
+          id: bgId,
+          sourceId: sourceId,
+          lineCap: LineCap.ROUND,
+          lineJoin: LineJoin.ROUND,
+          lineWidth: 8.0,
+          lineColor: 0xFF000000,
+          lineOpacity: 0.25,
+        ),
+      );
 
       // Electric Red solid route line (roads → solid, not dashed)
-      await _mapboxMap!.style.addLayer(LineLayer(
-        id: lineId,
-        sourceId: sourceId,
-        lineCap: LineCap.ROUND,
-        lineJoin: LineJoin.ROUND,
-        lineWidth: 5.0,
-        lineColor: 0xFFE8002D,
-        lineOpacity: 0.9,
-      ));
+      await _mapboxMap!.style.addLayer(
+        LineLayer(
+          id: lineId,
+          sourceId: sourceId,
+          lineCap: LineCap.ROUND,
+          lineJoin: LineJoin.ROUND,
+          lineWidth: 5.0,
+          lineColor: 0xFFE8002D,
+          lineOpacity: 0.9,
+        ),
+      );
 
-      print('✅ Actual road route drawn: '
-          '${route.distanceMetres.toStringAsFixed(0)}m, '
-          '${route.steps.length} steps');
+      print(
+        '✅ Actual road route drawn: '
+        '${route.distanceMetres.toStringAsFixed(0)}m, '
+        '${route.steps.length} steps',
+      );
     } catch (e) {
       print('⚠️ Failed to draw actual route: $e');
     }
@@ -477,8 +514,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     geo.Position? pos;
     try {
       pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings:
-            const geo.LocationSettings(accuracy: geo.LocationAccuracy.high),
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.high,
+        ),
       ).timeout(const Duration(seconds: 5));
     } catch (e) {
       print('⚠️ Recenter: could not get position: $e');
@@ -516,17 +554,23 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     // matches the custom puck. Falls back to raw GPS when navigation is
     // inactive or no progress snapshot exists yet.
     final progress = _navigationProvider?.currentProgress;
+    _lastRawPuckPosition = position;
+    if (progress == null) {
+      unawaited(_drawRawPuck(position));
+    }
     final centerLat = progress?.snappedLatitude ?? position.latitude;
     final centerLng = progress?.snappedLongitude ?? position.longitude;
 
     _isProgrammaticCameraMove = true;
     try {
-      await _mapboxMap!.setCamera(CameraOptions(
-        center: Point(coordinates: Position(centerLng, centerLat)),
-        bearing: position.heading,
-        zoom: 16.0,
-        pitch: 45.0,
-      ));
+      await _mapboxMap!.setCamera(
+        CameraOptions(
+          center: Point(coordinates: Position(centerLng, centerLat)),
+          bearing: position.heading,
+          zoom: 16.0,
+          pitch: 45.0,
+        ),
+      );
     } finally {
       _isProgrammaticCameraMove = false;
     }
@@ -588,8 +632,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     _lastTrimAt = now;
     _lastTrimmedSegmentIndex = segmentIndex;
 
-    print('✂️ Trim to segIdx=$segmentIndex, '
-        'remaining=${remaining.length}/${route.coordinates.length}');
+    print(
+      '✂️ Trim to segIdx=$segmentIndex, '
+      'remaining=${remaining.length}/${route.coordinates.length}',
+    );
 
     try {
       final geoJson = jsonEncode({
@@ -613,17 +659,25 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   Future<void> _drawSnappedPuck(RouteProgress? progress) async {
     if (!_canUseMap) return;
     const sourceId = 'snapped-puck-source';
-    const ringId  = 'snapped-puck-ring';
-    const dotId   = 'snapped-puck-dot';
+    const ringId = 'snapped-puck-ring';
+    const dotId = 'snapped-puck-dot';
 
     if (progress == null) {
-      try { await _mapboxMap!.style.removeStyleLayer(dotId);  } catch (_) {}
-      try { await _mapboxMap!.style.removeStyleLayer(ringId); } catch (_) {}
-      try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
-      // Restore the built-in puck now that the custom one is gone.
-      await _setBuiltInPuckEnabled(true);
+      try {
+        await _mapboxMap!.style.removeStyleLayer(dotId);
+      } catch (_) {}
+      try {
+        await _mapboxMap!.style.removeStyleLayer(ringId);
+      } catch (_) {}
+      try {
+        await _mapboxMap!.style.removeStyleSource(sourceId);
+      } catch (_) {}
+      final rawPosition = _lastRawPuckPosition;
+      if (rawPosition != null) await _drawRawPuck(rawPosition);
       return;
     }
+
+    await _removeRawPuck();
 
     // Throttle to ~5 Hz for active updates.
     final now = DateTime.now();
@@ -650,42 +704,119 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     });
 
     try {
-      final sourceExists =
-          await _mapboxMap!.style.styleSourceExists(sourceId);
+      final sourceExists = await _mapboxMap!.style.styleSourceExists(sourceId);
       if (!sourceExists) {
         // Built-in puck is already disabled above; just add the snapped puck.
         await _mapboxMap!.style.addSource(
           GeoJsonSource(id: sourceId, data: geoJson),
         );
 
-        // Outer halo — soft white at 30% opacity, mirrors the system puck.
-        await _mapboxMap!.style.addLayer(CircleLayer(
-          id: ringId,
-          sourceId: sourceId,
-          circleRadius: 14.0,
-          circleColor: 0xFFFFFFFF,
-          circleOpacity: 0.3,
-          circleStrokeWidth: 0,
-        ));
+        // Red halo indicates that the position is snapped to the road route.
+        await _mapboxMap!.style.addLayer(
+          CircleLayer(
+            id: ringId,
+            sourceId: sourceId,
+            circleRadius: 14.0,
+            circleColor: 0xFFE8002D,
+            circleOpacity: 0.45,
+            circleStrokeWidth: 0,
+          ),
+        );
 
         // Inner solid dot — Electric Red, Tu-Link branded.
-        await _mapboxMap!.style.addLayer(CircleLayer(
-          id: dotId,
-          sourceId: sourceId,
-          circleRadius: 7.0,
-          circleColor: 0xFFE8002D,
-          circleStrokeColor: 0xFFFFFFFF,
-          circleStrokeWidth: 2.5,
-          circleOpacity: 1.0,
-        ));
+        await _mapboxMap!.style.addLayer(
+          CircleLayer(
+            id: dotId,
+            sourceId: sourceId,
+            circleRadius: 7.0,
+            circleColor: 0xFFE8002D,
+            circleStrokeColor: 0xFFFFFFFF,
+            circleStrokeWidth: 2.5,
+            circleOpacity: 1.0,
+          ),
+        );
       } else {
         // Update geometry only — avoids recreating the layers on every tick.
         await _mapboxMap!.style.setStyleSourceProperty(
-            sourceId, 'data', geoJson);
+          sourceId,
+          'data',
+          geoJson,
+        );
       }
     } catch (e) {
       print('⚠️ Failed to draw snapped puck: $e');
     }
+  }
+
+  /// Render TuLink's red self-marker at the raw GPS position while route
+  /// snapping is not ready. The white halo distinguishes acquisition/raw GPS
+  /// from the red-halo snapped navigation state without changing identity.
+  Future<void> _drawRawPuck(geo.Position position) async {
+    if (!_canUseMap || _navigationProvider?.currentProgress != null) return;
+    const sourceId = 'raw-puck-source';
+    const ringId = 'raw-puck-ring';
+    const dotId = 'raw-puck-dot';
+
+    await _setBuiltInPuckEnabled(false);
+    final geoJson = jsonEncode({
+      'type': 'Feature',
+      'properties': <String, dynamic>{},
+      'geometry': {
+        'type': 'Point',
+        'coordinates': [position.longitude, position.latitude],
+      },
+    });
+
+    try {
+      final exists = await _mapboxMap!.style.styleSourceExists(sourceId);
+      if (!exists) {
+        await _mapboxMap!.style.addSource(
+          GeoJsonSource(id: sourceId, data: geoJson),
+        );
+        await _mapboxMap!.style.addLayer(
+          CircleLayer(
+            id: ringId,
+            sourceId: sourceId,
+            circleRadius: 14,
+            circleColor: 0xFFFFFFFF,
+            circleOpacity: 0.65,
+            circleStrokeWidth: 0,
+          ),
+        );
+        await _mapboxMap!.style.addLayer(
+          CircleLayer(
+            id: dotId,
+            sourceId: sourceId,
+            circleRadius: 7,
+            circleColor: 0xFFE8002D,
+            circleStrokeColor: 0xFFFFFFFF,
+            circleStrokeWidth: 2.5,
+            circleOpacity: 1,
+          ),
+        );
+      } else {
+        await _mapboxMap!.style.setStyleSourceProperty(
+          sourceId,
+          'data',
+          geoJson,
+        );
+      }
+    } catch (e) {
+      print('⚠️ Failed to draw raw TuLink puck: $e');
+    }
+  }
+
+  Future<void> _removeRawPuck() async {
+    if (!_canUseMap) return;
+    try {
+      await _mapboxMap!.style.removeStyleLayer('raw-puck-dot');
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer('raw-puck-ring');
+    } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleSource('raw-puck-source');
+    } catch (_) {}
   }
 
   /// Set Mapbox's built-in location puck on/off, tracking the applied state so
@@ -698,12 +829,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     // Already in the desired state — skip the redundant channel hop.
     if (_puckEnabled == enabled) return;
     try {
-      await _mapboxMap!.location.updateSettings(LocationComponentSettings(
-        enabled: enabled,
-        pulsingEnabled: enabled,
-        puckBearingEnabled: enabled,
-        puckBearing: PuckBearing.HEADING,
-      ));
+      await _mapboxMap!.location.updateSettings(
+        LocationComponentSettings(
+          enabled: enabled,
+          pulsingEnabled: enabled,
+          puckBearingEnabled: enabled,
+          puckBearing: PuckBearing.HEADING,
+        ),
+      );
       _puckEnabled = enabled;
     } catch (e) {
       print('⚠️ Failed to set built-in puck enabled=$enabled: $e');
@@ -722,13 +855,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
         return;
       }
 
-      // Built-in puck is the DEFAULT self-marker — it must be visible whenever
-      // the custom snapped puck isn't drawn (journey overview, before driving
-      // starts, solo mode without live nav progress). _drawSnappedPuck switches
-      // it off only while it's actively rendering the red snapped puck, and
-      // restores it when navigation stops. Disabling it here would leave the
-      // user with no puck during the overview.
-      await _setBuiltInPuckEnabled(true);
+      await _setBuiltInPuckEnabled(false);
+      final position = await geo.Geolocator.getCurrentPosition(
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.high,
+        ),
+      );
+      _lastRawPuckPosition = position;
+      await _drawRawPuck(position);
       print('✅ User location component enabled for ${currentUser.id}');
     } catch (e) {
       print('❌ Failed to enable user location: $e');
@@ -754,7 +888,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
         ? convoyProvider.getDisplaySnapshot(currentUserId)
         : convoyProvider.snapshot;
 
-    final hasPeers = convoySnapshot != null &&
+    final hasPeers =
+        convoySnapshot != null &&
         currentUserId != null &&
         convoySnapshot.members.isNotEmpty &&
         !(convoySnapshot.destination.latitude == 0.0 &&
@@ -771,8 +906,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       _lastSnapshot = convoySnapshot;
 
       if (hasPeers) {
-        await ConvoyRouteLine.addConvoyMarkers(_mapboxMap!, convoySnapshot, currentUserId);
-        print('✅ Updated convoy markers: ${convoySnapshot.members.length} members');
+        await ConvoyRouteLine.addConvoyMarkers(
+          _mapboxMap!,
+          convoySnapshot,
+          currentUserId,
+        );
+        print(
+          '✅ Updated convoy markers: ${convoySnapshot.members.length} members',
+        );
       } else {
         await ConvoyRouteLine.removeConvoyMarkers(_mapboxMap!);
         print('✅ Removed convoy visualization');
@@ -849,12 +990,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   /// Generate a simple hash of the convoy snapshot for change detection
   int _generateSnapshotHash(ConvoySnapshot? snapshot) {
     if (snapshot == null) return 0;
-    
+
     int hash = 0;
     hash ^= snapshot.members.length.hashCode;
     hash ^= snapshot.destination.latitude.hashCode;
     hash ^= snapshot.destination.longitude.hashCode;
-    
+
     // Include member positions in hash
     for (final member in snapshot.members.values) {
       hash ^= member.latitude.hashCode;
@@ -862,10 +1003,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       hash ^= member.timestamp.hashCode;
       hash ^= (member.isMoving ? 1 : 0).hashCode;
     }
-    
+
     return hash;
   }
-
 
   /// Check if convoy coordination should be started
   void _checkAndStartConvoyCoordination() {
@@ -875,10 +1015,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final currentJourney = journeyProvider.currentJourney;
 
     // Start convoy coordination if there's an active journey
-    if (currentJourney != null && 
+    if (currentJourney != null &&
         currentJourney.status == JourneyStatus.ACTIVE &&
         !_isConvoyCoordinationActive) {
-      
       _activeJourneyId = currentJourney.id;
       _isConvoyCoordinationActive = true;
 
@@ -898,14 +1037,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
       // Track the user's position so the camera follows during driving.
       // This is a separate stream from ConvoyProvider's publishing stream.
-      _cameraFollowSubscription ??= geo.Geolocator.getPositionStream(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
-          distanceFilter: 10, // Update camera every 10m
-        ),
-      ).listen((position) {
-        _updateCameraFollow(position);
-      });
+      _cameraFollowSubscription ??=
+          geo.Geolocator.getPositionStream(
+            locationSettings: const geo.LocationSettings(
+              accuracy: geo.LocationAccuracy.high,
+              distanceFilter: 10, // Update camera every 10m
+            ),
+          ).listen((position) {
+            _updateCameraFollow(position);
+          });
     }
   }
 
@@ -924,9 +1064,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final convoyProvider = context.read<ConvoyProvider>();
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.user?.id;
-    
+
     // For bottom sheet member list, show filtered snapshot (others only)
-    final snapshot = currentUserId != null 
+    final snapshot = currentUserId != null
         ? convoyProvider.getDisplaySnapshot(currentUserId)
         : convoyProvider.getFullSnapshot();
 
@@ -952,7 +1092,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final convoyProvider = context.read<ConvoyProvider>();
     final journeyProvider = context.read<JourneyProvider>();
     final currentJourney = journeyProvider.currentJourney;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -968,7 +1108,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.refresh, color: Colors.blue),
-              title: const Text('Refresh Convoy Data', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Refresh Convoy Data',
+                style: TextStyle(color: Colors.white),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 if (currentJourney != null) {
@@ -981,7 +1124,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.wifi_off, color: Colors.orange),
-              title: const Text('Reconnect to Convoy', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Reconnect to Convoy',
+                style: TextStyle(color: Colors.white),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 if (currentJourney != null) {
@@ -996,7 +1142,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.error_outline, color: Colors.red),
-              title: const Text('Clear Error', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Clear Error',
+                style: TextStyle(color: Colors.white),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 convoyProvider.clearError();
@@ -1004,7 +1153,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.stop, color: Colors.red),
-              title: const Text('End Journey', style: TextStyle(color: Colors.red)),
+              title: const Text(
+                'End Journey',
+                style: TextStyle(color: Colors.red),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _showEndJourneyConfirmation();
@@ -1028,13 +1180,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final journeyProvider = context.read<JourneyProvider>();
 
     // Capture before any await — providers may clear this during the async gap.
-    final journeyId =
-        journeyProvider.currentJourney?.id ?? _activeJourneyId;
+    final journeyId = journeyProvider.currentJourney?.id ?? _activeJourneyId;
 
     if (journeyId == null) {
       // Journey already cleared externally — just navigate home cleanly.
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       }
       return;
     }
@@ -1060,7 +1213,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           ),
         );
       } else {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else {
       // API failure — journey is likely already COMPLETED on the server.
@@ -1123,16 +1278,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       if (journey != null && journey.id == journeyId) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
-            builder: (context) => JourneyDetailsScreen(
-              journey: journey,
-              showDoneButton: true,
-            ),
+            builder: (context) =>
+                JourneyDetailsScreen(journey: journey, showDoneButton: true),
           ),
           (route) => false,
         );
       } else {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-            '/home', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     }();
   }
@@ -1143,7 +1297,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('End Journey?', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'End Journey?',
+          style: TextStyle(color: Colors.white),
+        ),
         content: const Text(
           'Are you sure you want to end this convoy journey? This will stop coordination for all members.',
           style: TextStyle(color: Colors.grey),
@@ -1158,7 +1315,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               Navigator.pop(context);
               _endJourney();
             },
-            child: const Text('End Journey', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'End Journey',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -1172,7 +1332,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     final authProvider = context.read<AuthProvider>();
     final currentUserId = authProvider.user?.id;
     final currentJourney = journeyProvider.currentJourney;
-    
+
     // For metrics, use full snapshot to include all members for distance calculations
     final snapshot = convoyProvider.getFullSnapshot();
 
@@ -1188,7 +1348,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             Navigator.pop(context);
             // TODO: Implement journey end functionality
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('End journey functionality coming soon!')),
+              const SnackBar(
+                content: Text('End journey functionality coming soon!'),
+              ),
             );
           },
         ),
@@ -1224,14 +1386,17 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     // server-driven events (journey-ended triggers _handleJourneyEndedEvent).
     final currentJourney = context.watch<JourneyProvider>().currentJourney;
     final convoySnapshot = context.watch<ConvoyProvider>().snapshot;
-    final convoyConnectionState = context.watch<ConvoyProvider>().connectionState;
+    final convoyConnectionState = context
+        .watch<ConvoyProvider>()
+        .connectionState;
     final convoyError = context.watch<ConvoyProvider>().errorMessage;
     // Watching these triggers rebuilds when server events arrive so the
     // post-frame callbacks can react immediately.
     context.watch<ConvoyProvider>().lastJourneyEndedEvent;
     context.watch<ConvoyProvider>().lastArrivalEvent;
     final currentUserId = context.watch<AuthProvider>().user?.id ?? '';
-    final isLeader = currentJourney != null &&
+    final isLeader =
+        currentJourney != null &&
         currentUserId.isNotEmpty &&
         currentJourney.leaderId == currentUserId;
 
@@ -1267,9 +1432,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
               ),
             ),
           ),
-          
+
           // Convoy Status Bar - Show when active journey exists
-          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+          if (currentJourney != null &&
+              currentJourney.status == JourneyStatus.ACTIVE)
             Align(
               alignment: Alignment.topCenter,
               child: GestureDetector(
@@ -1279,14 +1445,13 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                   snapshot: convoySnapshot,
                   connectionState: convoyConnectionState,
                   onTap: _showConvoyBottomSheet,
-                  onBack: () => Navigator.of(context).pushNamedAndRemoveUntil(
-                    '/home',
-                    (route) => false,
-                  ),
+                  onBack: () => Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/home', (route) => false),
                 ),
               ),
             ),
-          
+
           // Turn-by-turn instruction card — hidden once user has arrived
           if (currentJourney != null &&
               currentJourney.status == JourneyStatus.ACTIVE &&
@@ -1336,28 +1501,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             ),
 
           // Route loading indicator — visible only while POST /maps/route is in flight
-          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+          if (currentJourney != null &&
+              currentJourney.status == JourneyStatus.ACTIVE)
             Positioned(
               top: MediaQuery.of(context).padding.top + 100,
               left: 0,
               right: 0,
               child: Consumer<MapProvider>(
                 builder: (context, mapProvider, _) {
-                  if (!mapProvider.isFetchingRoute) return const SizedBox.shrink();
+                  if (!mapProvider.isFetchingRoute)
+                    return const SizedBox.shrink();
                   return const _RouteLoadingPill();
                 },
               ),
             ),
 
           // Map Header - Top Overlay (when no active journey)
-          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+          if (currentJourney == null ||
+              currentJourney.status != JourneyStatus.ACTIVE)
             const Align(
               alignment: Alignment.topCenter,
               child: MapHeaderOverlay(),
             ),
 
           // Journey Progress Card - Bottom Overlay (collapsed pill by default)
-          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+          if (currentJourney != null &&
+              currentJourney.status == JourneyStatus.ACTIVE)
             Align(
               alignment: Alignment.bottomCenter,
               child: JourneyProgressCard(
@@ -1367,13 +1536,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                 isLeader: isLeader,
                 onEndJourney: _showEndJourneyConfirmation,
                 isExpanded: _isProgressCardExpanded,
-                onToggleExpanded: () =>
-                    setState(() => _isProgressCardExpanded = !_isProgressCardExpanded),
+                onToggleExpanded: () => setState(
+                  () => _isProgressCardExpanded = !_isProgressCardExpanded,
+                ),
               ),
             ),
-            
+
           // Map Bottom Bar - Show when no active journey
-          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+          if (currentJourney == null ||
+              currentJourney.status != JourneyStatus.ACTIVE)
             const Align(
               alignment: Alignment.bottomCenter,
               child: MapJourneyOverlay(),
@@ -1382,7 +1553,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           // Recenter button — active journey.
           // Shifts up by the card-expansion delta (182 px) so it always clears
           // the expanded card header.
-          if (currentJourney != null && currentJourney.status == JourneyStatus.ACTIVE)
+          if (currentJourney != null &&
+              currentJourney.status == JourneyStatus.ACTIVE)
             Positioned(
               bottom: _isProgressCardExpanded ? 254 : 72,
               right: 16,
@@ -1409,7 +1581,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
             ),
 
           // Recenter button — no active journey: sits above the bottom overlay
-          if (currentJourney == null || currentJourney.status != JourneyStatus.ACTIVE)
+          if (currentJourney == null ||
+              currentJourney.status != JourneyStatus.ACTIVE)
             Positioned(
               bottom: 120,
               right: 16,
@@ -1449,7 +1622,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1463,7 +1640,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
                     ),
                     IconButton(
                       onPressed: _showConvoyManagementOptions,
-                      icon: const Icon(Icons.settings, color: Colors.white, size: 20),
+                      icon: const Icon(
+                        Icons.settings,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                       tooltip: 'Convoy Management',
                     ),
                   ],
@@ -1473,10 +1654,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
         ],
       ),
       // Convoy Metrics FAB - Show when active convoy exists
-      // floatingActionButton: (currentJourney != null && 
-      //     currentJourney.status == JourneyStatus.ACTIVE && 
+      // floatingActionButton: (currentJourney != null &&
+      //     currentJourney.status == JourneyStatus.ACTIVE &&
       //     convoySnapshot != null &&
-      //     convoySnapshot.members.isNotEmpty) 
+      //     convoySnapshot.members.isNotEmpty)
       //   ? FloatingActionButton(
       //       onPressed: _showConvoyMetricsBottomSheet,
       //       backgroundColor: const Color(0xFFE53E3E),
@@ -1590,7 +1771,10 @@ class _ArrivalBanner extends StatelessWidget {
               GestureDetector(
                 onTap: onEndJourney,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: colors.electricRed,
                     borderRadius: BorderRadius.circular(10),

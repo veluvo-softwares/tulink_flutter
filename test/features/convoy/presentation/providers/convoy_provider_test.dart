@@ -8,8 +8,14 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/stream_convoy_pos
 import 'package:tulink_flutter/features/convoy/domain/usecases/publish_my_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/domain/repositories/convoy_repository.dart';
+import 'package:tulink_flutter/core/errors/failure.dart';
 
-@GenerateMocks([StreamConvoyPositions, PublishMyPosition, FetchLatestSnapshot, ConvoyRepository])
+@GenerateMocks([
+  StreamConvoyPositions,
+  PublishMyPosition,
+  FetchLatestSnapshot,
+  ConvoyRepository,
+])
 import 'convoy_provider_test.mocks.dart';
 
 void main() {
@@ -81,7 +87,9 @@ void main() {
         convoyProvider.setSnapshotForTesting(snapshot);
 
         // Act
-        final displaySnapshot = convoyProvider.getDisplaySnapshot(currentUserId);
+        final displaySnapshot = convoyProvider.getDisplaySnapshot(
+          currentUserId,
+        );
 
         // Assert
         expect(displaySnapshot, isNotNull);
@@ -91,83 +99,95 @@ void main() {
         expect(displaySnapshot.members.containsKey(otherUserId2), isTrue);
       });
 
-      test('should return empty members map for solo journey with only current user', () {
-        // Arrange
-        final memberPositions = {
-          currentUserId: MemberPosition(
-            userId: currentUserId,
-            latitude: 1.0,
-            longitude: 1.0,
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-            accuracy: 5.0,
-            isMoving: true,
-          ),
-        };
+      test(
+        'should return empty members map for solo journey with only current user',
+        () {
+          // Arrange
+          final memberPositions = {
+            currentUserId: MemberPosition(
+              userId: currentUserId,
+              latitude: 1.0,
+              longitude: 1.0,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
+              accuracy: 5.0,
+              isMoving: true,
+            ),
+          };
 
-        final snapshot = ConvoySnapshot(
-          journeyId: journeyId,
-          members: memberPositions,
-          destination: const ConvoyDestination(latitude: 5.0, longitude: 5.0),
-          destinationAddress: 'Test Destination',
-          timestamp: DateTime.now(),
-        );
+          final snapshot = ConvoySnapshot(
+            journeyId: journeyId,
+            members: memberPositions,
+            destination: const ConvoyDestination(latitude: 5.0, longitude: 5.0),
+            destinationAddress: 'Test Destination',
+            timestamp: DateTime.now(),
+          );
 
-        convoyProvider.setSnapshotForTesting(snapshot);
+          convoyProvider.setSnapshotForTesting(snapshot);
 
-        // Act
-        final displaySnapshot = convoyProvider.getDisplaySnapshot(currentUserId);
+          // Act
+          final displaySnapshot = convoyProvider.getDisplaySnapshot(
+            currentUserId,
+          );
 
-        // Assert
-        expect(displaySnapshot, isNotNull);
-        expect(displaySnapshot!.members.length, equals(0));
-        expect(displaySnapshot.members.containsKey(currentUserId), isFalse);
-      });
+          // Assert
+          expect(displaySnapshot, isNotNull);
+          expect(displaySnapshot!.members.length, equals(0));
+          expect(displaySnapshot.members.containsKey(currentUserId), isFalse);
+        },
+      );
 
-      test('should return unchanged snapshot when current user not in members', () {
-        // Arrange - Edge case: current user has not yet written to RTDB
-        final memberPositions = {
-          otherUserId1: MemberPosition(
-            userId: otherUserId1,
-            latitude: 2.0,
-            longitude: 2.0,
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-            accuracy: 5.0,
-            isMoving: true,
-          ),
-          otherUserId2: MemberPosition(
-            userId: otherUserId2,
-            latitude: 3.0,
-            longitude: 3.0,
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-            accuracy: 5.0,
-            isMoving: false,
-          ),
-        };
+      test(
+        'should return unchanged snapshot when current user not in members',
+        () {
+          // Arrange - Edge case: current user has not yet written to RTDB
+          final memberPositions = {
+            otherUserId1: MemberPosition(
+              userId: otherUserId1,
+              latitude: 2.0,
+              longitude: 2.0,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
+              accuracy: 5.0,
+              isMoving: true,
+            ),
+            otherUserId2: MemberPosition(
+              userId: otherUserId2,
+              latitude: 3.0,
+              longitude: 3.0,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
+              accuracy: 5.0,
+              isMoving: false,
+            ),
+          };
 
-        final snapshot = ConvoySnapshot(
-          journeyId: journeyId,
-          members: memberPositions,
-          destination: const ConvoyDestination(latitude: 5.0, longitude: 5.0),
-          destinationAddress: 'Test Destination',
-          timestamp: DateTime.now(),
-        );
+          final snapshot = ConvoySnapshot(
+            journeyId: journeyId,
+            members: memberPositions,
+            destination: const ConvoyDestination(latitude: 5.0, longitude: 5.0),
+            destinationAddress: 'Test Destination',
+            timestamp: DateTime.now(),
+          );
 
-        convoyProvider.setSnapshotForTesting(snapshot);
+          convoyProvider.setSnapshotForTesting(snapshot);
 
-        // Act
-        final displaySnapshot = convoyProvider.getDisplaySnapshot(currentUserId);
+          // Act
+          final displaySnapshot = convoyProvider.getDisplaySnapshot(
+            currentUserId,
+          );
 
-        // Assert
-        expect(displaySnapshot, isNotNull);
-        expect(displaySnapshot!.members.length, equals(2));
-        expect(displaySnapshot.members.containsKey(currentUserId), isFalse);
-        expect(displaySnapshot.members.containsKey(otherUserId1), isTrue);
-        expect(displaySnapshot.members.containsKey(otherUserId2), isTrue);
-      });
+          // Assert
+          expect(displaySnapshot, isNotNull);
+          expect(displaySnapshot!.members.length, equals(2));
+          expect(displaySnapshot.members.containsKey(currentUserId), isFalse);
+          expect(displaySnapshot.members.containsKey(otherUserId1), isTrue);
+          expect(displaySnapshot.members.containsKey(otherUserId2), isTrue);
+        },
+      );
 
       test('should return null when no snapshot available', () {
         // Act
-        final displaySnapshot = convoyProvider.getDisplaySnapshot(currentUserId);
+        final displaySnapshot = convoyProvider.getDisplaySnapshot(
+          currentUserId,
+        );
 
         // Assert
         expect(displaySnapshot, isNull);
@@ -217,6 +237,66 @@ void main() {
       });
     });
 
+    group('joinJourneyRoom', () {
+      void stubEventStreams() {
+        when(
+          mockRepository.connectionStateStream,
+        ).thenAnswer((_) => const Stream<ConvoyConnectionState>.empty());
+        when(
+          mockRepository.journeyEndedStream,
+        ).thenAnswer((_) => const Stream.empty());
+        when(
+          mockRepository.participantArrivedStream,
+        ).thenAnswer((_) => const Stream.empty());
+        when(
+          mockRepository.journeyStartedStream,
+        ).thenAnswer((_) => const Stream<String>.empty());
+        when(
+          mockRepository.participantAcceptedStream,
+        ).thenAnswer((_) => const Stream<String>.empty());
+        when(
+          mockStreamConvoyPositions(journeyId),
+        ).thenAnswer((_) => const Stream.empty());
+      }
+
+      test(
+        'waits for the server room acknowledgement before subscribing',
+        () async {
+          stubEventStreams();
+          when(
+            mockRepository.joinJourneyRoom(journeyId),
+          ).thenAnswer((_) async {});
+
+          final joined = await convoyProvider.joinJourneyRoom(journeyId);
+
+          expect(joined, isTrue);
+          expect(convoyProvider.errorMessage, isNull);
+          verifyInOrder([
+            mockRepository.joinJourneyRoom(journeyId),
+            mockStreamConvoyPositions(journeyId),
+          ]);
+        },
+      );
+
+      test(
+        'reports reconnecting and does not subscribe when acknowledgement fails',
+        () async {
+          when(mockRepository.joinJourneyRoom(journeyId)).thenThrow(
+            const ConvoyFailure(
+              message: 'Join acknowledgement timed out',
+              isRetryable: true,
+            ),
+          );
+
+          final joined = await convoyProvider.joinJourneyRoom(journeyId);
+
+          expect(joined, isFalse);
+          expect(convoyProvider.errorMessage, 'Live updates are reconnecting');
+          verifyNever(mockStreamConvoyPositions(journeyId));
+        },
+      );
+    });
+
     group('Member count consistency', () {
       test('display snapshot should have fewer members than full snapshot', () {
         // Arrange
@@ -259,12 +339,17 @@ void main() {
 
         // Act
         final fullSnapshot = convoyProvider.getFullSnapshot();
-        final displaySnapshot = convoyProvider.getDisplaySnapshot(currentUserId);
+        final displaySnapshot = convoyProvider.getDisplaySnapshot(
+          currentUserId,
+        );
 
         // Assert
         expect(fullSnapshot!.totalMembers, equals(3));
         expect(displaySnapshot!.totalMembers, equals(2));
-        expect(fullSnapshot.totalMembers - displaySnapshot.totalMembers, equals(1));
+        expect(
+          fullSnapshot.totalMembers - displaySnapshot.totalMembers,
+          equals(1),
+        );
       });
     });
   });
