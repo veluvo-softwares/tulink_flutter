@@ -40,7 +40,6 @@ abstract class ConvoyWebSocketDataSource {
   /// Clients MUST stop coordinating the named journey on receiving this.
   Stream<JourneyEndedEvent> get journeyEndedStream;
 
-
   /// Stream of `participant-arrived` events. Fires whenever any participant
   /// (current user or someone else) reaches the destination. When
   /// `allArrived` is true the backend auto-completes the journey and a
@@ -84,26 +83,34 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   io.Socket? _socket;
   String? _currentJourneyId;
   ConvoyConnectionState _connectionState = ConvoyConnectionState.disconnected;
-  
+
   // Stream controllers
-  final StreamController<ConvoySnapshot> _convoyController = StreamController.broadcast();
-  final StreamController<ConvoyConnectionState> _connectionController = StreamController.broadcast();
-  final StreamController<JourneyEndedEvent> _journeyEndedController = StreamController.broadcast();
-  final StreamController<ParticipantArrivedEvent> _participantArrivedController = StreamController.broadcast();
-  final StreamController<String> _journeyStartedController = StreamController.broadcast();
-  final StreamController<String> _participantAcceptedController = StreamController.broadcast();
-  final StreamController<Map<String, dynamic>> _journeyInviteController = StreamController.broadcast();
-  
+  final StreamController<ConvoySnapshot> _convoyController =
+      StreamController.broadcast();
+  final StreamController<ConvoyConnectionState> _connectionController =
+      StreamController.broadcast();
+  final StreamController<JourneyEndedEvent> _journeyEndedController =
+      StreamController.broadcast();
+  final StreamController<ParticipantArrivedEvent>
+  _participantArrivedController = StreamController.broadcast();
+  final StreamController<String> _journeyStartedController =
+      StreamController.broadcast();
+  final StreamController<String> _participantAcceptedController =
+      StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _journeyInviteController =
+      StreamController.broadcast();
+
   // Convoy state
   final Map<String, MemberPosition> _members = {};
   ConvoyDestination? _destination;
   String? _destinationAddress;
-  
+
   // Connection management
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
-  bool _intentionalDisconnect = false; // Flag to prevent reconnection on intentional disconnect
+  bool _intentionalDisconnect =
+      false; // Flag to prevent reconnection on intentional disconnect
   static const int _maxReconnectAttempts = 10;
   static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
 
@@ -127,10 +134,12 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   Stream<ConvoySnapshot> get convoyUpdatesStream => _convoyController.stream;
 
   @override
-  Stream<ConvoyConnectionState> get connectionStateStream => _connectionController.stream;
+  Stream<ConvoyConnectionState> get connectionStateStream =>
+      _connectionController.stream;
 
   @override
-  Stream<JourneyEndedEvent> get journeyEndedStream => _journeyEndedController.stream;
+  Stream<JourneyEndedEvent> get journeyEndedStream =>
+      _journeyEndedController.stream;
 
   @override
   Stream<ParticipantArrivedEvent> get participantArrivedStream =>
@@ -207,7 +216,6 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
       _reconnectAttempts = 0; // Reset on successful connection
       _startHeartbeat();
-
     } catch (e) {
       print('❌ WebSocket connection failed: $e');
       _updateConnectionState(ConvoyConnectionState.error);
@@ -225,12 +233,12 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _intentionalDisconnect = true; // Set flag to prevent reconnection
     _stopHeartbeat();
     _stopReconnectTimer();
-    
+
     if (_socket != null) {
       if (_currentJourneyId != null) {
         await leaveJourney(_currentJourneyId!);
       }
-      
+
       _socket!.disconnect();
       _socket!.dispose();
       _socket = null;
@@ -277,15 +285,19 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     _roomDebug('🔌 emit join-journey $journeyId');
 
-    // 10-second timeout — if joined-journey never arrives (e.g. server rejected
-    // with an error event), log a warning and continue so a slow server doesn't
-    // block coordination indefinitely. The caller will surface the failure via
-    // missing snapshots and eventually fall back to REST polling.
+    // A missing acknowledgement means room membership is unknown. Treat it as
+    // a retryable failure instead of reporting listener mode as ready and then
+    // silently missing journey-started events.
     await completer.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
         _socket!.off('joined-journey', onJoined);
-        print('⚠️ join-journey timed out for $journeyId — server may have rejected membership');
+        throw ConvoyFailure(
+          message: 'Live updates are reconnecting',
+          details: 'The server did not confirm journey room membership',
+          timestamp: DateTime.now(),
+          isRetryable: true,
+        );
       },
     );
   }
@@ -296,12 +308,12 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     _socket!.emit('leave-journey', {'journeyId': journeyId});
     _currentJourneyId = null;
-    
+
     // Clear convoy state
     _members.clear();
     _destination = null;
     _destinationAddress = null;
-    
+
     print('🔌 Left journey: $journeyId');
   }
 
@@ -337,21 +349,21 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   @override
   Future<void> acknowledgeUpdate(int sequenceNumber) async {
     if (!isConnected) return;
-    
+
     _socket!.emit('acknowledge', {'sequenceNumber': sequenceNumber});
   }
 
   @override
   Future<void> sendHeartbeat() async {
     if (!isConnected) return;
-    
+
     _socket!.emit('heartbeat', {});
   }
 
   @override
   Future<void> requestResync(int fromSequence) async {
     if (!isConnected) return;
-    
+
     _socket!.emit('request-resync', {'fromSequence': fromSequence});
   }
 
@@ -364,6 +376,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       print('✅ WebSocket connected');
       _connectedAt = DateTime.now();
       _updateConnectionState(ConvoyConnectionState.connected);
+
+      // Socket.IO room membership is connection-scoped. After any transport
+      // reconnect, explicitly rejoin the active journey or this client will
+      // look connected while silently missing convoy events.
+      final journeyId = _currentJourneyId;
+      if (journeyId != null) {
+        _socket!.emit('join-journey', {'journeyId': journeyId});
+        _roomDebug('🔁 rejoin journey after reconnect $journeyId');
+      }
     });
 
     _socket!.onDisconnect((reason) {
@@ -451,7 +472,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       // the backend emits this event to that journey's room only.
       final journeyId = _currentJourneyId;
       if (journeyId != null) {
-        final payload = data is Map<String, dynamic> ? data : <String, dynamic>{};
+        final payload = data is Map<String, dynamic>
+            ? data
+            : <String, dynamic>{};
         if (!_journeyEndedController.isClosed) {
           _journeyEndedController.add(
             JourneyEndedEvent.fromJson(journeyId, payload),
@@ -470,7 +493,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     _socket!.on('journey-started', (data) {
       _roomDebug(
-          '🚀 journey-started RECV currentJourney=$_currentJourneyId data=$data');
+        '🚀 journey-started RECV currentJourney=$_currentJourneyId data=$data',
+      );
       final journeyId = _currentJourneyId;
       if (journeyId != null && !_journeyStartedController.isClosed) {
         _journeyStartedController.add(journeyId);
@@ -482,13 +506,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _socket!.on('participant-accepted', (data) {
       final userId = data is Map ? data['userId'] : null;
       _roomDebug(
-          '🤝 participant-accepted RECV userId=$userId currentJourney=$_currentJourneyId');
+        '🤝 participant-accepted RECV userId=$userId currentJourney=$_currentJourneyId',
+      );
       final journeyId = _currentJourneyId;
       if (journeyId != null && !_participantAcceptedController.isClosed) {
         _participantAcceptedController.add(journeyId);
       } else {
         _roomDebug(
-            '⚠️ participant-accepted DROPPED (currentJourneyId=$journeyId)');
+          '⚠️ participant-accepted DROPPED (currentJourneyId=$journeyId)',
+        );
       }
     });
 
@@ -523,7 +549,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
         final member = _members[userId];
         if (member != null) {
           _members[userId] = member.copyWith(
-            timestamp: DateTime.now().millisecondsSinceEpoch - 60000, // Mark as 1 min old
+            timestamp:
+                DateTime.now().millisecondsSinceEpoch -
+                60000, // Mark as 1 min old
           );
           _emitConvoySnapshot();
         }
@@ -601,7 +629,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _socket!.on('resync-data', (data) {
       final count = data['count'] as int?;
       print('🔄 Resync data received: $count updates');
-      
+
       // TODO: Handle resync updates if needed
       // final updates = data['updates'] as List<dynamic>?;
     });
@@ -692,8 +720,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
             // Prefer an explicit userId in the payload (added in a future
             // backend pass); for now the key is the internal participantId.
-            final memberId =
-                locationData['userId'] as String? ?? userId;
+            final memberId = locationData['userId'] as String? ?? userId;
 
             final position = MemberPositionModel.fromJson({
               'userId': memberId,
@@ -711,8 +738,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
             // Upsert: never let an older snapshot position overwrite a fresher
             // one we already have from a live update.
             final existing = _members[memberId];
-            if (existing == null ||
-                position.timestamp >= existing.timestamp) {
+            if (existing == null || position.timestamp >= existing.timestamp) {
               _members[memberId] = position;
             }
           } catch (e) {
@@ -744,7 +770,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     final snapshot = ConvoySnapshot(
       journeyId: _currentJourneyId!,
       members: Map.from(_members),
-      destination: _destination ?? const ConvoyDestination(latitude: 0, longitude: 0),
+      destination:
+          _destination ?? const ConvoyDestination(latitude: 0, longitude: 0),
       destinationAddress: _destinationAddress ?? 'Unknown destination',
       timestamp: DateTime.now(),
     );
@@ -756,7 +783,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   Future<void> _waitForConnection() async {
     const timeout = Duration(seconds: 10);
     final completer = Completer<void>();
-    
+
     Timer(timeout, () {
       if (!completer.isCompleted) {
         completer.completeError('Connection timeout');
@@ -801,19 +828,24 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       print('🔌 Skipping reconnect - intentional disconnect');
       return;
     }
-    
+
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _updateConnectionState(ConvoyConnectionState.error);
       return;
     }
 
     _stopReconnectTimer();
-    
-    final delayIndex = math.min(_reconnectAttempts, _reconnectDelays.length - 1);
+
+    final delayIndex = math.min(
+      _reconnectAttempts,
+      _reconnectDelays.length - 1,
+    );
     final delay = Duration(seconds: _reconnectDelays[delayIndex]);
-    
-    print('🔄 Scheduling reconnect attempt ${_reconnectAttempts + 1} in ${delay.inSeconds}s');
-    
+
+    print(
+      '🔄 Scheduling reconnect attempt ${_reconnectAttempts + 1} in ${delay.inSeconds}s',
+    );
+
     _reconnectTimer = Timer(delay, () {
       _reconnectAttempts++;
       _attemptReconnect();
@@ -833,16 +865,16 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     try {
       print('🔄 Attempting reconnect...');
       _updateConnectionState(ConvoyConnectionState.reconnecting);
-      
+
       // Try to reconnect
       _socket?.connect();
       await _waitForConnection();
-      
+
       // Rejoin journey if we were in one
       if (_currentJourneyId != null) {
         await joinJourney(_currentJourneyId!);
       }
-      
+
       _reconnectAttempts = 0;
     } catch (e) {
       print('❌ Reconnect failed: $e');

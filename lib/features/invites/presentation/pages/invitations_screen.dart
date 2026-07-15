@@ -34,8 +34,8 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
   Future<void> _acceptInvitation(JourneyInvitation invitation) async {
     final accepted = await context.read<InviteProvider>().acceptInvitation(
-          invitation.journeyId,
-        );
+      invitation.journeyId,
+    );
 
     if (!mounted) return;
 
@@ -43,7 +43,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       context.showSuccessToast('You joined "${invitation.journeyName}"!');
 
       // Fetch the journey to determine its current status.
-      await context.read<JourneyProvider>().fetchJourneyById(invitation.journeyId);
+      await context.read<JourneyProvider>().fetchJourneyById(
+        invitation.journeyId,
+      );
       if (!mounted) return;
 
       final journey = context.read<JourneyProvider>().currentJourney;
@@ -54,13 +56,23 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         // blocked user is routed to settings and does not enter the map.
         if (!await ensureLocationReady(context)) return;
         if (!mounted) return;
-        await context.read<ConvoyProvider>().startCoordination(invitation.journeyId);
+        await context.read<ConvoyProvider>().startCoordination(
+          invitation.journeyId,
+        );
         if (!mounted) return;
         Navigator.of(context).pushNamed('/mapview');
       } else {
         // Journey is still PENDING — pre-join the WS room so we receive the
         // journey-started event when the leader taps Start, then show the preview.
-        context.read<ConvoyProvider>().joinJourneyRoom(invitation.journeyId);
+        final listening = await context.read<ConvoyProvider>().joinJourneyRoom(
+          invitation.journeyId,
+        );
+        if (!mounted) return;
+        if (!listening) {
+          context.showWarningToast(
+            'Journey joined. Live updates are reconnecting; reopen the app if the start is missed.',
+          );
+        }
         Navigator.of(context).pushNamed(
           JourneyPreviewScreen.routeName,
           arguments: invitation.journeyId,
@@ -226,178 +238,183 @@ class _InvitationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: colors.cardDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with journey name and time
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: colors.electricRed.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: colors.electricRed.withOpacity(0.3),
+    return Semantics(
+      label:
+          '${invitation.journeyName}, destination ${invitation.destination}, invited by ${invitation.invitedBy.displayName}, $timeAgo',
+      container: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: colors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header with journey name and time
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: colors.electricRed.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: colors.electricRed.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.route,
+                      color: colors.electricRed,
+                      size: 22,
                     ),
                   ),
-                  child: Icon(
-                    Icons.route,
-                    color: colors.electricRed,
-                    size: 22,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          invitation.journeyName,
+                          style: TextStyle(
+                            color: colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              color: colors.silver,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                invitation.destination,
+                                style: TextStyle(
+                                  color: colors.silver,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        invitation.journeyName,
+                  Text(
+                    timeAgo,
+                    style: TextStyle(
+                      color: colors.silver.withOpacity(0.6),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Divider
+            Divider(height: 1, color: colors.brushedSteel.withOpacity(0.3)),
+
+            // Invited by section and accept button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Row(
+                children: [
+                  // Avatar
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.tulinkBlue.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: colors.tulinkBlue.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        getInitials(invitation.invitedBy.displayName),
                         style: TextStyle(
-                          color: colors.white,
-                          fontSize: 16,
+                          color: colors.tulinkBlue,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            color: colors.silver,
-                            size: 12,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'INVITED BY',
+                          style: TextStyle(
+                            color: colors.silver.withOpacity(0.6),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
                           ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              invitation.destination,
-                              style: TextStyle(
-                                color: colors.silver,
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          invitation.invitedBy.displayName,
+                          style: TextStyle(
+                            color: colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: isAccepting ? null : onAccept,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colors.electricRed,
+                      disabledBackgroundColor: colors.brushedSteel,
+                      foregroundColor: colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: isAccepting
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Accept',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
                             ),
                           ),
-                        ],
-                      ),
-                    ],
                   ),
-                ),
-                Text(
-                  timeAgo,
-                  style: TextStyle(
-                    color: colors.silver.withOpacity(0.6),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-
-          // Divider
-          Divider(height: 1, color: colors.brushedSteel.withOpacity(0.3)),
-
-          // Invited by section and accept button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Row(
-              children: [
-                // Avatar
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: colors.tulinkBlue.withOpacity(0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: colors.tulinkBlue.withOpacity(0.4),
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      getInitials(invitation.invitedBy.displayName),
-                      style: TextStyle(
-                        color: colors.tulinkBlue,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'INVITED BY',
-                        style: TextStyle(
-                          color: colors.silver.withOpacity(0.6),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                      Text(
-                        invitation.invitedBy.displayName,
-                        style: TextStyle(
-                          color: colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: isAccepting ? null : onAccept,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colors.electricRed,
-                    disabledBackgroundColor: colors.brushedSteel,
-                    foregroundColor: colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: isAccepting
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Accept',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

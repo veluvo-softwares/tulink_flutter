@@ -8,7 +8,9 @@ import '../../../../core/errors/failure.dart';
 abstract class ConvoyRepository {
   /// Stream of convoy snapshots with real-time member positions
   /// Updates automatically when any member's position changes via RTDB
-  Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(String journeyId);
+  Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(
+    String journeyId,
+  );
 
   /// Publish current user's position to the convoy
   /// Rate limited to max 1 update per second (60/minute server limit)
@@ -26,7 +28,9 @@ abstract class ConvoyRepository {
 
   /// Fetch latest convoy snapshot for cold start
   /// Used as fallback when RTDB is slow to connect
-  Future<({ConvoySnapshot? snapshot, Failure? failure})> fetchLatestSnapshot(String journeyId);
+  Future<({ConvoySnapshot? snapshot, Failure? failure})> fetchLatestSnapshot(
+    String journeyId,
+  );
 
   /// Stop all convoy coordination activities
   /// Cancels RTDB subscription and stops location publishing
@@ -55,6 +59,11 @@ abstract class ConvoyRepository {
 
   /// Fires when the backend pushes a `journey-invite` to this user.
   Stream<Map<String, dynamic>> get journeyInviteStream;
+
+  /// Connect and obtain the server's acknowledgement that this client joined
+  /// [journeyId]. Used by invited members waiting for the leader to start;
+  /// callers must not present a successful listener state until this completes.
+  Future<void> joinJourneyRoom(String journeyId);
 
   /// Connect the socket for user-scoped events (e.g. journey invites) without
   /// joining a journey, and keep it alive across convoy start/stop so the user

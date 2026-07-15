@@ -243,6 +243,16 @@ class MockConvoyRepository extends _i1.Mock implements _i8.ConvoyRepository {
       ) as _i3.Future<void>);
 
   @override
+  _i3.Future<void> joinJourneyRoom(String? journeyId) => (super.noSuchMethod(
+        Invocation.method(
+          #joinJourneyRoom,
+          [journeyId],
+        ),
+        returnValue: _i3.Future<void>.value(),
+        returnValueForMissingStub: _i3.Future<void>.value(),
+      ) as _i3.Future<void>);
+
+  @override
   _i3.Future<void> connectUserChannel() => (super.noSuchMethod(
         Invocation.method(
           #connectUserChannel,
