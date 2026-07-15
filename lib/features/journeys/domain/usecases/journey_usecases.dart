@@ -77,6 +77,26 @@ class EndJourney {
   }
 }
 
+class CancelJourney {
+  final JourneyRepository repository;
+
+  CancelJourney(this.repository);
+
+  Future<Result<bool>> call(String journeyId) {
+    return repository.cancelJourney(journeyId);
+  }
+}
+
+class LeaveJourney {
+  final JourneyRepository repository;
+
+  LeaveJourney(this.repository);
+
+  Future<Result<bool>> call(String journeyId) {
+    return repository.leaveJourney(journeyId);
+  }
+}
+
 /// Resolve an ALREADY_IN_ACTIVE_JOURNEY conflict (BE-FIX-3): end the user's
 /// currently-active journey, then start the requested one. Returns the started
 /// journey, or the first failure encountered (an end failure short-circuits the

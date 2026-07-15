@@ -9,12 +9,14 @@ class InviteProvider extends ChangeNotifier {
   final SendInvite sendInviteUseCase;
   final GetInvitations getInvitationsUseCase;
   final AcceptInvitation acceptInvitationUseCase;
+  final DeclineInvitation declineInvitationUseCase;
 
   InviteProvider({
     required this.searchUsersUseCase,
     required this.sendInviteUseCase,
     required this.getInvitationsUseCase,
     required this.acceptInvitationUseCase,
+    required this.declineInvitationUseCase,
   });
 
   // Search state
@@ -55,6 +57,12 @@ class InviteProvider extends ChangeNotifier {
 
   String? _acceptError;
   String? get acceptError => _acceptError;
+
+  bool _isDeclining = false;
+  bool get isDeclining => _isDeclining;
+
+  String? _declineError;
+  String? get declineError => _declineError;
 
   // Tracks accepted journey ids in the current session
   final Set<String> _acceptedJourneyIds = {};
@@ -129,7 +137,8 @@ class InviteProvider extends ChangeNotifier {
     if (result.isSuccess && result.data != null) {
       _invitations = result.data!;
     } else {
-      _invitationsError = result.failure?.message ?? 'Failed to load invitations';
+      _invitationsError =
+          result.failure?.message ?? 'Failed to load invitations';
     }
 
     _isLoadingInvitations = false;
@@ -177,5 +186,24 @@ class InviteProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> declineInvitation(String journeyId) async {
+    _isDeclining = true;
+    _declineError = null;
+    notifyListeners();
+
+    final result = await declineInvitationUseCase(journeyId);
+    if (result.isSuccess) {
+      _invitations.removeWhere((inv) => inv.journeyId == journeyId);
+      _isDeclining = false;
+      notifyListeners();
+      return true;
+    }
+
+    _declineError = result.failure?.message ?? 'Failed to decline invitation';
+    _isDeclining = false;
+    notifyListeners();
+    return false;
   }
 }

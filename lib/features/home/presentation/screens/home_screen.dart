@@ -406,12 +406,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 // Journey Action Cards - Show active journey card OR create/join cards
                 Consumer<JourneyProvider>(
                   builder: (context, journeyProvider, child) {
-                    final hasActiveJourney =
+                    final hasOpenJourney =
                         journeyProvider.currentJourney != null &&
-                        journeyProvider.currentJourney!.status ==
-                            JourneyStatus.ACTIVE;
+                        (journeyProvider.currentJourney!.status ==
+                                JourneyStatus.PENDING ||
+                            journeyProvider.currentJourney!.status ==
+                                JourneyStatus.ACTIVE);
 
-                    if (hasActiveJourney) {
+                    if (hasOpenJourney) {
                       return _buildActiveJourneyCard(
                         colors,
                         journeyProvider.currentJourney,
@@ -563,13 +565,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     Navigator.of(context).pushNamed('/journey-preview', arguments: journeyId);
   }
 
-  /// Navigate to map screen to continue an active journey
+  /// Continue an open journey. Pending journeys return to preview; active
+  /// journeys return to the live map.
   void _continueActiveJourney(dynamic journey) {
     final journeyProvider = context.read<JourneyProvider>();
 
     // Set this journey as the current journey
     if (journey is Journey) {
       journeyProvider.setCurrentJourney(journey);
+      if (journey.status == JourneyStatus.PENDING) {
+        _navigateToJourneyPreview(journey.id);
+        return;
+      }
     }
 
     // Navigate directly to map screen for active journey
@@ -724,6 +731,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Build the active journey in progress card
   Widget _buildActiveJourneyCard(TulinkColors colors, Journey? journey) {
+    final isPending = journey?.status == JourneyStatus.PENDING;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -766,7 +774,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'ACTIVE JOURNEY IN PROGRESS',
+                  isPending
+                      ? 'JOURNEY READY TO MANAGE'
+                      : 'ACTIVE JOURNEY IN PROGRESS',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -776,7 +786,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You are currently in an active convoy journey',
+                  isPending
+                      ? 'Your convoy is waiting for participants or departure'
+                      : 'You are currently in an active convoy journey',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.9),
                     fontSize: 14,
@@ -797,7 +809,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'CONTINUE JOURNEY →',
+                      isPending ? 'MANAGE JOURNEY →' : 'CONTINUE JOURNEY →',
                       style: TextStyle(
                         color: colors.electricRed,
                         fontSize: 12,

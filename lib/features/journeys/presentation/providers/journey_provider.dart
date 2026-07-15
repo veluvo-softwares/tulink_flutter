@@ -12,6 +12,8 @@ class JourneyProvider extends ChangeNotifier {
   final UpdateJourney updateJourneyUseCase;
   final EndJourney endJourneyUseCase;
   final SwitchActiveJourney switchActiveJourneyUseCase;
+  final CancelJourney cancelJourneyUseCase;
+  final LeaveJourney leaveJourneyUseCase;
 
   JourneyProvider({
     required this.createJourneyUseCase,
@@ -21,6 +23,8 @@ class JourneyProvider extends ChangeNotifier {
     required this.updateJourneyUseCase,
     required this.endJourneyUseCase,
     required this.switchActiveJourneyUseCase,
+    required this.cancelJourneyUseCase,
+    required this.leaveJourneyUseCase,
   });
 
   bool _isLoading = false;
@@ -46,7 +50,6 @@ class JourneyProvider extends ChangeNotifier {
   /// next [startJourney] attempt.
   String? _activeJourneyConflictId;
   String? get activeJourneyConflictId => _activeJourneyConflictId;
-
 
   void _setLoading(bool value) {
     _isLoading = value;
@@ -101,12 +104,18 @@ class JourneyProvider extends ChangeNotifier {
       // lists it as active, it was completed/cancelled — clear the stale state
       // so the home screen banner disappears.
       if (_currentJourney != null &&
-          _currentJourney!.status == JourneyStatus.ACTIVE) {
-        final stillActive =
-            _activeJourneys.any((j) => j.id == _currentJourney!.id);
+          (_currentJourney!.status == JourneyStatus.PENDING ||
+              _currentJourney!.status == JourneyStatus.ACTIVE)) {
+        final stillActive = _activeJourneys.any(
+          (j) => j.id == _currentJourney!.id,
+        );
         if (!stillActive) {
           _currentJourney = null;
         }
+      }
+
+      if (_currentJourney == null && _activeJourneys.isNotEmpty) {
+        _currentJourney = _activeJourneys.first;
       }
     } else {
       _setError(result.failure?.message ?? 'Unknown error');
@@ -239,6 +248,36 @@ class JourneyProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> cancelJourney(String journeyId) async {
+    return _exitJourney(journeyId, () => cancelJourneyUseCase(journeyId));
+  }
+
+  Future<bool> leaveJourney(String journeyId) async {
+    return _exitJourney(journeyId, () => leaveJourneyUseCase(journeyId));
+  }
+
+  Future<bool> _exitJourney(
+    String journeyId,
+    Future<Result<bool>> Function() action,
+  ) async {
+    _setLoading(true);
+    _setError(null);
+
+    final result = await action();
+    if (result.isSuccess) {
+      if (_currentJourney?.id == journeyId) {
+        _currentJourney = null;
+      }
+      _activeJourneys.removeWhere((journey) => journey.id == journeyId);
+      _setLoading(false);
+      return true;
+    }
+
+    _setError(result.failure?.message ?? 'Unknown error');
+    _setLoading(false);
+    return false;
+  }
+
   /// Consume [lastCompletedJourney] after the map screen has passed it to the
   /// details screen. Prevents the same journey from being re-used on re-entry.
   void consumeLastCompletedJourney() {
@@ -253,4 +292,3 @@ class JourneyProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-

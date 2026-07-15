@@ -32,15 +32,13 @@ class JourneyRepositoryImpl implements JourneyRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to create journey',
         ),
       );
     } catch (e) {
-      return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
-      );
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
 
@@ -53,15 +51,13 @@ class JourneyRepositoryImpl implements JourneyRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to get journey details',
         ),
       );
     } catch (e) {
-      return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
-      );
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
 
@@ -74,15 +70,13 @@ class JourneyRepositoryImpl implements JourneyRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to get active journeys',
         ),
       );
     } catch (e) {
-      return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
-      );
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
 
@@ -106,39 +100,41 @@ class JourneyRepositoryImpl implements JourneyRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ??
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to start journey',
         ),
       );
     } catch (e) {
-      return (
-        data: null,
-        failure: ServerFailure(message: e.toString()),
-      );
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
 
   @override
-  Future<Result<Journey>> updateJourney(String journeyId, Map<String, dynamic> updateData) async {
+  Future<Result<Journey>> updateJourney(
+    String journeyId,
+    Map<String, dynamic> updateData,
+  ) async {
     try {
-      final journey = await remoteDataSource.updateJourney(journeyId, updateData);
+      final journey = await remoteDataSource.updateJourney(
+        journeyId,
+        updateData,
+      );
       return (data: journey, failure: null);
     } on DioException catch (e) {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to update journey',
         ),
       );
     } catch (e) {
-      return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
-      );
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
-  
+
   @override
   Future<Result<Journey>> endJourney(String journeyId) async {
     try {
@@ -148,15 +144,51 @@ class JourneyRepositoryImpl implements JourneyRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ?? 
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to start journey',
         ),
       );
     } catch (e) {
+      return (data: null, failure: ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<bool>> cancelJourney(String journeyId) async {
+    try {
+      await remoteDataSource.cancelJourney(journeyId);
+      return (data: true, failure: null);
+    } on DioException catch (e) {
       return (
-        data: null, 
-        failure: ServerFailure(message: e.toString()),
+        data: null,
+        failure: ServerFailure(
+          message:
+              e.response?.data?['message']?.toString() ??
+              'Failed to cancel journey',
+        ),
       );
+    } catch (e) {
+      return (data: null, failure: ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<bool>> leaveJourney(String journeyId) async {
+    try {
+      await remoteDataSource.leaveJourney(journeyId);
+      return (data: true, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message:
+              e.response?.data?['message']?.toString() ??
+              'Failed to leave journey',
+        ),
+      );
+    } catch (e) {
+      return (data: null, failure: ServerFailure(message: e.toString()));
     }
   }
 }

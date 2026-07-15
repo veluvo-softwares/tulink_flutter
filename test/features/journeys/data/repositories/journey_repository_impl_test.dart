@@ -37,25 +37,65 @@ void main() {
       );
     });
 
-    test('maps a generic DioException to a ServerFailure (not a conflict)',
-        () async {
-      final req = RequestOptions(path: '/journeys/j-new/start');
-      when(remote.startJourney('j-new')).thenThrow(
+    test(
+      'maps a generic DioException to a ServerFailure (not a conflict)',
+      () async {
+        final req = RequestOptions(path: '/journeys/j-new/start');
+        when(remote.startJourney('j-new')).thenThrow(
+          DioException(
+            requestOptions: req,
+            response: Response<dynamic>(
+              requestOptions: req,
+              statusCode: 500,
+              data: {'message': 'Internal error'},
+            ),
+            type: DioExceptionType.badResponse,
+          ),
+        );
+
+        final result = await repo.startJourney('j-new');
+
+        expect(result.failure, isA<ServerFailure>());
+        expect(result.failure, isNot(isA<AlreadyInActiveJourneyFailure>()));
+      },
+    );
+  });
+
+  group('journey exit actions', () {
+    test(
+      'cancelJourney returns success after a 204-style remote completion',
+      () async {
+        when(remote.cancelJourney('j-pending')).thenAnswer((_) async {});
+
+        final result = await repo.cancelJourney('j-pending');
+
+        expect(result.data, isTrue);
+        expect(result.failure, isNull);
+        verify(remote.cancelJourney('j-pending')).called(1);
+      },
+    );
+
+    test('leaveJourney preserves the backend error message', () async {
+      final req = RequestOptions(path: '/journeys/j-active/leave');
+      when(remote.leaveJourney('j-active')).thenThrow(
         DioException(
           requestOptions: req,
           response: Response<dynamic>(
             requestOptions: req,
-            statusCode: 500,
-            data: {'message': 'Internal error'},
+            statusCode: 409,
+            data: {'message': 'You are no longer an active participant'},
           ),
           type: DioExceptionType.badResponse,
         ),
       );
 
-      final result = await repo.startJourney('j-new');
+      final result = await repo.leaveJourney('j-active');
 
-      expect(result.failure, isA<ServerFailure>());
-      expect(result.failure, isNot(isA<AlreadyInActiveJourneyFailure>()));
+      expect(result.data, isNull);
+      expect(
+        result.failure?.message,
+        'You are no longer an active participant',
+      );
     });
   });
 }

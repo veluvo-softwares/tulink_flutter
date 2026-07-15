@@ -161,4 +161,24 @@ class MockJourneyRemoteDataSource extends _i1.Mock
           ),
         )),
       ) as _i4.Future<_i2.JourneyModel>);
+
+  @override
+  _i4.Future<void> cancelJourney(String? journeyId) => (super.noSuchMethod(
+        Invocation.method(
+          #cancelJourney,
+          [journeyId],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
+
+  @override
+  _i4.Future<void> leaveJourney(String? journeyId) => (super.noSuchMethod(
+        Invocation.method(
+          #leaveJourney,
+          [journeyId],
+        ),
+        returnValue: _i4.Future<void>.value(),
+        returnValueForMissingStub: _i4.Future<void>.value(),
+      ) as _i4.Future<void>);
 }

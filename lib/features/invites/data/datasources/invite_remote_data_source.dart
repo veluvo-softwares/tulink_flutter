@@ -13,6 +13,8 @@ abstract class InviteRemoteDataSource {
   Future<List<JourneyInvitationModel>> getInvitations();
 
   Future<String> acceptInvitation(String journeyId);
+
+  Future<String> declineInvitation(String journeyId);
 }
 
 class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
@@ -32,7 +34,9 @@ class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
       final users = data?['users'] as List<dynamic>?;
       if (users != null) {
         return users
-            .map((u) => UserSearchResultModel.fromJson(u as Map<String, dynamic>))
+            .map(
+              (u) => UserSearchResultModel.fromJson(u as Map<String, dynamic>),
+            )
             .toList();
       }
     }
@@ -66,13 +70,18 @@ class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
 
   @override
   Future<List<JourneyInvitationModel>> getInvitations() async {
-    final response = await dio.get<Map<String, dynamic>>('/journeys/invitations');
+    final response = await dio.get<Map<String, dynamic>>(
+      '/journeys/invitations',
+    );
 
     if (response.statusCode == 200 && response.data != null) {
       final data = response.data!['data'] as List<dynamic>?;
       if (data != null) {
         return data
-            .map((inv) => JourneyInvitationModel.fromJson(inv as Map<String, dynamic>))
+            .map(
+              (inv) =>
+                  JourneyInvitationModel.fromJson(inv as Map<String, dynamic>),
+            )
             .toList();
       }
     }
@@ -97,6 +106,23 @@ class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
       requestOptions: response.requestOptions,
       response: response,
       message: 'Failed to accept invitation',
+    );
+  }
+
+  @override
+  Future<String> declineInvitation(String journeyId) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/journeys/$journeyId/decline',
+    );
+
+    if (response.statusCode == 200) {
+      final data = response.data?['data'] as Map<String, dynamic>?;
+      return data?['message']?.toString() ?? 'Invitation declined';
+    }
+    throw DioException(
+      requestOptions: response.requestOptions,
+      response: response,
+      message: 'Failed to decline invitation',
     );
   }
 }

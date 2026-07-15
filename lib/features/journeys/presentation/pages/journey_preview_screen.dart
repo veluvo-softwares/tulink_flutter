@@ -16,11 +16,8 @@ import 'invite_participants_screen.dart';
 
 class JourneyPreviewScreen extends StatefulWidget {
   final String journeyId;
-  
-  const JourneyPreviewScreen({
-    super.key,
-    required this.journeyId,
-  });
+
+  const JourneyPreviewScreen({super.key, required this.journeyId});
 
   static const String routeName = '/journey-preview';
 
@@ -28,7 +25,7 @@ class JourneyPreviewScreen extends StatefulWidget {
   State<JourneyPreviewScreen> createState() => _JourneyPreviewScreenState();
 }
 
-class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> 
+class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     with TickerProviderStateMixin {
   bool _showCountdown = false;
   bool _isStartingJourney = false;
@@ -42,25 +39,25 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   /// (an invited member accepted), we re-fetch the journey so the participant
   /// list updates live without a manual reload.
   int _lastParticipantAcceptedTick = 0;
+  bool _isHandlingJourneyEnd = false;
 
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animation controller
     _countdownAnimationController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    
-    _countdownScale = Tween<double>(
-      begin: 0.5,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _countdownAnimationController,
-      curve: Curves.elasticOut,
-    ));
-    
+
+    _countdownScale = Tween<double>(begin: 0.5, end: 1.2).animate(
+      CurvedAnimation(
+        parent: _countdownAnimationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+
     // Load journey details and initialize invitation provider when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JourneyProvider>().fetchJourneyById(widget.journeyId);
@@ -75,7 +72,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       // confirmation. Defer the join to the explicit (confirmed) start in that
       // case; startCoordination() will then tear down the prior journey cleanly.
       final convoy = context.read<ConvoyProvider>();
-      final activeElsewhere = convoy.currentJourneyId != null &&
+      final activeElsewhere =
+          convoy.currentJourneyId != null &&
           convoy.currentJourneyId != widget.journeyId;
       if (!activeElsewhere) {
         convoy.joinJourneyRoom(widget.journeyId);
@@ -90,9 +88,35 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     // starts. Navigate to the map immediately without any user action.
     final convoyProvider = context.watch<ConvoyProvider>();
 
+    final endedEvent = convoyProvider.lastJourneyEndedEvent;
+    if (!_isHandlingJourneyEnd && endedEvent?.journeyId == widget.journeyId) {
+      _isHandlingJourneyEnd = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final wasCancelled = endedEvent?.reason == 'cancelled';
+        convoyProvider.consumeJourneyEndedEvent();
+        final journeyProvider = context.read<JourneyProvider>();
+        journeyProvider.clearCurrentJourney();
+        unawaited(journeyProvider.fetchActiveJourneys());
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              wasCancelled
+                  ? 'The leader cancelled this journey.'
+                  : 'This journey has ended.',
+            ),
+          ),
+        );
+      });
+      return;
+    }
+
     // An invited member accepted — refresh the journey so the leader sees the
     // updated participant status live (no manual reload needed).
-    if (convoyProvider.participantAcceptedTick != _lastParticipantAcceptedTick) {
+    if (convoyProvider.participantAcceptedTick !=
+        _lastParticipantAcceptedTick) {
       _lastParticipantAcceptedTick = convoyProvider.participantAcceptedTick;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -104,14 +128,16 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         convoyProvider.consumeJourneyStartedEvent();
-        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then((_) async {
-          if (!mounted) return;
-          // Leader just started — gate location before we begin publishing.
-          if (!await ensureLocationReady(context)) return;
-          if (!mounted) return;
-          context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-          Navigator.of(context).pushReplacementNamed('/mapview');
-        });
+        context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then(
+          (_) async {
+            if (!mounted) return;
+            // Leader just started — gate location before we begin publishing.
+            if (!await ensureLocationReady(context)) return;
+            if (!mounted) return;
+            context.read<ConvoyProvider>().startCoordination(widget.journeyId);
+            Navigator.of(context).pushReplacementNamed('/mapview');
+          },
+        );
       });
     }
   }
@@ -122,7 +148,6 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     _countdownAnimationController.dispose();
     super.dispose();
   }
-
 
   /// FIX-06 (D10): the convoy is single-active — starting/entering a journey
   /// silently tears down live coordination for any other active journey. Confirm
@@ -200,8 +225,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     if (convoy.connectionState != ConvoyConnectionState.connected) {
       final deadline = DateTime.now().add(const Duration(milliseconds: 1500));
       while (mounted &&
-             DateTime.now().isBefore(deadline) &&
-             convoy.connectionState != ConvoyConnectionState.connected) {
+          DateTime.now().isBefore(deadline) &&
+          convoy.connectionState != ConvoyConnectionState.connected) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
     }
@@ -212,14 +237,18 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
 
     try {
       // Start the journey via backend API
-      final success = await context.read<JourneyProvider>().startJourney(widget.journeyId);
+      final success = await context.read<JourneyProvider>().startJourney(
+        widget.journeyId,
+      );
 
       if (success && mounted) {
         // Start convoy coordination in the background
         final convoyProvider = context.read<ConvoyProvider>();
 
         // Initialize convoy coordination for real-time tracking
-        print('🚀 Starting convoy coordination for journey: ${widget.journeyId}');
+        print(
+          '🚀 Starting convoy coordination for journey: ${widget.journeyId}',
+        );
         convoyProvider.startCoordination(widget.journeyId);
 
         if (mounted) {
@@ -235,18 +264,18 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         // a second device already has one active, which the client-side switch
         // guard above can't know about — offer to end that journey and start
         // this one instead of dead-ending on a generic error.
-        final conflictId =
-            context.read<JourneyProvider>().activeJourneyConflictId;
+        final conflictId = context
+            .read<JourneyProvider>()
+            .activeJourneyConflictId;
         if (conflictId != null) {
           final switched = await _confirmAndSwitchActiveJourney(conflictId);
           if (!mounted) return;
           if (switched) {
             context.read<ConvoyProvider>().startCoordination(widget.journeyId);
             if (mounted) {
-              Navigator.of(context).pushReplacementNamed(
-                '/mapview',
-                arguments: widget.journeyId,
-              );
+              Navigator.of(
+                context,
+              ).pushReplacementNamed('/mapview', arguments: widget.journeyId);
             }
             return;
           }
@@ -255,7 +284,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
           return;
         }
         // Handle start journey failure
-        _handleJourneyStartFailure('Failed to start journey. Please try again.');
+        _handleJourneyStartFailure(
+          'Failed to start journey. Please try again.',
+        );
       }
     } catch (e) {
       print('❌ Error starting journey: $e');
@@ -314,9 +345,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     );
     if (proceed != true || !mounted) return false;
     return context.read<JourneyProvider>().switchToJourney(
-          fromJourneyId: activeJourneyId,
-          toJourneyId: widget.journeyId,
-        );
+      fromJourneyId: activeJourneyId,
+      toJourneyId: widget.journeyId,
+    );
   }
 
   /// Prefetch the road-following route while the countdown is running.
@@ -333,7 +364,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       final dx = (last[0] - journey.destination.longitude).abs();
       final dy = (last[1] - journey.destination.latitude).abs();
       if (dx < 0.001 && dy < 0.001) {
-        print('✅ Route already cached for this destination — skipping prefetch');
+        print(
+          '✅ Route already cached for this destination — skipping prefetch',
+        );
         return;
       }
     }
@@ -377,14 +410,14 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         setState(() {
           _countdownValue--;
         });
-        
+
         // Different haptic feedback for each countdown number
         if (_countdownValue == 1) {
           HapticFeedback.heavyImpact(); // Strong vibration for final number
         } else {
           HapticFeedback.lightImpact(); // Light vibration for other numbers
         }
-        
+
         // Reset and restart animation for each number
         _countdownAnimationController.reset();
         _countdownAnimationController.forward();
@@ -394,17 +427,17 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         setState(() {
           _showGoMessage = true;
         });
-        
+
         // Double haptic feedback for GO!
         HapticFeedback.heavyImpact();
         Future.delayed(const Duration(milliseconds: 100), () {
           HapticFeedback.heavyImpact();
         });
-        
+
         // Animate GO! message
         _countdownAnimationController.reset();
         _countdownAnimationController.forward();
-        
+
         // Start journey after showing GO! for 1 second
         Future.delayed(const Duration(seconds: 1), () {
           _onCountdownComplete();
@@ -450,16 +483,13 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   }
 
   void _navigateToEditJourney(Journey journey) {
-    Navigator.of(context).pushNamed(
-      '/edit-journey',
-      arguments: journey,
-    );
+    Navigator.of(context).pushNamed('/edit-journey', arguments: journey);
   }
 
   bool _canStartJourney(Journey? journey) {
     if (journey == null) return false;
     if (journey.status != JourneyStatus.PENDING) return false;
-    
+
     // Journey can start if it's in pending status
     return true;
   }
@@ -497,7 +527,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
@@ -544,7 +574,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                     arguments: journey.id,
                   ),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: colors.electricRed,
                       borderRadius: BorderRadius.circular(8),
@@ -690,7 +723,12 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     );
   }
 
-  Widget _buildInfoCard(TulinkColors colors, String title, String value, IconData icon) {
+  Widget _buildInfoCard(
+    TulinkColors colors,
+    String title,
+    String value,
+    IconData icon,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -724,6 +762,51 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
     );
   }
 
+  Future<void> _confirmJourneyExit(Journey journey, bool isLeader) async {
+    final actionLabel = isLeader ? 'Cancel journey' : 'Leave journey';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$actionLabel?'),
+        content: Text(
+          isLeader
+              ? 'This cancels the pending journey for everyone. This cannot be undone.'
+              : 'You will leave this journey and stop receiving convoy updates.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep journey'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final provider = context.read<JourneyProvider>();
+    final success = isLeader
+        ? await provider.cancelJourney(journey.id)
+        : await provider.leaveJourney(journey.id);
+    if (!mounted) return;
+
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.error ?? 'Journey action failed')),
+      );
+      return;
+    }
+
+    final convoy = context.read<ConvoyProvider>();
+    if (convoy.currentJourneyId == journey.id) {
+      await convoy.stopCoordination();
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -733,11 +816,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       body: Consumer<JourneyProvider>(
         builder: (context, journeyProvider, child) {
           final journey = journeyProvider.currentJourney;
-          
+
           if (journeyProvider.isLoading && journey == null) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (journey == null) {
@@ -745,11 +826,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: colors.silver,
-                  ),
+                  Icon(Icons.error_outline, size: 64, color: colors.silver),
                   const SizedBox(height: 16),
                   Text(
                     'Journey not found',
@@ -762,10 +839,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                   const SizedBox(height: 8),
                   Text(
                     'Please check your connection and try again',
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: colors.silver, fontSize: 14),
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton(
@@ -786,386 +860,471 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
               SingleChildScrollView(
                 child: Column(
                   children: [
-                  // App Bar
-                  SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    // App Bar
+                    SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 8.0,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(
+                                Icons.arrow_back,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              'Journey Preview',
+                              style: TextStyle(
+                                color: colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Builder(
+                              builder: (context) {
+                                final userId = context
+                                    .read<AuthProvider>()
+                                    .user
+                                    ?.id;
+                                final isLeader = userId == journey.leaderId;
+                                final canCancel =
+                                    isLeader &&
+                                    journey.status == JourneyStatus.PENDING;
+                                final canLeave =
+                                    !isLeader &&
+                                    (journey.status == JourneyStatus.PENDING ||
+                                        journey.status == JourneyStatus.ACTIVE);
+                                if (!canCancel && !canLeave) {
+                                  return const SizedBox(width: 48);
+                                }
+                                return IconButton(
+                                  tooltip: canCancel
+                                      ? 'Cancel journey'
+                                      : 'Leave journey',
+                                  onPressed: () =>
+                                      _confirmJourneyExit(journey, isLeader),
+                              icon: Icon(
+                                canCancel
+                                    ? Icons.delete_outline
+                                    : Icons.logout,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Compact Map View
+                    Container(
+                      height: 180,
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: colors.brushedSteel.withOpacity(0.3),
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Stack(
+                          children: [JourneyPreviewMap(journey: journey)],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Journey Title and Status
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
                         children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
-                          ),
-                          const Spacer(),
-                          Text(
-                            'Journey Preview',
-                            style: TextStyle(
-                              color: colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: Text(
+                              journey.name,
+                              style: TextStyle(
+                                color: colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () {
-                              // Journey options menu
-                            },
-                            icon: const Icon(Icons.more_vert, color: Colors.white, size: 24),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(
+                                journey.status,
+                                colors,
+                              ).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: _getStatusColor(journey.status, colors),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              _getStatusText(journey.status),
+                              style: TextStyle(
+                                color: _getStatusColor(journey.status, colors),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ),
 
-                  // Compact Map View
-                  Container(
-                    height: 180,
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
+                    const SizedBox(height: 8),
+
+                    // Subtitle
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
                         children: [
-                          JourneyPreviewMap(journey: journey),],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Journey Title and Status
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            journey.name,
+                          Text(
+                            'CONVOY • ',
                             style: TextStyle(
-                              color: colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(journey.status, colors).withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _getStatusColor(journey.status, colors),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            _getStatusText(journey.status),
-                            style: TextStyle(
-                              color: _getStatusColor(journey.status, colors),
+                              color: colors.silver,
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                        ),
-                      ],
+                          Text(
+                            journey.createdAt != null
+                                ? 'CREATED ${_getTimeAgo(journey.createdAt!)}'
+                                : 'CREATED RECENTLY',
+                            style: TextStyle(
+                              color: colors.silver,
+                              fontSize: 12,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 20),
 
-                  // Subtitle
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Text(
-                          'CONVOY • ',
-                          style: TextStyle(
-                            color: colors.silver,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        Text(
-                          journey.createdAt != null 
-                              ? 'CREATED ${_getTimeAgo(journey.createdAt!)}'
-                              : 'CREATED RECENTLY',
-                          style: TextStyle(
-                            color: colors.silver,
-                            fontSize: 12,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Destination Card
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: colors.cardDark,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          color: colors.electricRed,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'DESTINATION',
-                                style: TextStyle(
-                                  color: colors.silver,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                journey.destinationAddress,
-                                style: TextStyle(
-                                  color: colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _navigateToEditJourney(journey),
-                          icon: Icon(
-                            Icons.edit,
-                            color: colors.silver,
-                            size: 20,
-                          ),
-                          tooltip: 'Edit journey',
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Journey Info Cards Row
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildInfoCard(
-                            colors,
-                            'TYPE',
-                            'Convoy',
-                            Icons.route,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildInfoCard(
-                            colors,
-                            'LAG LIMIT',
-                            '${journey.lagThresholdMeters}m',
-                            Icons.speed,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildInfoCard(
-                            colors,
-                            'DRIVERS',
-                            '${journey.participants?.length ?? 1}',
-                            Icons.group,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Participants Section
-                  _buildParticipantsSection(journey, colors),
-
-                  const SizedBox(height: 16),
-
-                  // Action Button — context-aware per role and journey status
-                  Builder(builder: (context) {
-                    final currentUserId = context.read<AuthProvider>().user?.id;
-                    final isLeader = currentUserId != null && journey.leaderId == currentUserId;
-                    final isActive = journey.status == JourneyStatus.ACTIVE;
-                    final isPending = journey.status == JourneyStatus.PENDING;
-
-                    // Leader on an already-running journey: resume without re-starting
-                    if (isLeader && isActive) {
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: _gateThenEnterMap,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colors.electricRed,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.navigation, size: 24),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Resume Journey',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    // Non-leader on an active journey: join the live map
-                    if (!isLeader && isActive) {
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: _gateThenEnterMap,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colors.electricRed,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.directions_car, size: 24),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Join Journey',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    // Non-leader on a pending journey: waiting for leader banner
-                    if (!isLeader && isPending) {
-                      return Container(
-                        margin: const EdgeInsets.all(16),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                        decoration: BoxDecoration(
-                          color: colors.cardDark,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: colors.brushedSteel.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(colors.electricRed),
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Waiting for leader to start',
-                                    style: TextStyle(
-                                      color: colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'You will be taken to the map automatically when the convoy departs',
-                                    style: TextStyle(
-                                      color: colors.silver,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    // Leader on a pending journey: start countdown button
-                    return Container(
+                    // Destination Card
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
                       padding: const EdgeInsets.all(16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton(
-                          onPressed: !_showCountdown && !_isStartingJourney
-                              ? _startJourneyCountdown
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: colors.electricRed,
-                            disabledBackgroundColor: colors.silver.withOpacity(0.3),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _isStartingJourney
-                              ? const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Text('STARTING CONVOY...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                                  ],
-                                )
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.play_arrow, size: 24),
-                                    SizedBox(width: 8),
-                                    Text('Start Convoy', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
+                      decoration: BoxDecoration(
+                        color: colors.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: colors.brushedSteel.withOpacity(0.3),
                         ),
                       ),
-                    );
-                  }),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            color: colors.electricRed,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'DESTINATION',
+                                  style: TextStyle(
+                                    color: colors.silver,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  journey.destinationAddress,
+                                  style: TextStyle(
+                                    color: colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (context.read<AuthProvider>().user?.id ==
+                                  journey.leaderId &&
+                              journey.status == JourneyStatus.PENDING)
+                            IconButton(
+                              onPressed: () => _navigateToEditJourney(journey),
+                              icon: Icon(
+                                Icons.edit,
+                                color: colors.silver,
+                                size: 20,
+                              ),
+                              tooltip: 'Edit journey',
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Journey Info Cards Row
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _buildInfoCard(
+                              colors,
+                              'TYPE',
+                              'Convoy',
+                              Icons.route,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildInfoCard(
+                              colors,
+                              'LAG LIMIT',
+                              '${journey.lagThresholdMeters}m',
+                              Icons.speed,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildInfoCard(
+                              colors,
+                              'DRIVERS',
+                              '${journey.participants?.length ?? 1}',
+                              Icons.group,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Participants Section
+                    _buildParticipantsSection(journey, colors),
+
+                    const SizedBox(height: 16),
+
+                    // Action Button — context-aware per role and journey status
+                    Builder(
+                      builder: (context) {
+                        final currentUserId = context
+                            .read<AuthProvider>()
+                            .user
+                            ?.id;
+                        final isLeader =
+                            currentUserId != null &&
+                            journey.leaderId == currentUserId;
+                        final isActive = journey.status == JourneyStatus.ACTIVE;
+                        final isPending =
+                            journey.status == JourneyStatus.PENDING;
+
+                        // Leader on an already-running journey: resume without re-starting
+                        if (isLeader && isActive) {
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: ElevatedButton(
+                                onPressed: _gateThenEnterMap,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: colors.electricRed,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.navigation, size: 24),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Resume Journey',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Non-leader on an active journey: join the live map
+                        if (!isLeader && isActive) {
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: ElevatedButton(
+                                onPressed: _gateThenEnterMap,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: colors.electricRed,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.directions_car, size: 24),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Join Journey',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Non-leader on a pending journey: waiting for leader banner
+                        if (!isLeader && isPending) {
+                          return Container(
+                            margin: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 18,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.cardDark,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: colors.brushedSteel.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      colors.electricRed,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Waiting for leader to start',
+                                        style: TextStyle(
+                                          color: colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'You will be taken to the map automatically when the convoy departs',
+                                        style: TextStyle(
+                                          color: colors.silver,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        // Leader on a pending journey: start countdown button
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: !_showCountdown && !_isStartingJourney
+                                  ? _startJourneyCountdown
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: colors.electricRed,
+                                disabledBackgroundColor: colors.silver
+                                    .withOpacity(0.3),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isStartingJourney
+                                  ? const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                        SizedBox(width: 12),
+                                        Text(
+                                          'STARTING CONVOY...',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            letterSpacing: 1.2,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.play_arrow, size: 24),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Start Convoy',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -1198,7 +1357,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                                 child: Center(
                                   child: _showGoMessage
                                       ? Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             Text(
                                               'GO!',
@@ -1258,7 +1418,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                               ElevatedButton(
                                 onPressed: _onCancelCountdown,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: colors.silver.withOpacity(0.8),
+                                  backgroundColor: colors.silver.withOpacity(
+                                    0.8,
+                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 28,
                                     vertical: 12,
@@ -1291,7 +1453,11 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.fast_forward, size: 18, color: Colors.white),
+                                    Icon(
+                                      Icons.fast_forward,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
                                     SizedBox(width: 6),
                                     Text(
                                       'Skip',
@@ -1325,7 +1491,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                                 height: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(colors.electricRed),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    colors.electricRed,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 16),

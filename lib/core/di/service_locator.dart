@@ -82,7 +82,6 @@ class ServiceLocator {
   late JourneyRepository _journeyRepository;
   late JourneyProvider _journeyProvider;
 
-
   // Analytics Feature
   late AnalyticsApiService _analyticsApiService;
   late AnalyticsRemoteDataSource _analyticsRemoteDataSource;
@@ -123,7 +122,7 @@ class ServiceLocator {
   EmailVerificationProvider get emailVerificationProvider =>
       _emailVerificationProvider;
   ThemeProvider get themeProvider => _themeProvider;
-  
+
   // Map Feature Getters
   MapProvider get mapProvider => _mapProvider;
   NavigationProvider get navigationProvider => _navigationProvider;
@@ -131,7 +130,6 @@ class ServiceLocator {
 
   // Journey Feature Getters
   JourneyProvider get journeyProvider => _journeyProvider;
-
 
   // Analytics Feature Getters
   AnalyticsProvider get analyticsProvider => _analyticsProvider;
@@ -176,14 +174,17 @@ class ServiceLocator {
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
     _mapLocalDataSource = MapLocalDataSourceImpl();
-    _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(dio: _dioClient.dio);
+    _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(
+      dio: _dioClient.dio,
+    );
     _routeRemoteDataSource = RouteRemoteDataSourceImpl(dio: _dioClient.dio);
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
     _inviteRemoteDataSource = InviteRemoteDataSourceImpl(dio: _dioClient.dio);
-    _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(_analyticsApiService);
+    _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(
+      _analyticsApiService,
+    );
     _convoyRemoteDataSource = ConvoyRemoteDataSourceImpl(_convoyApiService);
     _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl();
-   
 
     // Initialize repositories
     _authRepository = AuthRepositoryImpl(
@@ -197,9 +198,15 @@ class ServiceLocator {
       localDataSource: _mapLocalDataSource,
       placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
     );
-    _journeyRepository = JourneyRepositoryImpl(remoteDataSource: _journeyRemoteDataSource);
-    _inviteRepository = InviteRepositoryImpl(remoteDataSource: _inviteRemoteDataSource);
-    _analyticsRepository = AnalyticsRepositoryImpl(remoteDataSource: _analyticsRemoteDataSource);
+    _journeyRepository = JourneyRepositoryImpl(
+      remoteDataSource: _journeyRemoteDataSource,
+    );
+    _inviteRepository = InviteRepositoryImpl(
+      remoteDataSource: _inviteRemoteDataSource,
+    );
+    _analyticsRepository = AnalyticsRepositoryImpl(
+      remoteDataSource: _analyticsRemoteDataSource,
+    );
     _convoyRepository = ConvoyRepositoryImpl(
       remoteDataSource: _convoyRemoteDataSource,
       webSocketDataSource: _convoyWebSocketDataSource,
@@ -209,7 +216,9 @@ class ServiceLocator {
     // Initialize use cases
     _searchPlacesUseCase = SearchPlacesUseCase(repository: _mapRepository);
     _getJourneyHistoryUseCase = GetJourneyHistoryUseCase(_analyticsRepository);
-    _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(_analyticsRepository);
+    _getJourneyAnalyticsUseCase = GetJourneyAnalyticsUseCase(
+      _analyticsRepository,
+    );
     _getJourneySummaryUseCase = GetJourneySummaryUseCase(_analyticsRepository);
     _streamConvoyPositions = StreamConvoyPositions(_convoyRepository);
     _publishMyPosition = PublishMyPosition(_convoyRepository);
@@ -221,6 +230,7 @@ class ServiceLocator {
       sendInviteUseCase: SendInvite(_inviteRepository),
       getInvitationsUseCase: GetInvitations(_inviteRepository),
       acceptInvitationUseCase: AcceptInvitation(_inviteRepository),
+      declineInvitationUseCase: DeclineInvitation(_inviteRepository),
     );
     _authProvider = AuthProvider(_authRepository);
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
@@ -239,6 +249,8 @@ class ServiceLocator {
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
       endJourneyUseCase: EndJourney(_journeyRepository),
       switchActiveJourneyUseCase: SwitchActiveJourney(_journeyRepository),
+      cancelJourneyUseCase: CancelJourney(_journeyRepository),
+      leaveJourneyUseCase: LeaveJourney(_journeyRepository),
     );
     _analyticsProvider = AnalyticsProvider(
       _getJourneyHistoryUseCase,

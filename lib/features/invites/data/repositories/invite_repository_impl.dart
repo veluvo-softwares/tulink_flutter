@@ -20,7 +20,8 @@ class InviteRepositoryImpl implements InviteRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ??
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to search users',
         ),
       );
@@ -44,7 +45,8 @@ class InviteRepositoryImpl implements InviteRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ??
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to send invitation',
         ),
       );
@@ -62,7 +64,8 @@ class InviteRepositoryImpl implements InviteRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ??
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to get invitations',
         ),
       );
@@ -80,8 +83,28 @@ class InviteRepositoryImpl implements InviteRepository {
       return (
         data: null,
         failure: ServerFailure(
-          message: e.response?.data?['message']?.toString() ??
+          message:
+              e.response?.data?['message']?.toString() ??
               'Failed to accept invitation',
+        ),
+      );
+    } catch (e) {
+      return (data: null, failure: ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<String>> declineInvitation(String journeyId) async {
+    try {
+      final message = await remoteDataSource.declineInvitation(journeyId);
+      return (data: message, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message:
+              e.response?.data?['message']?.toString() ??
+              'Failed to decline invitation',
         ),
       );
     } catch (e) {
