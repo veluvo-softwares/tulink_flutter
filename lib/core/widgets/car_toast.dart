@@ -6,10 +6,13 @@ import 'package:flutter/material.dart';
 enum CarToastType {
   /// Success toast (green)
   success,
+
   /// Warning/info toast (orange)
   warning,
+
   /// Error toast (red)
   error,
+
   /// Info toast (silver — neutral)
   info,
 }
@@ -27,10 +30,13 @@ class CarToast extends StatefulWidget {
 
   /// The message to display
   final String message;
+
   /// The type of toast (success, warning, error)
   final CarToastType type;
+
   /// Duration to display the toast
   final Duration duration;
+
   /// Callback when toast is dismissed
   final VoidCallback? onDismiss;
 
@@ -38,8 +44,7 @@ class CarToast extends StatefulWidget {
   State<CarToast> createState() => _CarToastState();
 }
 
-class _CarToastState extends State<CarToast>
-    with TickerProviderStateMixin {
+class _CarToastState extends State<CarToast> with TickerProviderStateMixin {
   late AnimationController _slideController;
   late AnimationController _fadeController;
   late Animation<Offset> _slideInAnimation;
@@ -67,48 +72,50 @@ class _CarToastState extends State<CarToast>
     );
 
     // Slide in from left (car entering screen)
-    _slideInAnimation = Tween<Offset>(
-      begin: const Offset(-1.2, 0), // Start off-screen left
-      end: Offset.zero, // Stop at normal position
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: const Interval(0, 0.4, curve: Curves.easeOutCubic),
-    ));
+    _slideInAnimation =
+        Tween<Offset>(
+          begin: const Offset(-1.2, 0), // Start off-screen left
+          end: Offset.zero, // Stop at normal position
+        ).animate(
+          CurvedAnimation(
+            parent: _slideController,
+            curve: const Interval(0, 0.4, curve: Curves.easeOutCubic),
+          ),
+        );
 
     // Slide out to right (car exiting screen)
-    _slideOutAnimation = Tween<Offset>(
-      begin: Offset.zero, // Start at normal position
-      end: const Offset(1.2, 0), // Exit off-screen right
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: const Interval(0.6, 1, curve: Curves.easeInCubic),
-    ));
+    _slideOutAnimation =
+        Tween<Offset>(
+          begin: Offset.zero, // Start at normal position
+          end: const Offset(1.2, 0), // Exit off-screen right
+        ).animate(
+          CurvedAnimation(
+            parent: _slideController,
+            curve: const Interval(0.6, 1, curve: Curves.easeInCubic),
+          ),
+        );
 
     // Fade animation for smooth appearance/disappearance
-    _fadeAnimation = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(_fadeController);
+    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(_fadeController);
   }
 
   Future<void> _startToastSequence() async {
-    // Start fade in
-    unawaited(_fadeController.forward());
-    
-    // Start slide in animation (car enters from left)
-    await _slideController.animateTo(0.4);
-    
-    // Pause for reading time (car halts at top)
-    await Future<void>.delayed(widget.duration);
-    
-    // Start slide out animation (car exits to right)
-    await _slideController.forward();
-    
-    // Fade out
-    await _fadeController.reverse();
-    
-    // Notify parent that toast is complete
-    widget.onDismiss?.call();
+    try {
+      unawaited(_fadeController.forward());
+      await _slideController.animateTo(0.4);
+      if (!mounted) return;
+
+      await Future<void>.delayed(widget.duration);
+      if (!mounted) return;
+
+      await _slideController.forward();
+      if (!mounted) return;
+
+      await _fadeController.reverse();
+      if (mounted) widget.onDismiss?.call();
+    } on TickerCanceled {
+      // Expected when a newer toast replaces this one during its sequence.
+    }
   }
 
   @override
@@ -173,11 +180,7 @@ class _CarToastState extends State<CarToast>
           child: SlideTransition(
             position: AlwaysStoppedAnimation(slideOffset),
             child: Container(
-              margin: const EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 8,
-              ),
+              margin: const EdgeInsets.only(left: 16, right: 16, top: 8),
               child: Material(
                 color: Colors.transparent,
                 child: Container(
@@ -199,11 +202,7 @@ class _CarToastState extends State<CarToast>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        _getToastIcon(),
-                        color: _getTextColor(),
-                        size: 24,
-                      ),
+                      Icon(_getToastIcon(), color: _getTextColor(), size: 24),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
