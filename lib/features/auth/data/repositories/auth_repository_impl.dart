@@ -20,7 +20,6 @@ class AuthRepositoryImpl implements AuthRepository {
     this.pushNotificationService,
   });
 
-
   final AuthRemoteDataSource remoteDataSource;
   final AuthLocalDataSource localDataSource;
   final DioClient dioClient;
@@ -49,21 +48,16 @@ class AuthRepositoryImpl implements AuthRepository {
       await localDataSource.cacheUser(result.user);
       await localDataSource.cacheToken(result.token);
       await dioClient.saveAuthToken(result.token);
-      
+
       // Save refresh token if provided
       if (result.refreshToken != null) {
-        print('🔑 Refresh token being saved: ${result.refreshToken}');
         await dioClient.saveRefreshToken(result.refreshToken!);
         print('✅ Refresh token save operation completed');
       } else {
         print('⚠️ No refresh token provided in API response');
       }
 
-      return (
-        user: result.user.toEntity(),
-        token: result.token,
-        failure: null,
-      );
+      return (user: result.user.toEntity(), token: result.token, failure: null);
     } on Failure catch (failure) {
       print('❌ AuthRepositoryImpl.signIn() caught Failure: $failure');
       return (user: null, token: null, failure: failure);
@@ -95,21 +89,16 @@ class AuthRepositoryImpl implements AuthRepository {
       await localDataSource.cacheUser(result.user);
       await localDataSource.cacheToken(result.token);
       await dioClient.saveAuthToken(result.token);
-      
+
       // Save refresh token if provided
       if (result.refreshToken != null) {
-        print('🔑 Refresh token being saved: ${result.refreshToken}');
         await dioClient.saveRefreshToken(result.refreshToken!);
         print('✅ Refresh token save operation completed');
       } else {
         print('⚠️ No refresh token provided in API response');
       }
 
-      return (
-        user: result.user.toEntity(),
-        token: result.token,
-        failure: null,
-      );
+      return (user: result.user.toEntity(), token: result.token, failure: null);
     } on Failure catch (failure) {
       return (user: null, token: null, failure: failure);
     } catch (e) {
@@ -123,7 +112,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<({UserEntity? user, String? token, Failure? failure})>
-      signInWithGoogle() async {
+  signInWithGoogle() async {
     try {
       final google = await socialAuthService.google();
       final result = await remoteDataSource.signInWithSocial(
@@ -151,7 +140,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<({UserEntity? user, String? token, Failure? failure})>
-      signInWithApple() async {
+  signInWithApple() async {
     try {
       final apple = await socialAuthService.apple();
       final result = await remoteDataSource.signInWithSocial(
@@ -179,7 +168,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   /// Shared caching block for a successful social exchange — mirrors signIn().
   Future<({UserEntity? user, String? token, Failure? failure})>
-      _persistSocialSession(
+  _persistSocialSession(
     ({UserModel user, String token, String? refreshToken}) result,
   ) async {
     await localDataSource.cacheUser(result.user);
@@ -190,11 +179,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await dioClient.saveRefreshToken(result.refreshToken!);
     }
 
-    return (
-      user: result.user.toEntity(),
-      token: result.token,
-      failure: null,
-    );
+    return (user: result.user.toEntity(), token: result.token, failure: null);
   }
 
   @override
@@ -245,7 +230,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
       // If no cached user, try to get from remote
       final user = await remoteDataSource.getCurrentUser();
-      
+
       // Cache the user for future use
       await localDataSource.cacheUser(user);
 
@@ -290,7 +275,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<({String? token, Failure? failure})> refreshToken() async {
     try {
       final newToken = await remoteDataSource.refreshToken();
-      
+
       // Save the new token
       await localDataSource.cacheToken(newToken);
       await dioClient.saveAuthToken(newToken);
@@ -404,13 +389,16 @@ class AuthRepositoryImpl implements AuthRepository {
     } catch (e) {
       return (
         success: false,
-        failure: const ServerFailure(message: 'Failed to send verification email'),
+        failure: const ServerFailure(
+          message: 'Failed to send verification email',
+        ),
       );
     }
   }
 
   @override
-  Future<({bool isEmailVerified, Failure? failure})> checkEmailVerification() async {
+  Future<({bool isEmailVerified, Failure? failure})>
+  checkEmailVerification() async {
     try {
       final result = await remoteDataSource.checkEmailVerification();
       if (result) {
@@ -428,7 +416,9 @@ class AuthRepositoryImpl implements AuthRepository {
     } catch (e) {
       return (
         isEmailVerified: false,
-        failure: const ServerFailure(message: 'Failed to check email verification'),
+        failure: const ServerFailure(
+          message: 'Failed to check email verification',
+        ),
       );
     }
   }

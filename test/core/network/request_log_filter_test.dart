@@ -13,6 +13,7 @@ void main() {
       ApiRoutes.refreshToken,
       ApiRoutes.forgotPassword,
       ApiRoutes.resetPassword,
+      ApiRoutes.fcmToken,
     ];
 
     for (final path in credentialPaths) {
@@ -49,19 +50,21 @@ void main() {
       }
     });
 
-    test('keeps logging for non-auth paths, including ones containing "auth"',
-        () {
-      for (final path in [
-        '/journeys/active',
-        '/users/me',
-        '/journeys/1/author',
-      ]) {
-        final options = RequestOptions(path: path);
-        expect(
-          shouldLogRequest(options, const FilterArgs(false, null)),
-          isTrue,
-        );
-      }
-    });
+    test(
+      'keeps logging for non-auth paths, including ones containing "auth"',
+      () {
+        for (final path in [
+          '/journeys/active',
+          '/users/me',
+          '/journeys/1/author',
+        ]) {
+          final options = RequestOptions(path: path);
+          expect(
+            shouldLogRequest(options, const FilterArgs(false, null)),
+            isTrue,
+          );
+        }
+      },
+    );
   });
 }

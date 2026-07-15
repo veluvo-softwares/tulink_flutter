@@ -198,10 +198,14 @@ class DioClient {
   /// Creates the logging interceptor for development
   Interceptor _createLoggingInterceptor() {
     return PrettyDioLogger(
-      requestHeader: true,
-      requestBody: true,
+      // Headers and bodies routinely contain bearer tokens, FCM tokens,
+      // passwords, email-verification codes, and location data. Keep the
+      // useful request/response metadata without turning debug logs into a
+      // credential or privacy-data sink.
+      requestHeader: false,
+      requestBody: false,
       responseHeader: false,
-      responseBody: true,
+      responseBody: false,
       error: true,
       compact: true,
       maxWidth: 90,
@@ -273,18 +277,18 @@ class DioClient {
   /// Determine if a request should be retried
   bool _shouldRetryRequest(DioException error) {
     // Don't retry auth errors or client errors
-    if (error.response?.statusCode == 401 || 
+    if (error.response?.statusCode == 401 ||
         error.response?.statusCode == 403 ||
-        (error.response?.statusCode ?? 0) >= 400 && 
-        (error.response?.statusCode ?? 0) < 500) {
+        (error.response?.statusCode ?? 0) >= 400 &&
+            (error.response?.statusCode ?? 0) < 500) {
       return false;
     }
 
     // Retry on network errors, timeouts, and server errors
     return error.type == DioExceptionType.connectionTimeout ||
-           error.type == DioExceptionType.receiveTimeout ||
-           error.type == DioExceptionType.connectionError ||
-           (error.response?.statusCode ?? 0) >= 500;
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.connectionError ||
+        (error.response?.statusCode ?? 0) >= 500;
   }
 
   /// Force refresh token for testing purposes

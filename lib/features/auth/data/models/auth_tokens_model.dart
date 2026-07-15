@@ -31,8 +31,7 @@ class AuthTokensModel {
 
   @override
   String toString() {
-    return 'AuthTokensModel(idToken: ${idToken.substring(0, 20)}..., '
-        'refreshToken: ${refreshToken.substring(0, 20)}..., '
-        'expiresIn: $expiresIn)';
+    return 'AuthTokensModel(idToken: [REDACTED], '
+        'refreshToken: [REDACTED], expiresIn: $expiresIn)';
   }
 }
