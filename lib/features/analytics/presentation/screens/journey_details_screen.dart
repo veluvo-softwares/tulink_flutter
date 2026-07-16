@@ -28,12 +28,13 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
   void initState() {
     super.initState();
     // Post-trip screen — load summary statistics for the completed journey
-    if (widget.showDoneButton) {
+    if (widget.showDoneButton ||
+        widget.journey.status == JourneyStatus.COMPLETED) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          context
-              .read<AnalyticsProvider>()
-              .loadJourneySummary(widget.journey.id);
+          context.read<AnalyticsProvider>().loadJourneySummary(
+            widget.journey.id,
+          );
         }
       });
     }
@@ -44,6 +45,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     final colors = Theme.of(context).tulinkColors;
     final journey = widget.journey;
     final showDoneButton = widget.showDoneButton;
+    final showJourneyStats = journey.status == JourneyStatus.COMPLETED;
 
     return Scaffold(
       backgroundColor: colors.carbonBlack,
@@ -53,12 +55,19 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
             // App Bar
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 8.0,
+                ),
                 child: Row(
                   children: [
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                     const Spacer(),
                     Text(
@@ -82,7 +91,9 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.brushedSteel.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: colors.brushedSteel.withValues(alpha: 0.3),
+                ),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -110,7 +121,10 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                   StatusIndicator(
                     status: journey.status,
                     fontSize: 12,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                   ),
                 ],
               ),
@@ -133,7 +147,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                     ),
                   ),
                   Text(
-                    journey.createdAt != null 
+                    journey.createdAt != null
                         ? 'CREATED ${_getTimeAgo(journey.createdAt)}'
                         : 'CREATED RECENTLY',
                     style: TextStyle(
@@ -155,15 +169,13 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
               decoration: BoxDecoration(
                 color: colors.cardDark,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.brushedSteel.withValues(alpha: 0.3)),
+                border: Border.all(
+                  color: colors.brushedSteel.withValues(alpha: 0.3),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.location_on,
-                    color: colors.electricRed,
-                    size: 24,
-                  ),
+                  Icon(Icons.location_on, color: colors.electricRed, size: 24),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -231,7 +243,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
             ),
 
             // Journey Stats Section — only shown on post-trip summary
-            if (showDoneButton) ...[
+            if (showJourneyStats) ...[
               const SizedBox(height: 16),
               Consumer<AnalyticsProvider>(
                 builder: (context, analytics, _) {
@@ -244,7 +256,32 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                     );
                   }
                   final summary = analytics.currentSummary;
-                  if (summary == null) return const SizedBox.shrink();
+                  if (summary == null) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colors.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              analytics.summaryError ??
+                                  'Journey statistics are still being prepared.',
+                              style: TextStyle(color: colors.silver),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                analytics.loadJourneySummary(journey.id),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -264,13 +301,21 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: _buildStatCard(colors, 'DISTANCE',
-                                  summary.distanceDisplay, Icons.straighten),
+                              child: _buildStatCard(
+                                colors,
+                                'LEADER DISTANCE',
+                                summary.distanceDisplay,
+                                Icons.straighten,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: _buildStatCard(colors, 'DURATION',
-                                  summary.durationDisplay, Icons.timer),
+                              child: _buildStatCard(
+                                colors,
+                                'DURATION',
+                                summary.durationDisplay,
+                                Icons.timer,
+                              ),
                             ),
                           ],
                         ),
@@ -278,16 +323,43 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: _buildStatCard(colors, 'AVG SPEED',
-                                  summary.avgSpeedDisplay, Icons.speed),
+                              child: _buildStatCard(
+                                colors,
+                                'LEADER AVG SPEED',
+                                summary.avgSpeedDisplay,
+                                Icons.speed,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _buildStatCard(
-                                  colors,
-                                  'LAG ALERTS',
-                                  summary.lagAlertCount.toString(),
-                                  Icons.warning_amber),
+                                colors,
+                                'LAG ALERTS',
+                                summary.lagAlertCount.toString(),
+                                Icons.warning_amber,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                colors,
+                                'DRIVERS',
+                                summary.participantCount.toString(),
+                                Icons.group,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildStatCard(
+                                colors,
+                                'COMPLETED',
+                                _formatDateTime(summary.endTime),
+                                Icons.flag,
+                              ),
                             ),
                           ],
                         ),
@@ -317,10 +389,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                   ),
                   child: const Text(
                     'Done',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -332,7 +401,12 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     );
   }
 
-  Widget _buildInfoCard(TulinkColors colors, String title, String value, IconData icon) {
+  Widget _buildInfoCard(
+    TulinkColors colors,
+    String title,
+    String value,
+    IconData icon,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -411,38 +485,35 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
   Future<void> _navigateToHomeAndRefresh(BuildContext context) async {
     final analyticsProvider = context.read<AnalyticsProvider>();
     final journeyProvider = context.read<JourneyProvider>();
-    
+
     // Show loading indicator while refreshing data
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
-    
+
     try {
       // Refresh data: loadJourneyHistory and fetchActiveJourneys
       await Future.wait([
         analyticsProvider.loadJourneyHistory(),
         journeyProvider.fetchActiveJourneys(),
       ]);
-      
+
       if (context.mounted) {
         // Dismiss loading dialog
         Navigator.of(context).pop();
-        
+
         // Navigate to home screen (clear all routes)
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/home',
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } catch (e) {
       if (context.mounted) {
         // Dismiss loading dialog
         Navigator.of(context).pop();
-        
+
         // Show error but still navigate
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -450,22 +521,21 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        
+
         // Navigate to home anyway
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/home',
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     }
   }
 
   String _getTimeAgo(DateTime? date) {
     if (date == null) return 'UNKNOWN TIME';
-    
+
     final now = DateTime.now();
     final difference = now.difference(date);
-    
+
     if (difference.inDays > 30) {
       final months = (difference.inDays / 30).floor();
       return '${months}MO AGO';
@@ -476,5 +546,13 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     } else {
       return 'RECENTLY';
     }
+  }
+
+  String _formatDateTime(DateTime? value) {
+    if (value == null) return 'Pending';
+    final local = value.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.day}/${local.month} $hour:$minute';
   }
 }
