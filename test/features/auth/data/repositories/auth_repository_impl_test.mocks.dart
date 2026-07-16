@@ -632,6 +632,12 @@ class MockPushNotificationService extends _i1.Mock
       ) as _i5.Stream<_i11.RemoteMessage>);
 
   @override
+  _i5.Stream<_i11.RemoteMessage> get notificationTaps => (super.noSuchMethod(
+        Invocation.getter(#notificationTaps),
+        returnValue: _i5.Stream<_i11.RemoteMessage>.empty(),
+      ) as _i5.Stream<_i11.RemoteMessage>);
+
+  @override
   _i5.Future<void> init() => (super.noSuchMethod(
         Invocation.method(
           #init,

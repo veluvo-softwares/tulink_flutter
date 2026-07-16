@@ -34,8 +34,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   _snapshotController = StreamController.broadcast();
 
   Timer? _fallbackPollingTimer;
+  bool _fallbackFetchInFlight = false;
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
+  String? _joinedJourneyId;
   // When true, the socket is kept alive across convoy stop so the user keeps
   // receiving user-scoped events (journey invites) on the home screen.
   bool _userChannelActive = false;
@@ -49,8 +51,14 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   ) {
     _currentJourneyId = journeyId;
 
-    // Start both WebSocket connection and initial REST fetch
-    _startCoordination(journeyId);
+    // Listener mode may already have connected and joined this room while the
+    // user waited for the leader to start. Upgrade it to full coordination
+    // without emitting a duplicate join and duplicating server broadcasts.
+    if (_joinedJourneyId == journeyId && _webSocketDataSource.isConnected) {
+      unawaited(_fetchInitialSnapshot(journeyId));
+    } else {
+      unawaited(_startCoordination(journeyId));
+    }
 
     return _snapshotController.stream;
   }
@@ -80,6 +88,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
       // Third: Join journey room for live updates
       await _webSocketDataSource.joinJourney(journeyId);
+      _joinedJourneyId = journeyId;
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
       final failure = e is Failure
@@ -189,27 +198,47 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
     print('🔄 Starting REST fallback polling');
 
-    _fallbackPollingTimer = Timer.periodic(const Duration(seconds: 3), (
-      _,
-    ) async {
-      try {
-        final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
+    _fallbackPollingTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _pollFallbackSnapshot(journeyId),
+    );
+    unawaited(_pollFallbackSnapshot(journeyId));
+  }
+
+  /// Fetch one fallback snapshot at a time. `Timer.periodic` does not await an
+  /// async callback; without this guard, a slow request spawned another every
+  /// three seconds and amplified an outage into a local request pile-up.
+  Future<void> _pollFallbackSnapshot(String journeyId) async {
+    if (_fallbackFetchInFlight ||
+        _fallbackPollingTimer == null ||
+        _currentJourneyId != journeyId) {
+      return;
+    }
+
+    _fallbackFetchInFlight = true;
+    try {
+      final snapshot = await _remoteDataSource.fetchLatestSnapshot(journeyId);
+      if (_fallbackPollingTimer != null &&
+          _currentJourneyId == journeyId &&
+          !_snapshotController.isClosed) {
         _snapshotController.add((snapshot: snapshot, failure: null));
-      } catch (e) {
-        print('⚠️ REST fallback polling failed: $e');
-        if (_isTerminalPollingFailure(e)) {
-          print('🛑 Terminal polling failure — cancelling fallback timer');
-          _terminalFailureDetected = true;
-          _stopRestFallbackPolling();
-          if (!_snapshotController.isClosed) {
-            _snapshotController.add((
-              snapshot: null,
-              failure: e is Failure ? e : ConvoyFailure.publishLocationFailed,
-            ));
-          }
+      }
+    } catch (e) {
+      print('⚠️ REST fallback polling failed: $e');
+      if (_isTerminalPollingFailure(e)) {
+        print('🛑 Terminal polling failure — cancelling fallback timer');
+        _terminalFailureDetected = true;
+        _stopRestFallbackPolling();
+        if (!_snapshotController.isClosed) {
+          _snapshotController.add((
+            snapshot: null,
+            failure: e is Failure ? e : ConvoyFailure.publishLocationFailed,
+          ));
         }
       }
-    });
+    } finally {
+      _fallbackFetchInFlight = false;
+    }
   }
 
   /// Whether this error means the polling loop should stop entirely (vs.
@@ -328,6 +357,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     _currentJourneyId = journeyId;
     await _connectWebSocket();
     await _webSocketDataSource.joinJourney(journeyId);
+    _joinedJourneyId = journeyId;
   }
 
   @override
@@ -391,6 +421,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     // Reset state
     _isWebSocketConnected = false;
     _currentJourneyId = null;
+    _joinedJourneyId = null;
     _terminalFailureDetected = false;
 
     print('✅ Convoy coordination stopped completely');

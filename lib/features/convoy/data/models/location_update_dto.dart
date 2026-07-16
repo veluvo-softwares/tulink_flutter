@@ -40,11 +40,21 @@ class LocationUpdateDto {
   factory LocationUpdateDto.fromJson(Map<String, dynamic> json) {
     return LocationUpdateDto(
       journeyId: json['journeyId']?.toString() ?? '',
-      location: LocationCoordinatesDto.fromJson(json['location'] as Map<String, dynamic>? ?? {}),
-      timestamp: (json['timestamp'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
-      accuracy: json['accuracy'] != null ? (json['accuracy'] as num).toDouble() : null,
-      altitude: json['altitude'] != null ? (json['altitude'] as num).toDouble() : null,
-      heading: json['heading'] != null ? (json['heading'] as num).toDouble() : null,
+      location: LocationCoordinatesDto.fromJson(
+        json['location'] as Map<String, dynamic>? ?? {},
+      ),
+      timestamp:
+          (json['timestamp'] as num?)?.toInt() ??
+          DateTime.now().millisecondsSinceEpoch,
+      accuracy: json['accuracy'] != null
+          ? (json['accuracy'] as num).toDouble()
+          : null,
+      altitude: json['altitude'] != null
+          ? (json['altitude'] as num).toDouble()
+          : null,
+      heading: json['heading'] != null
+          ? (json['heading'] as num).toDouble()
+          : null,
       speed: json['speed'] != null ? (json['speed'] as num).toDouble() : null,
       metadata: json['metadata'] as Map<String, dynamic>?,
     );
@@ -85,8 +95,13 @@ class LocationUpdateDto {
       timestamp: timestamp,
       accuracy: accuracy,
       altitude: altitude,
-      heading: heading,
-      speed: speed,
+      // Geolocator uses -1 when a simulator/device cannot determine these
+      // values. The backend correctly rejects negative heading/speed values,
+      // so omit unknown sensor readings rather than poisoning the publish loop.
+      heading: heading != null && heading >= 0 && heading <= 360
+          ? heading
+          : null,
+      speed: speed != null && speed >= 0 ? speed : null,
       metadata: metadata,
     );
   }
@@ -112,10 +127,7 @@ class LocationCoordinatesDto {
 
   /// Convert to JSON
   Map<String, dynamic> toJson() {
-    return {
-      'latitude': latitude,
-      'longitude': longitude,
-    };
+    return {'latitude': latitude, 'longitude': longitude};
   }
 }
 
@@ -142,8 +154,10 @@ class ConvoySnapshotDto {
     final raw = json['participants'] ?? json['locations'];
     return ConvoySnapshotDto(
       locations: raw is Map ? raw.cast<String, dynamic>() : {},
-      destination: json['destination'] != null 
-          ? LocationCoordinatesDto.fromJson(json['destination'] as Map<String, dynamic>)
+      destination: json['destination'] != null
+          ? LocationCoordinatesDto.fromJson(
+              json['destination'] as Map<String, dynamic>,
+            )
           : null,
       destinationAddress: json['destinationAddress']?.toString(),
     );

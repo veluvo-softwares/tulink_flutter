@@ -95,3 +95,66 @@ class ConvoyInterpolationService {
     return <double>[lng2 * 180.0 / math.pi, lat2 * 180.0 / math.pi];
   }
 }
+
+/// Stateful display filter that eases peer markers toward sensor-assisted
+/// projections while rejecting fixes whose reported accuracy is unusable.
+class ConvoyMotionSmoother {
+  final Map<String, _DisplayedCoordinate> _displayed = {};
+
+  static const double maxUsableAccuracyMetres = 75;
+  static const double responseMilliseconds = 550;
+
+  List<double> positionFor(MemberPosition position, int nowMillis) {
+    final previous = _displayed[position.userId];
+    if (previous != null &&
+        position.accuracy != null &&
+        position.accuracy! > maxUsableAccuracyMetres) {
+      return <double>[previous.longitude, previous.latitude];
+    }
+
+    final target = ConvoyInterpolationService.interpolatedPosition(
+      position,
+      nowMillis,
+    );
+    if (previous == null) {
+      _displayed[position.userId] = _DisplayedCoordinate(
+        longitude: target[0],
+        latitude: target[1],
+        renderedAt: nowMillis,
+      );
+      return target;
+    }
+
+    final elapsed = (nowMillis - previous.renderedAt).clamp(0, 250);
+    final alpha = 1 - math.exp(-elapsed / responseMilliseconds);
+    final longitude =
+        previous.longitude + (target[0] - previous.longitude) * alpha;
+    final latitude =
+        previous.latitude + (target[1] - previous.latitude) * alpha;
+    _displayed[position.userId] = _DisplayedCoordinate(
+      longitude: longitude,
+      latitude: latitude,
+      renderedAt: nowMillis,
+    );
+    return <double>[longitude, latitude];
+  }
+
+  void retainUsers(Iterable<String> userIds) {
+    final active = userIds.toSet();
+    _displayed.removeWhere((userId, _) => !active.contains(userId));
+  }
+
+  void clear() => _displayed.clear();
+}
+
+class _DisplayedCoordinate {
+  const _DisplayedCoordinate({
+    required this.longitude,
+    required this.latitude,
+    required this.renderedAt,
+  });
+
+  final double longitude;
+  final double latitude;
+  final int renderedAt;
+}

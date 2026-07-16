@@ -8,6 +8,7 @@ class JourneyProvider extends ChangeNotifier {
   final CreateJourney createJourneyUseCase;
   final GetJourneyById getJourneyByIdUseCase;
   final GetActiveJourneys getActiveJourneysUseCase;
+  final JoinJourneyByCode joinJourneyByCodeUseCase;
   final StartJourney startJourneyUseCase;
   final UpdateJourney updateJourneyUseCase;
   final EndJourney endJourneyUseCase;
@@ -19,6 +20,7 @@ class JourneyProvider extends ChangeNotifier {
     required this.createJourneyUseCase,
     required this.getJourneyByIdUseCase,
     required this.getActiveJourneysUseCase,
+    required this.joinJourneyByCodeUseCase,
     required this.startJourneyUseCase,
     required this.updateJourneyUseCase,
     required this.endJourneyUseCase,
@@ -137,6 +139,26 @@ class JourneyProvider extends ChangeNotifier {
     }
 
     _setLoading(false);
+  }
+
+  Future<Journey?> joinJourneyByCode(String inviteCode) async {
+    _setLoading(true);
+    _setError(null);
+
+    final result = await joinJourneyByCodeUseCase(inviteCode);
+    if (result.isSuccess && result.data != null) {
+      final journey = result.data!;
+      _currentJourney = journey;
+      _activeJourneys
+        ..removeWhere((item) => item.id == journey.id)
+        ..insert(0, journey);
+      _setLoading(false);
+      return journey;
+    }
+
+    _setError(result.failure?.message ?? 'Failed to join journey');
+    _setLoading(false);
+    return null;
   }
 
   Future<bool> startJourney(String journeyId) async {

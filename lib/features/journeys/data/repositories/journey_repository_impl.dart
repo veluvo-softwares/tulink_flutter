@@ -81,6 +81,28 @@ class JourneyRepositoryImpl implements JourneyRepository {
   }
 
   @override
+  Future<Result<Journey>> joinJourneyByCode(String inviteCode) async {
+    try {
+      final journey = await remoteDataSource.joinJourneyByCode(inviteCode);
+      return (data: journey, failure: null);
+    } on DioException catch (e) {
+      return (
+        data: null,
+        failure: ServerFailure(
+          message:
+              (e.response?.data is Map<String, dynamic>
+                  ? (e.response?.data as Map<String, dynamic>)['message']
+                        ?.toString()
+                  : null) ??
+              'Failed to join journey',
+        ),
+      );
+    } catch (e) {
+      return (data: null, failure: ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
   Future<Result<Journey>> startJourney(String journeyId) async {
     try {
       final journey = await remoteDataSource.startJourney(journeyId);

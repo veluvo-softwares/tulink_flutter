@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/location_access_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -601,6 +602,73 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                 ),
             ],
           ),
+          if (isLeader && journey.inviteCode != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colors.carbonBlack,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: colors.electricRed.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'JOURNEY CODE',
+                          style: TextStyle(
+                            color: colors.silver,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          journey.inviteCode!,
+                          style: TextStyle(
+                            color: colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Copy journey code',
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: journey.inviteCode!),
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Journey code copied')),
+                        );
+                      }
+                    },
+                    icon: Icon(Icons.copy_rounded, color: colors.silver),
+                  ),
+                  Builder(
+                    builder: (shareContext) => IconButton(
+                      tooltip: 'Share journey code',
+                      onPressed: () => _shareJourneyCode(journey, shareContext),
+                      icon: Icon(
+                        Icons.ios_share_rounded,
+                        color: colors.electricRed,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           if (participants.isEmpty)
             Text(
@@ -614,6 +682,26 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
           else
             ...participants.map((p) => _buildParticipantRow(p, colors)),
         ],
+      ),
+    );
+  }
+
+  Future<void> _shareJourneyCode(
+    Journey journey,
+    BuildContext shareContext,
+  ) async {
+    final code = journey.inviteCode;
+    if (code == null) return;
+    final box = shareContext.findRenderObject() as RenderBox?;
+    final origin = box == null
+        ? const Rect.fromLTWH(0, 0, 1, 1)
+        : box.localToGlobal(Offset.zero) & box.size;
+    await SharePlus.instance.share(
+      ShareParams(
+        subject: 'Join my TuLink convoy',
+        text:
+            'Join "${journey.name}" on TuLink. Open the app, tap Join a journey, and enter code $code.',
+        sharePositionOrigin: origin,
       ),
     );
   }
@@ -910,13 +998,13 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                                       : 'Leave journey',
                                   onPressed: () =>
                                       _confirmJourneyExit(journey, isLeader),
-                              icon: Icon(
-                                canCancel
-                                    ? Icons.delete_outline
-                                    : Icons.logout,
-                                color: Colors.white,
-                                size: 24,
-                              ),
+                                  icon: Icon(
+                                    canCancel
+                                        ? Icons.delete_outline
+                                        : Icons.logout,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
                                 );
                               },
                             ),

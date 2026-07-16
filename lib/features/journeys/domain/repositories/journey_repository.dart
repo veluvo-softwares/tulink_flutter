@@ -14,6 +14,8 @@ abstract class JourneyRepository {
 
   Future<Result<List<Journey>>> getActiveJourneys();
 
+  Future<Result<Journey>> joinJourneyByCode(String inviteCode);
+
   Future<Result<Journey>> startJourney(String journeyId);
 
   Future<Result<Journey>> updateJourney(

@@ -71,6 +71,7 @@ class ConvoyProvider extends ChangeNotifier {
   StreamSubscription<Position>? _locationSubscription;
   DateTime? _lastPublishTime;
   Position? _lastKnownPosition;
+  bool _publishInFlight = false;
 
   /// Fixed-cadence beacon timer. Convoy members must keep publishing their
   /// position even while stationary, otherwise they disappear from everyone
@@ -386,7 +387,10 @@ class ConvoyProvider extends ChangeNotifier {
   ///   we do not require "Always". Auto-pause is disabled so a stationary
   ///   device doesn't silently stop the convoy beacon.
   LocationSettings _buildLocationSettings() {
-    const accuracy = LocationAccuracy.high;
+    // Ask the OS for its navigation-grade fused GNSS/course stream while a
+    // journey is active. Both platforms may combine satellite, Wi-Fi, cell,
+    // and inertial signals behind this API without exposing raw sensor drift.
+    const accuracy = LocationAccuracy.bestForNavigation;
     const distanceFilter = 5; // metres
 
     if (Platform.isAndroid) {
@@ -509,7 +513,8 @@ class ConvoyProvider extends ChangeNotifier {
     bool isMoving,
   ) async {
     // Guard against stale callbacks after stopCoordination.
-    if (_currentJourneyId != journeyId) return;
+    if (_currentJourneyId != journeyId || _publishInFlight) return;
+    _publishInFlight = true;
 
     try {
       // Get battery level
@@ -556,6 +561,8 @@ class ConvoyProvider extends ChangeNotifier {
                 timestamp: DateTime.now(),
               ),
       );
+    } finally {
+      _publishInFlight = false;
     }
   }
 

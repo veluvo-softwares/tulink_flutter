@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:tulink_flutter/core/network/api_handler.dart';
+import 'package:tulink_flutter/core/network/api_routes.dart';
 import 'package:tulink_flutter/core/network/models/api_response.dart';
 import 'package:tulink_flutter/features/journeys/data/datasources/journey_exceptions.dart';
 import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart';
@@ -16,6 +17,8 @@ abstract class JourneyRemoteDataSource {
   Future<JourneyModel> getJourneyById(String journeyId);
 
   Future<List<JourneyModel>> getActiveJourneys();
+
+  Future<JourneyModel> joinJourneyByCode(String inviteCode);
 
   Future<JourneyModel> startJourney(String journeyId);
 
@@ -102,6 +105,24 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
       requestOptions: response.requestOptions,
       response: response,
       message: 'Invalid response format or failed to get active journeys',
+    );
+  }
+
+  @override
+  Future<JourneyModel> joinJourneyByCode(String inviteCode) async {
+    final normalizedCode = inviteCode.trim().toUpperCase();
+    final response = await dio.post<Map<String, dynamic>>(
+      ApiRoutes.joinJourneyCode(normalizedCode),
+    );
+
+    if (response.statusCode == 200 && response.data != null) {
+      final journeyData = response.data!['data'] as Map<String, dynamic>?;
+      if (journeyData != null) return JourneyModel.fromJson(journeyData);
+    }
+    throw DioException(
+      requestOptions: response.requestOptions,
+      response: response,
+      message: 'Invalid response format or failed to join journey',
     );
   }
 

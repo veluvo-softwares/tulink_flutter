@@ -245,6 +245,7 @@ class ServiceLocator {
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
       getActiveJourneysUseCase: GetActiveJourneys(_journeyRepository),
+      joinJourneyByCodeUseCase: JoinJourneyByCode(_journeyRepository),
       startJourneyUseCase: StartJourney(_journeyRepository),
       updateJourneyUseCase: UpdateJourney(_journeyRepository),
       endJourneyUseCase: EndJourney(_journeyRepository),

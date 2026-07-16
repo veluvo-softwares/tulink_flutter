@@ -116,6 +116,41 @@ void main() {
       expect(distance, closeTo(60.0, 1.0));
     });
   });
+
+  group('ConvoyMotionSmoother', () {
+    test('eases toward a fresh peer fix instead of teleporting', () {
+      final smoother = ConvoyMotionSmoother();
+      final first = buildPosition(timestamp: 1000);
+      smoother.positionFor(first, 1000);
+
+      final moved = MemberPosition(
+        userId: first.userId,
+        latitude: first.latitude,
+        longitude: first.longitude + 0.001,
+        timestamp: 1080,
+        accuracy: 5,
+      );
+      final displayed = smoother.positionFor(moved, 1080);
+
+      expect(displayed[0], greaterThan(first.longitude));
+      expect(displayed[0], lessThan(moved.longitude));
+    });
+
+    test('holds the previous display position for an inaccurate fix', () {
+      final smoother = ConvoyMotionSmoother();
+      final first = buildPosition(timestamp: 1000);
+      final initial = smoother.positionFor(first, 1000);
+      final inaccurate = MemberPosition(
+        userId: first.userId,
+        latitude: first.latitude + 0.01,
+        longitude: first.longitude + 0.01,
+        timestamp: 1080,
+        accuracy: 100,
+      );
+
+      expect(smoother.positionFor(inaccurate, 1080), initial);
+    });
+  });
 }
 
 /// Great-circle distance in metres — test-side check independent of the

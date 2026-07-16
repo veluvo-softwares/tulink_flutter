@@ -2,15 +2,16 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
-import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/pages/invitations_screen.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
+import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
@@ -33,6 +34,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _invitePollingTimer;
   StreamSubscription<RemoteMessage>? _pushSub;
+  StreamSubscription<RemoteMessage>? _pushTapSub;
+  bool _isOpeningInvitations = false;
   int _lastJourneyInviteTick = 0;
 
   /// Guards the resume-on-launch prompt so it fires at most once per app
@@ -57,8 +60,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // refresh the invite list when a push arrives so invites show up live.
       if (mounted) {
         final push = context.read<PushNotificationService>();
-        unawaited(push.init());
+        await push.init();
+        if (!mounted) return;
         _pushSub = push.messages.listen(_onPushMessage);
+        _pushTapSub = push.notificationTaps.listen(_onNotificationTap);
+        final initialTap = push.takeInitialNotificationTap();
+        if (initialTap != null) _onNotificationTap(initialTap);
 
         // Open the WebSocket user channel for instant invite delivery while the
         // app is open. FCM covers the backgrounded/closed case.
@@ -90,6 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     _invitePollingTimer?.cancel();
     _pushSub?.cancel();
+    _pushTapSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -98,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// list and surface a brief in-app banner so the user sees it immediately.
   void _onPushMessage(RemoteMessage message) {
     if (!mounted) return;
-    context.read<InviteProvider>().refreshInvitationsSilently();
+    context.read<InviteProvider>().refreshInvitationsSilently(force: true);
 
     final notification = message.notification;
     final text = notification?.title ?? notification?.body;
@@ -107,10 +115,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _onNotificationTap(RemoteMessage message) {
+    if (!mounted || message.data['type'] != 'JOURNEY_INVITE') return;
+    context.read<InviteProvider>().refreshInvitationsSilently(force: true);
+    if (_isOpeningInvitations) return;
+    _isOpeningInvitations = true;
+    Navigator.of(context)
+        .pushNamed(InvitationsScreen.routeName)
+        .whenComplete(() => _isOpeningInvitations = false);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      context.read<InviteProvider>().refreshInvitationsSilently();
+      context.read<InviteProvider>().refreshInvitationsSilently(force: true);
     }
   }
 
@@ -135,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final invite = convoyProvider.lastJourneyInvite;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        context.read<InviteProvider>().refreshInvitationsSilently();
+        context.read<InviteProvider>().refreshInvitationsSilently(force: true);
         final journeyName = invite?['journeyName'] as String?;
         CarToastService.showSuccess(
           journeyName != null
@@ -440,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             title: 'Join a journey',
                             description: 'Enter a code and join the formation',
                             borderColor: colors.electricRed,
-                            onTap: () {},
+                            onTap: _showJoinJourneyCodeSheet,
                           ),
                         ],
                       );
@@ -553,6 +571,176 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _navigateToJourneyHistory() {
     Navigator.of(context).pushNamed('/journey-history');
+  }
+
+  Future<void> _showJoinJourneyCodeSheet() async {
+    final colors = Theme.of(context).tulinkColors;
+    final controller = TextEditingController();
+    var submitting = false;
+    String? validationError;
+
+    final joinedJourney = await showModalBottomSheet<Journey>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: colors.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          Future<void> submit() async {
+            if (submitting) return;
+            final code = controller.text.trim().toUpperCase();
+            if (!RegExp(r'^[2-9A-HJ-NP-Z]{10}$').hasMatch(code)) {
+              setSheetState(
+                () => validationError = 'Enter a valid 10-character code',
+              );
+              return;
+            }
+
+            setSheetState(() {
+              submitting = true;
+              validationError = null;
+            });
+            final provider = context.read<JourneyProvider>();
+            final journey = await provider.joinJourneyByCode(code);
+            if (!sheetContext.mounted) return;
+            if (journey == null) {
+              setSheetState(() {
+                submitting = false;
+                validationError =
+                    provider.error ?? 'Unable to join this journey';
+              });
+              return;
+            }
+            Navigator.of(sheetContext).pop(journey);
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              16,
+              24,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + 24,
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.silver.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'JOIN A JOURNEY',
+                    style: TextStyle(
+                      color: colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Enter the 10-character code shared by the convoy leader.',
+                    style: TextStyle(color: colors.silver, fontSize: 14),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 4,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp('[2-9A-HJ-NP-Za-hj-np-z]'),
+                      ),
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    decoration: InputDecoration(
+                      hintText: 'ENTER CODE',
+                      errorText: validationError,
+                      filled: true,
+                      fillColor: colors.carbonBlack,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onChanged: (_) {
+                      if (validationError != null) {
+                        setSheetState(() => validationError = null);
+                      }
+                    },
+                    onSubmitted: submitting ? null : (_) => submit(),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: submitting ? null : submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colors.electricRed,
+                      minimumSize: const Size.fromHeight(54),
+                    ),
+                    child: submitting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('JOIN CONVOY'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    if (!mounted || joinedJourney == null) return;
+
+    if (joinedJourney.status == JourneyStatus.ACTIVE) {
+      if (!await ensureLocationReady(context)) {
+        if (mounted) {
+          context.showWarningToast(
+            'Journey joined. Enable location to enter the live convoy.',
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      await context.read<ConvoyProvider>().startCoordination(joinedJourney.id);
+      if (mounted) Navigator.of(context).pushNamed('/mapview');
+      return;
+    }
+
+    final listening = await context.read<ConvoyProvider>().joinJourneyRoom(
+      joinedJourney.id,
+    );
+    if (!mounted) return;
+    if (!listening) {
+      context.showWarningToast('Joined. Live updates are reconnecting.');
+    }
+    Navigator.of(
+      context,
+    ).pushNamed(JourneyPreviewScreen.routeName, arguments: joinedJourney.id);
   }
 
   void _navigateToJourneyDetails(dynamic journey) {

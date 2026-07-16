@@ -106,6 +106,22 @@ class MockJourneyRemoteDataSource extends _i1.Mock
       ) as _i4.Future<List<_i2.JourneyModel>>);
 
   @override
+  _i4.Future<_i2.JourneyModel> joinJourneyByCode(String? inviteCode) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #joinJourneyByCode,
+          [inviteCode],
+        ),
+        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
+          this,
+          Invocation.method(
+            #joinJourneyByCode,
+            [inviteCode],
+          ),
+        )),
+      ) as _i4.Future<_i2.JourneyModel>);
+
+  @override
   _i4.Future<_i2.JourneyModel> startJourney(String? journeyId) =>
       (super.noSuchMethod(
         Invocation.method(

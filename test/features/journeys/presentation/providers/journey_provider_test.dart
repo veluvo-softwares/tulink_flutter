@@ -29,6 +29,7 @@ void main() {
       createJourneyUseCase: CreateJourney(repository),
       getJourneyByIdUseCase: GetJourneyById(repository),
       getActiveJourneysUseCase: GetActiveJourneys(repository),
+      joinJourneyByCodeUseCase: JoinJourneyByCode(repository),
       startJourneyUseCase: StartJourney(repository),
       updateJourneyUseCase: UpdateJourney(repository),
       endJourneyUseCase: EndJourney(repository),
@@ -47,6 +48,21 @@ void main() {
 
       await provider.fetchActiveJourneys();
 
+      expect(provider.currentJourney, pendingJourney);
+      expect(provider.activeJourneys, [pendingJourney]);
+    },
+  );
+
+  test(
+    'joining with a code promotes the journey into local open state',
+    () async {
+      when(
+        repository.joinJourneyByCode('ABCD234567'),
+      ).thenAnswer((_) async => (data: pendingJourney, failure: null));
+
+      final joined = await provider.joinJourneyByCode('ABCD234567');
+
+      expect(joined, pendingJourney);
       expect(provider.currentJourney, pendingJourney);
       expect(provider.activeJourneys, [pendingJourney]);
     },
