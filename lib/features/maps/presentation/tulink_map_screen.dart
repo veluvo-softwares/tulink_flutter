@@ -21,6 +21,7 @@ import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/journey_progress_card.dart';
 import '../../convoy/presentation/widgets/driver_marker.dart';
 import '../../convoy/presentation/widgets/convoy_route_line.dart';
+import '../../convoy/presentation/services/journey_status_notifier.dart';
 import '../../convoy/presentation/utils/convoy_member_presentation.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/member_position.dart';
@@ -123,6 +124,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   double? _displayedNavigationLongitude;
   int? _displayedNavigationSegmentIndex;
   bool _navigationFrameRenderInFlight = false;
+
+  /// Android background journey-status notification (per-member distances).
+  final JourneyStatusNotifier _statusNotifier = JourneyStatusNotifier();
 
   /// Tracks the built-in Mapbox location puck's enabled state.
   /// `null` = unknown (nothing applied yet). The custom snapped puck owns the
@@ -1147,6 +1151,23 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     } else {
       _stopInterpolationTicker();
     }
+
+    // Refresh the background journey-status notification (Android). The
+    // notifier throttles internally, so per-snapshot calls are cheap.
+    if (journey != null && currentUserId != null) {
+      unawaited(
+        _statusNotifier.update(
+          journeyName: journey.name,
+          selfUserId: currentUserId,
+          displayNames: {
+            for (final entry in _memberPresentation.entries)
+              entry.key: entry.value.displayName,
+          },
+          snapshot: convoySnapshot,
+          progress: _navigationProvider?.currentProgress,
+        ),
+      );
+    }
   }
 
   /// Start the periodic ticker that pushes interpolated peer positions to the
@@ -1714,6 +1735,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_statusNotifier.clear());
     WidgetsBinding.instance.removeObserver(this);
     _mapboxMap = null;
     // Stop the peer-marker interpolation ticker before the map handle is gone.
