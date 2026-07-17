@@ -20,15 +20,18 @@ class ApiRoutes {
   static const String searchUser = '/auth/searchUser';
 
   // Journey Invite Routes
-  static String journeyInvite(String journeyId) => '/journeys/$journeyId/invite';
+  static String journeyInvite(String journeyId) =>
+      '/journeys/$journeyId/invite';
   static const String journeyInvitations = '/journeys/invitations';
-  static String acceptInvitation(String journeyId) => '/journeys/$journeyId/accept';
+  static String joinJourneyCode(String code) => '/journeys/join-code/$code';
+  static String acceptInvitation(String journeyId) =>
+      '/journeys/$journeyId/accept';
 
   // User Management Routes
   static const String users = '/users';
   static const String userSearch = '/users/search';
   static const String userPreferences = '/users/preferences';
-  
+
   // Dynamic User Routes
   static String userById(String id) => '/users/$id';
   static String userFollowers(String id) => '/users/$id/followers';
@@ -38,12 +41,12 @@ class ApiRoutes {
 
   static const String trending = '/posts/trending';
   static const String feed = '/feed';
-  
+
   // Dynamic Content Routes
   static String postById(String id) => '/posts/$id';
   static String postComments(String postId) => '/posts/$postId/comments';
   static String postLikes(String postId) => '/posts/$postId/likes';
-  static String commentById(String postId, String commentId) => 
+  static String commentById(String postId, String commentId) =>
       '/posts/$postId/comments/$commentId';
 
   // Media Routes
@@ -58,7 +61,8 @@ class ApiRoutes {
   static const String fcmToken = '/notifications/fcm-token';
   static const String notificationSettings = '/notifications/settings';
   static String markNotificationRead(String id) => '/notifications/$id/read';
-  static String markNotificationUnread(String id) => '/notifications/$id/unread';
+  static String markNotificationUnread(String id) =>
+      '/notifications/$id/unread';
 
   // Search Routes
   static const String search = '/search';
@@ -72,11 +76,10 @@ class ApiRoutes {
   static const String analyticsUserStats = '/analytics/users/stats';
   static const String userAnalytics = '/analytics/user';
   static const String userJourneyHistory = '/analytics/user';
-  
+
   // Dynamic Analytics Routes
   static String journeyAnalytics(String id) => '/analytics/journeys/$id';
-  static String journeySummary(String id) =>
-      '/analytics/journeys/$id/summary';
+  static String journeySummary(String id) => '/analytics/journeys/$id/summary';
 
   // Admin Routes (if user has admin privileges)
   static const String adminUsers = '/admin/users';

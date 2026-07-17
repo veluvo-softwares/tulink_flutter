@@ -3,6 +3,7 @@ import '../../domain/entities/journey.dart';
 class JourneyModel extends Journey {
   const JourneyModel({
     required super.id,
+    super.inviteCode,
     required super.name,
     required super.leaderId,
     required super.status,
@@ -18,40 +19,59 @@ class JourneyModel extends Journey {
   });
 
   factory JourneyModel.fromJson(Map<String, dynamic> json) {
-    final destination = json['destination'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final destination =
+        json['destination'] as Map<String, dynamic>? ?? <String, dynamic>{};
     return JourneyModel(
       id: json['id']?.toString() ?? '',
+      inviteCode: json['inviteCode']?.toString(),
       name: json['name']?.toString() ?? '',
       leaderId: json['leaderId']?.toString() ?? '',
       status: _parseStatus(json['status']?.toString()),
       destination: _parseDestination(destination),
       destinationAddress: json['destinationAddress']?.toString() ?? '',
       lagThresholdMeters: (json['lagThresholdMeters'] as num?)?.toInt() ?? 500,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) : null,
-      startTime: json['startTime'] != null ? DateTime.tryParse(json['startTime'].toString()) : null,
-      startedAt: json['startedAt'] != null ? DateTime.tryParse(json['startedAt'].toString()) : null,
-      completedAt: json['completedAt'] != null ? DateTime.tryParse(json['completedAt'].toString()) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'].toString())
+          : null,
+      startTime: json['startTime'] != null
+          ? DateTime.tryParse(json['startTime'].toString())
+          : null,
+      startedAt: json['startedAt'] != null
+          ? DateTime.tryParse(json['startedAt'].toString())
+          : null,
+      completedAt: json['completedAt'] != null
+          ? DateTime.tryParse(json['completedAt'].toString())
+          : null,
       participants: json['participants'] != null
-          ? (json['participants'] as List<dynamic>).map((p) => ParticipantModel.fromJson(p as Map<String, dynamic>)).toList()
+          ? (json['participants'] as List<dynamic>)
+                .map(
+                  (p) => ParticipantModel.fromJson(p as Map<String, dynamic>),
+                )
+                .toList()
           : null,
     );
   }
 
   /// Parse destination coordinates from various possible formats
   static LatLng _parseDestination(Map<String, dynamic> destination) {
-    final latitude = _parseCoordinate(
-      destination, 
-      ['_latitude', 'latitude', 'lat', 'y'],
-      0,
-    );
-    
-    final longitude = _parseCoordinate(
-      destination, 
-      ['_longitude', 'longitude', 'lng', 'lon', 'x'],
-      0,
-    );
-    
+    final latitude = _parseCoordinate(destination, [
+      '_latitude',
+      'latitude',
+      'lat',
+      'y',
+    ], 0);
+
+    final longitude = _parseCoordinate(destination, [
+      '_longitude',
+      'longitude',
+      'lng',
+      'lon',
+      'x',
+    ], 0);
+
     return LatLng(latitude: latitude, longitude: longitude);
   }
 
@@ -95,6 +115,7 @@ class JourneyModel extends Journey {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'inviteCode': inviteCode,
       'name': name,
       'leaderId': leaderId,
       'status': status.name,
@@ -133,7 +154,9 @@ class ParticipantModel extends Participant {
       status: json['status']?.toString() ?? '',
       invitedBy: json['invitedBy']?.toString(),
       connectionStatus: json['connectionStatus']?.toString(),
-      joinedAt: json['joinedAt'] != null ? DateTime.tryParse(json['joinedAt'].toString()) : null,
+      joinedAt: json['joinedAt'] != null
+          ? DateTime.tryParse(json['joinedAt'].toString())
+          : null,
       displayName: json['displayName']?.toString(),
     );
   }

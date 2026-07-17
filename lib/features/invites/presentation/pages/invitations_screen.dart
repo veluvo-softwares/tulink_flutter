@@ -84,6 +84,43 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
     }
   }
 
+  Future<void> _declineInvitation(JourneyInvitation invitation) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Decline invitation?'),
+        content: Text(
+          'You will decline the invitation to "${invitation.journeyName}".',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep invitation'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final declined = await context.read<InviteProvider>().declineInvitation(
+      invitation.journeyId,
+    );
+    if (!mounted) return;
+
+    if (declined) {
+      context.showSuccessToast('Invitation declined');
+    } else {
+      context.showErrorToast(
+        context.read<InviteProvider>().declineError ??
+            'Failed to decline invitation',
+      );
+    }
+  }
+
   String _timeAgo(DateTime dateTime) {
     final diff = DateTime.now().difference(dateTime);
     if (diff.inDays > 0) return '${diff.inDays}d ago';
@@ -151,13 +188,15 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
               itemCount: inviteProvider.invitations.length,
               itemBuilder: (context, index) {
                 final invitation = inviteProvider.invitations[index];
-                final isAccepting = inviteProvider.isAccepting;
+                final isBusy =
+                    inviteProvider.isAccepting || inviteProvider.isDeclining;
                 return _InvitationCard(
                   invitation: invitation,
-                  isAccepting: isAccepting,
+                  isBusy: isBusy,
                   timeAgo: _timeAgo(invitation.invitedAt),
                   getInitials: _getInitials,
                   onAccept: () => _acceptInvitation(invitation),
+                  onDecline: () => _declineInvitation(invitation),
                   colors: colors,
                 );
               },
@@ -221,18 +260,20 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
 
 class _InvitationCard extends StatelessWidget {
   final JourneyInvitation invitation;
-  final bool isAccepting;
+  final bool isBusy;
   final String timeAgo;
   final String Function(String) getInitials;
   final VoidCallback onAccept;
+  final VoidCallback onDecline;
   final TulinkColors colors;
 
   const _InvitationCard({
     required this.invitation,
-    required this.isAccepting,
+    required this.isBusy,
     required this.timeAgo,
     required this.getInitials,
     required this.onAccept,
+    required this.onDecline,
     required this.colors,
   });
 
@@ -378,8 +419,16 @@ class _InvitationCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  TextButton(
+                    onPressed: isBusy ? null : onDecline,
+                    child: Text(
+                      'Decline',
+                      style: TextStyle(color: colors.silver),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   ElevatedButton(
-                    onPressed: isAccepting ? null : onAccept,
+                    onPressed: isBusy ? null : onAccept,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: colors.electricRed,
                       disabledBackgroundColor: colors.brushedSteel,
@@ -393,7 +442,7 @@ class _InvitationCard extends StatelessWidget {
                       ),
                       elevation: 0,
                     ),
-                    child: isAccepting
+                    child: isBusy
                         ? SizedBox(
                             width: 16,
                             height: 16,

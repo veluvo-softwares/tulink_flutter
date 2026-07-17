@@ -21,10 +21,24 @@ class PushNotificationService {
 
   final StreamController<RemoteMessage> _messageController =
       StreamController<RemoteMessage>.broadcast();
+  final StreamController<RemoteMessage> _notificationTapController =
+      StreamController<RemoteMessage>.broadcast();
+  RemoteMessage? _initialNotificationTap;
 
-  /// Foreground messages and notification taps, surfaced so the app can react
-  /// (e.g. refresh the invite list, show a banner).
+  /// Foreground messages, surfaced so the app can refresh data and show a
+  /// banner without treating receipt as a user navigation intent.
   Stream<RemoteMessage> get messages => _messageController.stream;
+
+  /// Messages whose system notification was explicitly tapped by the user.
+  Stream<RemoteMessage> get notificationTaps =>
+      _notificationTapController.stream;
+
+  /// Consume the notification that launched a previously terminated app.
+  RemoteMessage? takeInitialNotificationTap() {
+    final message = _initialNotificationTap;
+    _initialNotificationTap = null;
+    return message;
+  }
 
   /// Initialise FCM. Call once the user is authenticated — registering the
   /// token hits an authenticated backend endpoint. Safe to call repeatedly.
@@ -58,15 +72,23 @@ class PushNotificationService {
 
       // App in foreground: deliver to listeners (no OS notification shown).
       FirebaseMessaging.onMessage.listen((message) {
-        print('📩 FCM foreground: ${message.notification?.title} ${message.data}');
+        print(
+          '📩 FCM foreground: ${message.notification?.title} ${message.data}',
+        );
         if (!_messageController.isClosed) _messageController.add(message);
       });
 
       // User tapped a notification that opened the app from the background.
       FirebaseMessaging.onMessageOpenedApp.listen((message) {
         print('📲 FCM opened app: ${message.data}');
-        if (!_messageController.isClosed) _messageController.add(message);
+        if (!_notificationTapController.isClosed) {
+          _notificationTapController.add(message);
+        }
       });
+
+      // A notification may have launched a fully terminated app. Keep it
+      // buffered until authenticated home navigation is mounted and ready.
+      _initialNotificationTap = await _messaging.getInitialMessage();
     } catch (e) {
       print('❌ Failed to initialise push notifications: $e');
     }
@@ -81,7 +103,9 @@ class PushNotificationService {
         // after almost always throws. There's no completion callback for
         // this, so poll briefly rather than failing the first attempt.
         if (!await _waitForApnsToken()) {
-          print('❌ APNs token not available after waiting — skipping FCM registration');
+          print(
+            '❌ APNs token not available after waiting — skipping FCM registration',
+          );
           return;
         }
       }
@@ -140,12 +164,18 @@ class PushNotificationService {
           .timeout(_unlinkTimeout);
       AppLogger.info('FCM token unregistered from backend');
     } catch (e) {
-      AppLogger.warning('Failed to unregister FCM token (continuing sign-out)', e);
+      AppLogger.warning(
+        'Failed to unregister FCM token (continuing sign-out)',
+        e,
+      );
     }
   }
 
   Future<void> dispose() async {
     await _tokenRefreshSub?.cancel();
     if (!_messageController.isClosed) await _messageController.close();
+    if (!_notificationTapController.isClosed) {
+      await _notificationTapController.close();
+    }
   }
 }

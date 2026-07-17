@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../models/member_position_model.dart';
@@ -12,6 +12,17 @@ import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
+
+@visibleForTesting
+bool shouldReconnectAfterDisconnect(
+  Object? reason, {
+  required bool heartbeatTimedOut,
+}) {
+  final serverDisconnect = (reason?.toString() ?? '').contains(
+    'server disconnect',
+  );
+  return !serverDisconnect || heartbeatTimedOut;
+}
 
 /// Abstract interface for convoy WebSocket operations
 abstract class ConvoyWebSocketDataSource {
@@ -111,6 +122,11 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   int _reconnectAttempts = 0;
   bool _intentionalDisconnect =
       false; // Flag to prevent reconnection on intentional disconnect
+  // The backend uses `socket.disconnect(true)` for both logout and heartbeat
+  // expiry. Socket.IO reports both as `io server disconnect`, but the backend
+  // emits connection-status=TIMEOUT immediately before a heartbeat eviction.
+  // Remember that signal so a temporarily stalled mobile client reconnects.
+  bool _heartbeatTimedOut = false;
   static const int _maxReconnectAttempts = 10;
   static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
 
@@ -374,6 +390,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     // Connection events
     _socket!.onConnect((_) {
       print('✅ WebSocket connected');
+      _heartbeatTimedOut = false;
       _connectedAt = DateTime.now();
       _updateConnectionState(ConvoyConnectionState.connected);
 
@@ -406,13 +423,18 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       // ('ping timeout' / 'transport close' / 'transport error') fall through
       // to the reconnect path below.
       final reasonStr = reason?.toString() ?? '';
-      if (reasonStr.contains('server disconnect')) {
+      if (!shouldReconnectAfterDisconnect(
+        reason,
+        heartbeatTimedOut: _heartbeatTimedOut,
+      )) {
         print('🔌 Server-initiated disconnect ($reasonStr) - not reconnecting');
         _intentionalDisconnect = true;
         _stopReconnectTimer();
         _updateConnectionState(ConvoyConnectionState.disconnected);
         return;
       }
+
+      _heartbeatTimedOut = false;
 
       // Give up if too many recent connections died in their crib — this is
       // the connect→heartbeat-timeout→reconnect loop. The regular attempt
@@ -436,6 +458,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       final status = data['status'] as String?;
       if (status == 'CONNECTED') {
         _updateConnectionState(ConvoyConnectionState.connected);
+      } else if (status == 'TIMEOUT') {
+        _heartbeatTimedOut = true;
       }
       print('🔌 Connection status: $status - ${data['message']}');
     });
@@ -455,9 +479,10 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _socket!.on('joined-journey', (data) {
       final journeyId = data is Map ? data['journeyId'] : null;
       print('✅ Joined journey: $journeyId');
-      // Emit an empty snapshot immediately so the provider has a non-null
-      // snapshot to work with while waiting for latest-locations.
-      _emitConvoySnapshot();
+      // Do not emit a placeholder snapshot here. Its (0,0) destination causes
+      // the map to remove otherwise-valid peer markers for a frame during cold
+      // start/reconnect. `latest-locations`, live updates, and the parallel REST
+      // cold-start fetch provide the first authoritative snapshot.
     });
 
     _socket!.on('left-journey', (data) {

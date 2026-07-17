@@ -9,12 +9,14 @@ class InviteProvider extends ChangeNotifier {
   final SendInvite sendInviteUseCase;
   final GetInvitations getInvitationsUseCase;
   final AcceptInvitation acceptInvitationUseCase;
+  final DeclineInvitation declineInvitationUseCase;
 
   InviteProvider({
     required this.searchUsersUseCase,
     required this.sendInviteUseCase,
     required this.getInvitationsUseCase,
     required this.acceptInvitationUseCase,
+    required this.declineInvitationUseCase,
   });
 
   // Search state
@@ -45,6 +47,7 @@ class InviteProvider extends ChangeNotifier {
   bool get isLoadingInvitations => _isLoadingInvitations;
 
   DateTime? _lastRefreshedAt;
+  Future<void>? _silentRefreshInFlight;
 
   String? _invitationsError;
   String? get invitationsError => _invitationsError;
@@ -55,6 +58,12 @@ class InviteProvider extends ChangeNotifier {
 
   String? _acceptError;
   String? get acceptError => _acceptError;
+
+  bool _isDeclining = false;
+  bool get isDeclining => _isDeclining;
+
+  String? _declineError;
+  String? get declineError => _declineError;
 
   // Tracks accepted journey ids in the current session
   final Set<String> _acceptedJourneyIds = {};
@@ -129,7 +138,8 @@ class InviteProvider extends ChangeNotifier {
     if (result.isSuccess && result.data != null) {
       _invitations = result.data!;
     } else {
-      _invitationsError = result.failure?.message ?? 'Failed to load invitations';
+      _invitationsError =
+          result.failure?.message ?? 'Failed to load invitations';
     }
 
     _isLoadingInvitations = false;
@@ -143,19 +153,35 @@ class InviteProvider extends ChangeNotifier {
   ///
   /// Debounced to at most once per 30 seconds to prevent rapid duplicate
   /// network calls from overlapping sources (timer + lifecycle + init).
-  Future<void> refreshInvitationsSilently() async {
+  Future<void> refreshInvitationsSilently({bool force = false}) async {
     if (_isLoadingInvitations) return;
+    final inFlight = _silentRefreshInFlight;
+    if (inFlight != null) return inFlight;
+
     final now = DateTime.now();
-    if (_lastRefreshedAt != null &&
+    if (!force &&
+        _lastRefreshedAt != null &&
         now.difference(_lastRefreshedAt!) < const Duration(seconds: 30)) {
       return;
     }
-    final result = await getInvitationsUseCase();
-    if (result.isSuccess && result.data != null) {
-      _invitations = result.data!;
-      _lastRefreshedAt = DateTime.now();
-      notifyListeners();
+    final refresh = _performSilentRefresh();
+    _silentRefreshInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_silentRefreshInFlight, refresh)) {
+        _silentRefreshInFlight = null;
+      }
     }
+  }
+
+  Future<void> _performSilentRefresh() async {
+    final result = await getInvitationsUseCase();
+    if (!result.isSuccess || result.data == null) return;
+
+    _invitations = result.data!;
+    _lastRefreshedAt = DateTime.now();
+    notifyListeners();
   }
 
   Future<bool> acceptInvitation(String journeyId) async {
@@ -177,5 +203,24 @@ class InviteProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> declineInvitation(String journeyId) async {
+    _isDeclining = true;
+    _declineError = null;
+    notifyListeners();
+
+    final result = await declineInvitationUseCase(journeyId);
+    if (result.isSuccess) {
+      _invitations.removeWhere((inv) => inv.journeyId == journeyId);
+      _isDeclining = false;
+      notifyListeners();
+      return true;
+    }
+
+    _declineError = result.failure?.message ?? 'Failed to decline invitation';
+    _isDeclining = false;
+    notifyListeners();
+    return false;
   }
 }

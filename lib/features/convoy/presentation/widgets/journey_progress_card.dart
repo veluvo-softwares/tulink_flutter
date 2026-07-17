@@ -5,6 +5,8 @@ import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../maps/domain/entities/route_progress.dart';
+import '../utils/convoy_member_presentation.dart';
 
 /// Bottom card showing journey progress with distance, ETA, participants
 /// Matches the design from Image #2 with location, stats, and end button
@@ -16,6 +18,9 @@ class JourneyProgressCard extends StatelessWidget {
     required this.currentUserId,
     required this.isLeader,
     this.onEndJourney,
+    this.onLeaveJourney,
+    this.routeProgress,
+    this.isActionInProgress = false,
     this.isExpanded = false,
     this.onToggleExpanded,
   });
@@ -25,6 +30,10 @@ class JourneyProgressCard extends StatelessWidget {
   final String currentUserId;
   final bool isLeader;
   final VoidCallback? onEndJourney;
+  final VoidCallback? onLeaveJourney;
+  final RouteProgress? routeProgress;
+  final bool isActionInProgress;
+
   /// When false the card renders as a compact pill to keep the map visible.
   final bool isExpanded;
   final VoidCallback? onToggleExpanded;
@@ -37,11 +46,9 @@ class JourneyProgressCard extends StatelessWidget {
 
   /// Total participant count used for arrival progress. Falls back to the
   /// snapshot's member map only when there's no event-driven count yet.
-  int get _totalCount =>
-      convoySnapshot?.totalMembers ?? 1;
+  int get _totalCount => convoySnapshot?.totalMembers ?? 1;
 
-  int get _arrivedCount =>
-      convoySnapshot?.arrivedMembers.length ?? 0;
+  int get _arrivedCount => convoySnapshot?.arrivedMembers.length ?? 0;
 
   bool get _anyArrived => _arrivedCount > 0;
 
@@ -178,17 +185,14 @@ class JourneyProgressCard extends StatelessWidget {
   Widget _buildStats(TulinkColors colors) {
     final distance = _calculateDistance();
     final eta = _calculateETA();
-    
+    final hasRouteProgress = routeProgress != null;
+
     return Row(
       children: [
-        Icon(
-          Icons.location_on,
-          color: colors.electricRed,
-          size: 16,
-        ),
+        Icon(Icons.location_on, color: colors.electricRed, size: 16),
         const SizedBox(width: 4),
         Text(
-          '${distance.toStringAsFixed(1)} km',
+          hasRouteProgress ? '${distance.toStringAsFixed(1)} km' : '-- km',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -196,14 +200,10 @@ class JourneyProgressCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 16),
-        Icon(
-          Icons.access_time,
-          color: colors.silver,
-          size: 16,
-        ),
+        Icon(Icons.access_time, color: colors.silver, size: 16),
         const SizedBox(width: 4),
         Text(
-          '${eta.toStringAsFixed(0)} min ETA',
+          hasRouteProgress ? '${eta.ceil()} min ETA' : 'Calculating ETA',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -260,8 +260,14 @@ class JourneyProgressCard extends StatelessWidget {
       return _buildSoloJourneyIndicator(colors);
     }
 
-    final members = convoySnapshot!.members.values.take(5).toList();
-    
+    final identities = _identities;
+    final members = convoySnapshot!.members.values.toList()
+      ..sort((a, b) {
+        final aIndex = identities.keys.toList().indexOf(a.userId);
+        final bIndex = identities.keys.toList().indexOf(b.userId);
+        return aIndex.compareTo(bIndex);
+      });
+
     return Row(
       children: [
         ...members.asMap().entries.map((entry) {
@@ -283,15 +289,15 @@ class JourneyProgressCard extends StatelessWidget {
 
   /// Build member avatar circle. Arrived members get a green checkmark
   /// overlay on the bottom-right; everyone else uses the existing initial.
-  Widget _buildMemberAvatar(MemberPosition member, int index, TulinkColors colors) {
-    final initials = _getMemberInitials(member.userId);
-    final avatarColors = [
-      const Color(0xFFE53E3E), // Red
-      const Color(0xFF3182CE), // Blue
-      const Color(0xFF38A169), // Green
-      const Color(0xFFDD6B20), // Orange
-      const Color(0xFF805AD5), // Purple
-    ];
+  Widget _buildMemberAvatar(
+    MemberPosition member,
+    int index,
+    TulinkColors colors,
+  ) {
+    final identity = _identities[member.userId];
+    final initials =
+        identity?.initials ??
+        ConvoyMemberPresentation.initialsFor(member.userId);
 
     return SizedBox(
       width: 36,
@@ -303,7 +309,10 @@ class JourneyProgressCard extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: avatarColors[index % avatarColors.length],
+              color:
+                  identity?.color ??
+                  ConvoyMemberPresentation.palette[index %
+                      ConvoyMemberPresentation.palette.length],
               shape: BoxShape.circle,
               border: Border.all(color: colors.carbonBlack, width: 2),
             ),
@@ -330,11 +339,7 @@ class JourneyProgressCard extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: colors.carbonBlack, width: 1.5),
                 ),
-                child: const Icon(
-                  Icons.check,
-                  size: 9,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.check, size: 9, color: Colors.white),
               ),
             ),
         ],
@@ -394,7 +399,7 @@ class JourneyProgressCard extends StatelessWidget {
     final laggingMember = convoySnapshot!.laggingMembers.first;
     final distance = _getDistanceBehind(laggingMember);
     final initials = _getMemberInitials(laggingMember.userId);
-    
+
     return Text(
       '$initials is ${distance.toStringAsFixed(1)}km behind',
       style: GoogleFonts.inter(
@@ -413,14 +418,10 @@ class JourneyProgressCard extends StatelessWidget {
     return _arrivedCount < _totalCount;
   }
 
-  /// Action button visibility: leaders always see it (END JOURNEY).
-  /// Followers see it only after they've arrived (LEAVE JOURNEY). Followers
-  /// still en route get no button — they can't end the journey for others
-  /// and there's no useful action to expose.
-  bool get _shouldShowActionButton => isLeader || _currentUserArrived;
+  /// Leaders end the convoy for everyone; followers may leave at any point.
+  bool get _shouldShowActionButton => true;
 
-  String get _actionButtonLabel =>
-      isLeader ? 'END JOURNEY' : 'LEAVE JOURNEY';
+  String get _actionButtonLabel => isLeader ? 'END JOURNEY' : 'LEAVE JOURNEY';
 
   Widget _buildWaitingBanner(TulinkColors colors) {
     final remaining = _totalCount - _arrivedCount;
@@ -440,37 +441,51 @@ class JourneyProgressCard extends StatelessWidget {
       width: double.infinity,
       height: 48,
       child: ElevatedButton(
-        onPressed: onEndJourney,
+        onPressed: isActionInProgress
+            ? null
+            : (isLeader ? onEndJourney : onLeaveJourney),
         style: ElevatedButton.styleFrom(
           backgroundColor: colors.electricRed,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Text(
-          _actionButtonLabel,
-          style: GoogleFonts.rajdhani(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: 1.0,
-          ),
-        ),
+        child: isActionInProgress
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                _actionButtonLabel,
+                style: GoogleFonts.rajdhani(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 1.0,
+                ),
+              ),
       ),
     );
   }
 
   /// Calculate distance to destination
   double _calculateDistance() {
+    if (routeProgress != null) {
+      return routeProgress!.distanceRemainingMetres / 1000;
+    }
     if (convoySnapshot == null || convoySnapshot!.members.isEmpty) {
       // For solo journey, estimate distance (would come from route calculation)
-      return 25.0; // Default estimated distance
+      return 0;
     }
-    
+
     // Calculate average distance of convoy members to destination
     double totalDistance = 0.0;
     int memberCount = 0;
-    
+
     for (final member in convoySnapshot!.members.values) {
       final distance = _calculateDistanceBetweenPoints(
         member.latitude,
@@ -481,40 +496,47 @@ class JourneyProgressCard extends StatelessWidget {
       totalDistance += distance;
       memberCount++;
     }
-    
+
     return memberCount > 0 ? totalDistance / memberCount : 0.0;
   }
 
   /// Calculate ETA in minutes
   double _calculateETA() {
-    if (convoySnapshot == null || convoySnapshot!.members.isEmpty) {
-      // For solo journey, estimate based on distance and average speed
-      final distance = _calculateDistance();
-      const avgSpeed = 50.0; // km/h average city speed
-      return (distance / avgSpeed) * 60; // Convert to minutes
+    if (routeProgress != null) {
+      return routeProgress!.durationRemainingSeconds / 60;
     }
-    
+    if (convoySnapshot == null || convoySnapshot!.members.isEmpty) {
+      return 0;
+    }
+
     // Calculate based on current convoy speed
     final distance = _calculateDistance();
     // Note: averageSpeed doesn't exist, using estimated speed
     const avgSpeed = 50.0;
-    
+
     return (distance / avgSpeed) * 60; // Convert to minutes
   }
 
   /// Calculate distance in kilometres between two coordinates using the
   /// Haversine formula. Returns kilometres for direct display in the HUD.
   double _calculateDistanceBetweenPoints(
-      double lat1, double lon1, double lat2, double lon2) {
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const double earthRadiusKm = 6371.0;
     final double dLat = (lat2 - lat1) * math.pi / 180.0;
     final double dLon = (lon2 - lon1) * math.pi / 180.0;
     final double lat1Rad = lat1 * math.pi / 180.0;
     final double lat2Rad = lat2 * math.pi / 180.0;
 
-    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(lat1Rad) * math.cos(lat2Rad) *
-            math.sin(dLon / 2) * math.sin(dLon / 2);
+    final double a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1Rad) *
+            math.cos(lat2Rad) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
     final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
 
     return earthRadiusKm * c;
@@ -523,7 +545,7 @@ class JourneyProgressCard extends StatelessWidget {
   /// Get distance a member is behind the convoy leader
   double _getDistanceBehind(MemberPosition member) {
     if (convoySnapshot == null || convoySnapshot!.members.isEmpty) return 0.0;
-    
+
     final destination = convoySnapshot!.destination;
     final memberDistance = _calculateDistanceBetweenPoints(
       member.latitude,
@@ -531,34 +553,36 @@ class JourneyProgressCard extends StatelessWidget {
       destination.latitude,
       destination.longitude,
     );
-    
+
     // Find the closest member to destination
     double minDistance = double.infinity;
     for (final otherMember in convoySnapshot!.members.values) {
       if (otherMember.userId == member.userId) continue;
-      
+
       final distance = _calculateDistanceBetweenPoints(
         otherMember.latitude,
         otherMember.longitude,
         destination.latitude,
         destination.longitude,
       );
-      
+
       if (distance < minDistance) {
         minDistance = distance;
       }
     }
-    
+
     return (memberDistance - minDistance).abs();
   }
 
-  /// Get member initials from user ID (simplified)
+  Map<String, ConvoyMemberPresentation> get _identities =>
+      ConvoyMemberPresentation.forJourney(
+        journey,
+        additionalUserIds: convoySnapshot?.members.keys ?? const [],
+      );
+
+  /// Get member initials from the journey roster, falling back to user ID.
   String _getMemberInitials(String userId) {
-    // In real implementation, this would fetch user name from user service
-    // For now, generate initials from user ID
-    if (userId.length >= 2) {
-      return userId.substring(0, 2).toUpperCase();
-    }
-    return userId.substring(0, 1).toUpperCase();
+    return _identities[userId]?.initials ??
+        ConvoyMemberPresentation.initialsFor(userId);
   }
 }

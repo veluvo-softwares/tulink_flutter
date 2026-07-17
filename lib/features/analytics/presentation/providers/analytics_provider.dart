@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:tulink_flutter/core/utils/logger.dart';
 import 'package:tulink_flutter/features/analytics/domain/usecases/analytics_usecases.dart';
 import '../../data/models/journey_summary_model.dart';
 import '../../../journeys/domain/entities/journey.dart';
-
 
 class AnalyticsProvider extends ChangeNotifier {
   final GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
@@ -25,6 +23,7 @@ class AnalyticsProvider extends ChangeNotifier {
 
   JourneySummaryModel? _currentSummary;
   bool _isSummaryLoading = false;
+  String? _summaryError;
 
   // Getters
   List<Journey> get recentJourneys => _recentJourneys;
@@ -34,10 +33,12 @@ class AnalyticsProvider extends ChangeNotifier {
 
   JourneySummaryModel? get currentSummary => _currentSummary;
   bool get isSummaryLoading => _isSummaryLoading;
+  String? get summaryError => _summaryError;
 
   /// Load summary statistics for a completed journey
   Future<void> loadJourneySummary(String journeyId) async {
     _isSummaryLoading = true;
+    _summaryError = null;
     notifyListeners();
 
     final result = await _getJourneySummaryUseCase(journeyId);
@@ -45,20 +46,25 @@ class AnalyticsProvider extends ChangeNotifier {
       _currentSummary = result.data;
     } else {
       _currentSummary = null;
-      print('⚠️ Failed to load journey summary: '
-          '${result.failure?.message ?? 'unknown error'}');
+      _summaryError =
+          result.failure?.message ?? 'Journey statistics are not available yet';
+      print(
+        '⚠️ Failed to load journey summary: '
+        '${result.failure?.message ?? 'unknown error'}',
+      );
     }
 
     _isSummaryLoading = false;
     notifyListeners();
   }
 
-
   /// Load recent journeys (derived from journey history, limited to 4 for home screen)
   /// Excludes active journeys and shows only completed/cancelled/paused journeys
   Future<void> loadRecentJourneys({int limit = 4}) async {
-    print('🔄 Loading recent journeys (derived from journey history) with limit: $limit');
-    
+    print(
+      '🔄 Loading recent journeys (derived from journey history) with limit: $limit',
+    );
+
     // If we already have journey history loaded, derive from it
     if (_journeyHistory.isNotEmpty) {
       _deriveRecentJourneysFromHistory(limit);
@@ -70,16 +76,21 @@ class AnalyticsProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final result = await _getJourneyHistoryUseCase(limit: 100); // Get larger set to filter from
-      
+      final result = await _getJourneyHistoryUseCase(
+        limit: 100,
+      ); // Get larger set to filter from
+
       if (result.data != null) {
         _journeyHistory = result.data!;
-        print('✅ Loaded ${_journeyHistory.length} journey history items for recent journeys derivation');
-        
+        print(
+          '✅ Loaded ${_journeyHistory.length} journey history items for recent journeys derivation',
+        );
+
         // Derive recent journeys from the loaded history
         _deriveRecentJourneysFromHistory(limit);
       } else {
-        final errorMsg = result.failure?.message ?? 'Failed to load recent journeys';
+        final errorMsg =
+            result.failure?.message ?? 'Failed to load recent journeys';
         print('❌ Failed to load recent journeys: $errorMsg');
         _setError(errorMsg);
         _recentJourneys = [];
@@ -100,8 +111,10 @@ class AnalyticsProvider extends ChangeNotifier {
         .where((journey) => journey.status != JourneyStatus.ACTIVE)
         .take(limit)
         .toList();
-    
-    print('✅ Derived ${_recentJourneys.length} recent journeys from ${_journeyHistory.length} total journeys (excluding active)');
+
+    print(
+      '✅ Derived ${_recentJourneys.length} recent journeys from ${_journeyHistory.length} total journeys (excluding active)',
+    );
     notifyListeners();
   }
 
@@ -118,11 +131,12 @@ class AnalyticsProvider extends ChangeNotifier {
       if (result.data != null) {
         _journeyHistory = result.data!;
         print('✅ Loaded ${_journeyHistory.length} journey history items');
-        
+
         // Automatically derive recent journeys from the loaded history
         _deriveRecentJourneysFromHistory(4);
       } else {
-        final errorMessage = result.failure?.message ?? 'Failed to load journey history';
+        final errorMessage =
+            result.failure?.message ?? 'Failed to load journey history';
         print('❌ Failed to load journey history: $errorMessage');
         _setError(errorMessage);
         _journeyHistory = [];
@@ -141,7 +155,7 @@ class AnalyticsProvider extends ChangeNotifier {
   /// Get journey analytics by ID
   Future<Journey?> getJourneyAnalytics(String journeyId) async {
     final result = await _getJourneyAnalyticsUseCase(journeyId);
-    
+
     if (result.data != null) {
       return result.data;
     } else {

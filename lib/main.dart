@@ -40,27 +40,33 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() {
-  runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp();
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      await Firebase.initializeApp();
 
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
 
-    FlutterError.onError =
-        FirebaseCrashlytics.instance.recordFlutterFatalError;
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-    PlatformDispatcher.instance.onError = (error, stack) {
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+        !kDebugMode,
+      );
+
+      runApp(const AppBootstrap());
+    },
+    (error, stack) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
-
-    await FirebaseCrashlytics.instance
-        .setCrashlyticsCollectionEnabled(!kDebugMode);
-
-    runApp(const AppBootstrap());
-  }, (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-  });
+    },
+  );
 }
 
 /// Boots the app: shows a splash, runs heavy init in the background, then
@@ -171,10 +177,7 @@ class _SplashScreen extends StatelessWidget {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({
-    super.key,
-    required this.serviceLocator,
-  });
+  const MyApp({super.key, required this.serviceLocator});
 
   final ServiceLocator serviceLocator;
 
@@ -211,13 +214,9 @@ class MyApp extends StatelessWidget {
           value: serviceLocator.inviteProvider,
         ),
         // Analytics Provider
-        ChangeNotifierProvider.value(
-          value: serviceLocator.analyticsProvider,
-        ),
+        ChangeNotifierProvider.value(value: serviceLocator.analyticsProvider),
         // Convoy Provider
-        ChangeNotifierProvider.value(
-          value: serviceLocator.convoyProvider,
-        ),
+        ChangeNotifierProvider.value(value: serviceLocator.convoyProvider),
         // Push notification service (FCM) — plain Provider, not a notifier.
         Provider<PushNotificationService>.value(
           value: serviceLocator.pushNotificationService,
@@ -233,12 +232,14 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.tulinkTheme,
             darkTheme: AppTheme.tulinkTheme,
             themeMode: ThemeMode.dark, // Tu-Link is dark mode only
-
             // Centralized routing with onGenerateRoute
             onGenerateRoute: AppRouter.generateRoute,
 
-            // Initial route
-            initialRoute: HomePage.routeName,
+            // Start at the Navigator root. Using `/home` here makes Flutter's
+            // initial-route expansion push both `/` and `/home`; because both
+            // routes render HomePage, two HomeScreen trees were mounted and
+            // every startup fetch/socket subscription ran twice.
+            initialRoute: '/',
           );
         },
       ),
@@ -257,10 +258,13 @@ class HomePage extends StatelessWidget {
     return Scaffold(
       body: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {
-          if (authProvider.isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          // Keep the authenticated subtree mounted during background auth
+          // actions such as resending a verification email. Replacing the
+          // verification screen with this spinner disposed and recreated it,
+          // resetting its local state and producing a blank/remount loop when
+          // the resend endpoint was rate-limited.
+          if (authProvider.isLoading && !authProvider.isSignedIn) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (!authProvider.isSignedIn) {
@@ -274,5 +278,4 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
-
 }

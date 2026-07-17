@@ -38,18 +38,21 @@ class NavigationProvider with ChangeNotifier {
   NavigationProvider({
     ManeuverTrackerService? maneuverTracker,
     VoiceInstructionService? voiceService,
-  })  : _maneuverTracker = maneuverTracker ?? ManeuverTrackerService(),
-        _voiceService = voiceService ?? VoiceInstructionService() {
+  }) : _maneuverTracker = maneuverTracker ?? ManeuverTrackerService(),
+       _voiceService = voiceService ?? VoiceInstructionService() {
     _offRouteDetector = OffRouteDetectionService(
       onRerouteNeeded: () async {
         if (_onRerouteCallback != null) {
           // Fire-and-forget the voice announcement — the route fetch must not
           // wait on TTS latency. Errors are swallowed so a voice failure
           // cannot prevent the reroute from starting.
-          unawaited(_voiceService.speakImmediate('Recalculating route')
-              .catchError((Object e) {
-            print('⚠️ Voice announcement failed: $e');
-          }));
+          unawaited(
+            _voiceService.speakImmediate('Recalculating route').catchError((
+              Object e,
+            ) {
+              print('⚠️ Voice announcement failed: $e');
+            }),
+          );
           await _onRerouteCallback!();
         }
       },
@@ -88,20 +91,23 @@ class NavigationProvider with ChangeNotifier {
     // pay Android's 500ms–2s cold-start cost. A single space is used because
     // flutter_tts treats empty string as a no-op on some platforms while still
     // initialising the engine for a whitespace string.
-    unawaited(_voiceService.speakImmediate(' ').catchError((Object e) {
-      print('⚠️ TTS pre-warm failed: $e');
-    }));
+    unawaited(
+      _voiceService.speakImmediate(' ').catchError((Object e) {
+        print('⚠️ TTS pre-warm failed: $e');
+      }),
+    );
 
     await _positionSubscription?.cancel();
-    _positionSubscription = geo.Geolocator.getPositionStream(
-      locationSettings: const geo.LocationSettings(
-        accuracy: geo.LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen(
-      _onPositionUpdate,
-      onError: (Object e) => print('⚠️ Navigation GPS stream error: $e'),
-    );
+    _positionSubscription =
+        geo.Geolocator.getPositionStream(
+          locationSettings: const geo.LocationSettings(
+            accuracy: geo.LocationAccuracy.bestForNavigation,
+            distanceFilter: 5,
+          ),
+        ).listen(
+          _onPositionUpdate,
+          onError: (Object e) => print('⚠️ Navigation GPS stream error: $e'),
+        );
 
     notifyListeners();
   }
@@ -110,7 +116,8 @@ class NavigationProvider with ChangeNotifier {
   void loadRoute(RouteResultModel route) {
     print('🧭 NavigationProvider: loading new route');
     _activeRoute = route;
-    _currentProgress = null; // stale segment index from old route must not seed the new snap window
+    _currentProgress =
+        null; // stale segment index from old route must not seed the new snap window
     _maneuverTracker.loadRoute(route);
     _offRouteDetector.reset();
     notifyListeners();
@@ -153,8 +160,10 @@ class NavigationProvider with ChangeNotifier {
       route: route.coordinates,
       currentSegmentIndex: _currentProgress?.currentSegmentIndex,
     );
-    print('🧭 dev=${snap.deviationMetres.toStringAsFixed(1)}m '
-        'segIdx=${snap.segmentIndex} onRoute=${snap.isOnRoute}');
+    print(
+      '🧭 dev=${snap.deviationMetres.toStringAsFixed(1)}m '
+      'segIdx=${snap.segmentIndex} onRoute=${snap.isOnRoute}',
+    );
 
     final maneuverProgress = _maneuverTracker.update(
       snappedLatitude: snap.snappedLatitude,
@@ -166,20 +175,21 @@ class NavigationProvider with ChangeNotifier {
     if (maneuver != null) {
       await _voiceService.announce(
         maneuver: maneuver,
-        distanceToManeuverMetres:
-            maneuverProgress.distanceToNextManeuverMetres,
-        isFinalManeuver: _maneuverTracker.currentIndex ==
+        distanceToManeuverMetres: maneuverProgress.distanceToNextManeuverMetres,
+        isFinalManeuver:
+            _maneuverTracker.currentIndex ==
             _maneuverTracker.maneuvers.length - 1,
       );
     }
 
     final durationRemaining = route.distanceMetres > 0
         ? route.durationSeconds *
-            (maneuverProgress.distanceRemainingMetres / route.distanceMetres)
+              (maneuverProgress.distanceRemainingMetres / route.distanceMetres)
         : 0.0;
 
     _currentProgress = RouteProgress(
-      currentManeuver: maneuver ??
+      currentManeuver:
+          maneuver ??
           const Maneuver(
             index: 0,
             instruction: 'Continue to destination',

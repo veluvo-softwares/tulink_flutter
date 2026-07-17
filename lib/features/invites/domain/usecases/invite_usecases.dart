@@ -48,3 +48,13 @@ class AcceptInvitation {
     return repository.acceptInvitation(journeyId);
   }
 }
+
+class DeclineInvitation {
+  final InviteRepository repository;
+
+  DeclineInvitation(this.repository);
+
+  Future<Result<String>> call(String journeyId) {
+    return repository.declineInvitation(journeyId);
+  }
+}

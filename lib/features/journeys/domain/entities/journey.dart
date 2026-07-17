@@ -21,6 +21,7 @@ class LatLng extends Equatable {
 
 class Journey extends Equatable {
   final String id;
+  final String? inviteCode;
   final String name;
   final String leaderId;
   final JourneyStatus status;
@@ -36,6 +37,7 @@ class Journey extends Equatable {
 
   const Journey({
     required this.id,
+    this.inviteCode,
     required this.name,
     required this.leaderId,
     required this.status,
@@ -52,20 +54,21 @@ class Journey extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        name,
-        leaderId,
-        status,
-        destination,
-        destinationAddress,
-        lagThresholdMeters,
-        createdAt,
-        updatedAt,
-        startTime,
-        participants,
-        startedAt,
-        completedAt,
-      ];
+    id,
+    inviteCode,
+    name,
+    leaderId,
+    status,
+    destination,
+    destinationAddress,
+    lagThresholdMeters,
+    createdAt,
+    updatedAt,
+    startTime,
+    participants,
+    startedAt,
+    completedAt,
+  ];
 }
 
 class Participant extends Equatable {
@@ -93,14 +96,14 @@ class Participant extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        userId,
-        journeyId,
-        role,
-        status,
-        invitedBy,
-        connectionStatus,
-        joinedAt,
-        displayName,
-      ];
+    id,
+    userId,
+    journeyId,
+    role,
+    status,
+    invitedBy,
+    connectionStatus,
+    joinedAt,
+    displayName,
+  ];
 }

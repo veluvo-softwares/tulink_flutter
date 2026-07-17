@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:tulink_flutter/core/network/api_handler.dart';
+import 'package:tulink_flutter/core/network/api_routes.dart';
 import 'package:tulink_flutter/core/network/models/api_response.dart';
 import 'package:tulink_flutter/features/journeys/data/datasources/journey_exceptions.dart';
 import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart';
@@ -17,11 +18,20 @@ abstract class JourneyRemoteDataSource {
 
   Future<List<JourneyModel>> getActiveJourneys();
 
+  Future<JourneyModel> joinJourneyByCode(String inviteCode);
+
   Future<JourneyModel> startJourney(String journeyId);
 
-  Future<JourneyModel> updateJourney(String journeyid, Map<String, dynamic> updateData);
+  Future<JourneyModel> updateJourney(
+    String journeyid,
+    Map<String, dynamic> updateData,
+  );
 
   Future<JourneyModel> endJourney(String journeyId);
+
+  Future<void> cancelJourney(String journeyId);
+
+  Future<void> leaveJourney(String journeyId);
 }
 
 class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
@@ -41,10 +51,7 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
       '/journeys',
       data: {
         'name': name,
-        'destination': {
-          'latitude': latitude,
-          'longitude': longitude,
-        },
+        'destination': {'latitude': latitude, 'longitude': longitude},
         'destinationAddress': destinationAddress,
         'lagThresholdMeters': lagThresholdMeters,
       },
@@ -65,7 +72,9 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
 
   @override
   Future<JourneyModel> getJourneyById(String journeyId) async {
-    final response = await dio.get<Map<String, dynamic>>('/journeys/$journeyId');
+    final response = await dio.get<Map<String, dynamic>>(
+      '/journeys/$journeyId',
+    );
 
     if (response.statusCode == 200 && response.data != null) {
       final journeyData = response.data!['data'] as Map<String, dynamic>?;
@@ -100,10 +109,29 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
   }
 
   @override
+  Future<JourneyModel> joinJourneyByCode(String inviteCode) async {
+    final normalizedCode = inviteCode.trim().toUpperCase();
+    final response = await dio.post<Map<String, dynamic>>(
+      ApiRoutes.joinJourneyCode(normalizedCode),
+    );
+
+    if (response.statusCode == 200 && response.data != null) {
+      final journeyData = response.data!['data'] as Map<String, dynamic>?;
+      if (journeyData != null) return JourneyModel.fromJson(journeyData);
+    }
+    throw DioException(
+      requestOptions: response.requestOptions,
+      response: response,
+      message: 'Invalid response format or failed to join journey',
+    );
+  }
+
+  @override
   Future<JourneyModel> startJourney(String journeyId) async {
     try {
-      final response =
-          await dio.post<Map<String, dynamic>>('/journeys/$journeyId/start');
+      final response = await dio.post<Map<String, dynamic>>(
+        '/journeys/$journeyId/start',
+      );
 
       if (response.statusCode == 201 && response.data != null) {
         final journeyData = response.data!['data'] as Map<String, dynamic>?;
@@ -134,7 +162,10 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
   }
 
   @override
-  Future<JourneyModel> updateJourney(String journeyId, Map<String, dynamic> updateData) async {
+  Future<JourneyModel> updateJourney(
+    String journeyId,
+    Map<String, dynamic> updateData,
+  ) async {
     final response = await dio.put<Map<String, dynamic>>(
       '/journeys/$journeyId',
       data: updateData,
@@ -153,9 +184,11 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
     );
   }
 
-    @override
+  @override
   Future<JourneyModel> endJourney(String journeyId) async {
-    final response = await dio.post<Map<String, dynamic>>('/journeys/$journeyId/end');
+    final response = await dio.post<Map<String, dynamic>>(
+      '/journeys/$journeyId/end',
+    );
 
     if (response.statusCode == 201 && response.data != null) {
       final journeyData = response.data!['data'] as Map<String, dynamic>?;
@@ -170,5 +203,29 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
     );
   }
 
-  
+  @override
+  Future<void> cancelJourney(String journeyId) async {
+    final response = await dio.delete<void>('/journeys/$journeyId');
+    if (response.statusCode != 204) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        message: 'Failed to cancel journey',
+      );
+    }
+  }
+
+  @override
+  Future<void> leaveJourney(String journeyId) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/journeys/$journeyId/leave',
+    );
+    if (response.statusCode != 200) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        message: 'Failed to leave journey',
+      );
+    }
+  }
 }

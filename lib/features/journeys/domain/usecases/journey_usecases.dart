@@ -44,6 +44,16 @@ class GetActiveJourneys {
   }
 }
 
+class JoinJourneyByCode {
+  final JourneyRepository repository;
+
+  JoinJourneyByCode(this.repository);
+
+  Future<Result<Journey>> call(String inviteCode) {
+    return repository.joinJourneyByCode(inviteCode);
+  }
+}
+
 class StartJourney {
   final JourneyRepository repository;
 
@@ -74,6 +84,26 @@ class EndJourney {
 
   Future<Result<Journey>> call(String journeyId) {
     return repository.endJourney(journeyId);
+  }
+}
+
+class CancelJourney {
+  final JourneyRepository repository;
+
+  CancelJourney(this.repository);
+
+  Future<Result<bool>> call(String journeyId) {
+    return repository.cancelJourney(journeyId);
+  }
+}
+
+class LeaveJourney {
+  final JourneyRepository repository;
+
+  LeaveJourney(this.repository);
+
+  Future<Result<bool>> call(String journeyId) {
+    return repository.leaveJourney(journeyId);
   }
 }
 

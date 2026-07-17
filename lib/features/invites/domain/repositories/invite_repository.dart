@@ -13,4 +13,6 @@ abstract class InviteRepository {
   Future<Result<List<JourneyInvitation>>> getInvitations();
 
   Future<Result<String>> acceptInvitation(String journeyId);
+
+  Future<Result<String>> declineInvitation(String journeyId);
 }

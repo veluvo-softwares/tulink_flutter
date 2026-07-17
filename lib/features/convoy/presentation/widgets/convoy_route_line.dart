@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
+import '../utils/convoy_member_presentation.dart';
 
 class ConvoyRouteLine {
   static const String _membersSourceId = 'convoy-members-source';
@@ -15,6 +17,7 @@ class ConvoyRouteLine {
     MapboxMap mapboxMap,
     ConvoySnapshot snapshot,
     String currentUserId,
+    Map<String, ConvoyMemberPresentation> presentation,
   ) async {
     // Bail if destination coordinates are invalid (0,0 fallback)
     if (snapshot.destination.latitude == 0.0 &&
@@ -29,7 +32,7 @@ class ConvoyRouteLine {
       for (final member in members) [member.longitude, member.latitude],
     ];
 
-    await renderMemberMarkers(mapboxMap, members, coordinates);
+    await renderMemberMarkers(mapboxMap, members, coordinates, presentation);
   }
 
   /// Render [members] at the given [coordinates] (each `[lng, lat]`, parallel
@@ -47,12 +50,14 @@ class ConvoyRouteLine {
     MapboxMap mapboxMap,
     List<MemberPosition> members,
     List<List<double>> coordinates,
+    Map<String, ConvoyMemberPresentation> presentation,
   ) async {
     try {
-      final geoJson = _buildMembersGeoJson(members, coordinates);
+      final geoJson = _buildMembersGeoJson(members, coordinates, presentation);
 
-      final sourceExists =
-          await mapboxMap.style.styleSourceExists(_membersSourceId);
+      final sourceExists = await mapboxMap.style.styleSourceExists(
+        _membersSourceId,
+      );
       if (sourceExists) {
         // In-place update — no layer teardown, no blank frame.
         await mapboxMap.style.setStyleSourceProperty(
@@ -63,10 +68,9 @@ class ConvoyRouteLine {
         return;
       }
 
-      await mapboxMap.style.addSource(GeoJsonSource(
-        id: _membersSourceId,
-        data: geoJson,
-      ));
+      await mapboxMap.style.addSource(
+        GeoJsonSource(id: _membersSourceId, data: geoJson),
+      );
       await _addMemberMarkersLayer(mapboxMap);
 
       // Destination marker is drawn by _drawDestinationPin in
@@ -110,11 +114,13 @@ class ConvoyRouteLine {
   static String _buildMembersGeoJson(
     List<MemberPosition> members,
     List<List<double>> coordinates,
+    Map<String, ConvoyMemberPresentation> presentation,
   ) {
     final features = <Map<String, dynamic>>[];
 
     for (int i = 0; i < members.length; i++) {
       final member = members[i];
+      final identity = presentation[member.userId];
       final coordinate = i < coordinates.length
           ? coordinates[i]
           : <double>[member.longitude, member.latitude];
@@ -122,36 +128,28 @@ class ConvoyRouteLine {
         'type': 'Feature',
         'properties': {
           'userId': member.userId,
-          'userIndex': i % 5,
           'isMoving': member.isMoving,
           'speed': member.speed ?? 0.0,
-          'initials': _initialsForUser(member.userId),
+          'initials':
+              identity?.initials ??
+              ConvoyMemberPresentation.initialsFor(member.userId),
+          'color': _hex(
+            identity?.color ??
+                ConvoyMemberPresentation.palette[(i + 1) %
+                    ConvoyMemberPresentation.palette.length],
+          ),
           'heading': member.heading ?? 0.0,
           'status': member.memberStatus,
         },
-        'geometry': {
-          'type': 'Point',
-          'coordinates': coordinate,
-        },
+        'geometry': {'type': 'Point', 'coordinates': coordinate},
       });
     }
 
-    return jsonEncode({
-      'type': 'FeatureCollection',
-      'features': features,
-    });
+    return jsonEncode({'type': 'FeatureCollection', 'features': features});
   }
 
-  /// Extract 2-character initials from a userId. Falls back to a single
-  /// letter if the userId is shorter. Real names should be threaded
-  /// through here in a future iteration via a user-display-name lookup
-  /// service; for now, the userId initials are the consistent identifier.
-  static String _initialsForUser(String userId) {
-    final clean = userId.trim();
-    if (clean.length >= 2) return clean.substring(0, 2).toUpperCase();
-    if (clean.isNotEmpty) return clean.substring(0, 1).toUpperCase();
-    return '?';
-  }
+  static String _hex(Color color) =>
+      '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
   /// Add member marker layers. Three layers stacked per member feature:
   /// heading arrow underneath, coloured dot in the middle, initials label
@@ -167,44 +165,39 @@ class ConvoyRouteLine {
     // sitting just below the dot so its base is occluded and only the
     // tip pokes out as a directional indicator.
     try {
-      await mapboxMap.style.addLayer(SymbolLayer(
-        id: 'convoy-members-heading-layer',
-        sourceId: _membersSourceId,
-        iconImage: 'triangle-stroked-15',
-        iconSize: 1.4,
-        iconRotateExpression: ['get', 'heading'],
-        iconRotationAlignment: IconRotationAlignment.MAP,
-        iconAllowOverlap: true,
-        iconIgnorePlacement: true,
-        iconOffset: [0.0, -1.8],
-      ));
+      await mapboxMap.style.addLayer(
+        SymbolLayer(
+          id: 'convoy-members-heading-layer',
+          sourceId: _membersSourceId,
+          iconImage: 'triangle-stroked-15',
+          iconSize: 1.4,
+          iconRotateExpression: ['get', 'heading'],
+          iconRotationAlignment: IconRotationAlignment.MAP,
+          iconAllowOverlap: true,
+          iconIgnorePlacement: true,
+          iconOffset: [0.0, -1.8],
+        ),
+      );
     } catch (e) {
       print('⚠️ Failed to add heading layer: $e');
     }
 
     // ── Member dot layer ─────────────────────────────────────────────
     //
-    // circleColor is a match expression driven by each feature's `status`
-    // property. Falls back to Electric Red for unknown statuses.
+    // Identity colour remains stable as movement/status changes. Status is
+    // communicated by the heading and the existing arrival/lag UI.
     try {
-      await mapboxMap.style.addLayer(CircleLayer(
-        id: 'convoy-members-layer',
-        sourceId: _membersSourceId,
-        circleRadius: 14.0,
-        circleStrokeColor: 0xFFFFFFFF,
-        circleStrokeWidth: 2.5,
-        circleOpacity: 1.0,
-        circleColorExpression: [
-          'match',
-          ['get', 'status'],
-          'MOVING', '#38A169',
-          'STOPPED', '#3182CE',
-          'LAG', '#DD6B20',
-          'ARRIVED', '#0D7C66',
-          'OFFLINE', '#718096',
-          '#E8002D',
-        ],
-      ));
+      await mapboxMap.style.addLayer(
+        CircleLayer(
+          id: 'convoy-members-layer',
+          sourceId: _membersSourceId,
+          circleRadius: 14.0,
+          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeWidth: 2.5,
+          circleOpacity: 1.0,
+          circleColorExpression: ['get', 'color'],
+        ),
+      );
     } catch (e) {
       print('⚠️ Failed to add members dot layer: $e');
     }
@@ -213,18 +206,20 @@ class ConvoyRouteLine {
     //
     // The initials sit centred on the dot.
     try {
-      await mapboxMap.style.addLayer(SymbolLayer(
-        id: 'convoy-members-label-layer',
-        sourceId: _membersSourceId,
-        textFieldExpression: ['get', 'initials'],
-        textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-        textSize: 11.0,
-        textColor: 0xFFFFFFFF,
-        textHaloColor: 0xFF000000,
-        textHaloWidth: 1.0,
-        textAllowOverlap: true,
-        textIgnorePlacement: true,
-      ));
+      await mapboxMap.style.addLayer(
+        SymbolLayer(
+          id: 'convoy-members-label-layer',
+          sourceId: _membersSourceId,
+          textFieldExpression: ['get', 'initials'],
+          textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+          textSize: 11.0,
+          textColor: 0xFFFFFFFF,
+          textHaloColor: 0xFF000000,
+          textHaloWidth: 1.0,
+          textAllowOverlap: true,
+          textIgnorePlacement: true,
+        ),
+      );
     } catch (e) {
       print('⚠️ Failed to add label layer: $e');
     }
