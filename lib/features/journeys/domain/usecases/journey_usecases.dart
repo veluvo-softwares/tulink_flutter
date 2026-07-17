@@ -13,6 +13,8 @@ class CreateJourney {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   }) {
     return repository.createJourney(
       name: name,
@@ -20,6 +22,8 @@ class CreateJourney {
       longitude: longitude,
       destinationAddress: destinationAddress,
       lagThresholdMeters: lagThresholdMeters,
+      scheduledFor: scheduledFor,
+      autoStart: autoStart,
     );
   }
 }

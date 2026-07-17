@@ -121,7 +121,7 @@ class JourneysCard extends StatelessWidget {
                 ),
               ),
               child: Icon(
-                Icons.route,
+                journey.isScheduled ? Icons.event : Icons.route,
                 color: colors.electricRed,
                 size: 20,
               ),
@@ -150,7 +150,7 @@ class JourneysCard extends StatelessWidget {
                   
                   // Destination and time or participants
                   Text(
-                    showParticipants 
+                    showParticipants
                         ? '${journey.participants?.length ?? 0} participants • ${journey.destinationAddress}'
                         : '${_formatDate(journey.createdAt)} • ${journey.destinationAddress}',
                     style: TextStyle(
@@ -163,15 +163,52 @@ class JourneysCard extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             const SizedBox(width: 12),
-            
-            // Status indicator
-            StatusIndicator(status: journey.status),
+
+            // Scheduled journeys show the countdown where the status dot
+            // would otherwise sit — "PENDING" reads as broken for a journey
+            // that intentionally starts tomorrow.
+            if (journey.isScheduled)
+              _buildCountdownChip(journey.scheduledFor!, colors)
+            else
+              StatusIndicator(status: journey.status),
           ],
         ),
       ),
     );
+  }
+
+  /// Compact "starts in…" chip for scheduled journeys.
+  Widget _buildCountdownChip(DateTime scheduledFor, TulinkColors colors) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.electricRed.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.electricRed.withOpacity(0.4)),
+      ),
+      child: Text(
+        _formatCountdown(scheduledFor),
+        style: TextStyle(
+          color: colors.electricRed,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  static String _formatCountdown(DateTime scheduledFor) {
+    final remaining = scheduledFor.difference(DateTime.now());
+    if (remaining.isNegative) return 'due now';
+    if (remaining.inDays >= 1) {
+      return 'in ${remaining.inDays}d ${remaining.inHours % 24}h';
+    }
+    if (remaining.inHours >= 1) {
+      return 'in ${remaining.inHours}h ${remaining.inMinutes % 60}m';
+    }
+    return 'in ${remaining.inMinutes}m';
   }
 
   Widget _buildEmptyState(TulinkColors colors) {

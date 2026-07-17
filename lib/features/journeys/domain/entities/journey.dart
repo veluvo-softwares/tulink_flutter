@@ -35,6 +35,13 @@ class Journey extends Equatable {
   final DateTime? startedAt;
   final DateTime? completedAt;
 
+  /// Future start instant for scheduled journeys; null = start-now journey.
+  final DateTime? scheduledFor;
+
+  /// Scheduled journeys only: the backend starts the journey automatically
+  /// at [scheduledFor] instead of nudging the leader.
+  final bool autoStart;
+
   const Journey({
     required this.id,
     this.inviteCode,
@@ -50,7 +57,13 @@ class Journey extends Equatable {
     this.participants,
     this.startedAt,
     this.completedAt,
+    this.scheduledFor,
+    this.autoStart = false,
   });
+
+  /// A journey that is waiting for its scheduled start instant.
+  bool get isScheduled =>
+      status == JourneyStatus.PENDING && scheduledFor != null;
 
   @override
   List<Object?> get props => [
@@ -68,6 +81,8 @@ class Journey extends Equatable {
     participants,
     startedAt,
     completedAt,
+    scheduledFor,
+    autoStart,
   ];
 }
 

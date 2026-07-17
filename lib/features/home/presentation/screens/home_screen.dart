@@ -116,13 +116,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onNotificationTap(RemoteMessage message) {
-    if (!mounted || message.data['type'] != 'JOURNEY_INVITE') return;
-    context.read<InviteProvider>().refreshInvitationsSilently(force: true);
-    if (_isOpeningInvitations) return;
-    _isOpeningInvitations = true;
-    Navigator.of(context)
-        .pushNamed(InvitationsScreen.routeName)
-        .whenComplete(() => _isOpeningInvitations = false);
+    if (!mounted) return;
+    final type = message.data['type']?.toString();
+
+    if (type == 'JOURNEY_INVITE') {
+      context.read<InviteProvider>().refreshInvitationsSilently(force: true);
+      if (_isOpeningInvitations) return;
+      _isOpeningInvitations = true;
+      Navigator.of(context)
+          .pushNamed(InvitationsScreen.routeName)
+          .whenComplete(() => _isOpeningInvitations = false);
+      return;
+    }
+
+    // Scheduled-journey pushes deep-link into the journey lobby: reminders
+    // and the T-0 call-to-action both resolve there (the leader can start,
+    // members can review who's coming).
+    if (type == 'JOURNEY_REMINDER' ||
+        type == 'JOURNEY_STARTING_NOW' ||
+        type == 'JOURNEY_MISSED_START') {
+      final journeyId = message.data['journeyId']?.toString();
+      if (journeyId == null || journeyId.isEmpty) return;
+      unawaited(context.read<JourneyProvider>().fetchActiveJourneys());
+      Navigator.of(
+        context,
+      ).pushNamed(JourneyPreviewScreen.routeName, arguments: journeyId);
+    }
   }
 
   @override

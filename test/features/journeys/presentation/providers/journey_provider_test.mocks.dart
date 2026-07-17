@@ -40,6 +40,8 @@ class MockJourneyRepository extends _i1.Mock implements _i2.JourneyRepository {
     required double? longitude,
     required String? destinationAddress,
     required int? lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool? autoStart = false,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -51,6 +53,8 @@ class MockJourneyRepository extends _i1.Mock implements _i2.JourneyRepository {
             #longitude: longitude,
             #destinationAddress: destinationAddress,
             #lagThresholdMeters: lagThresholdMeters,
+            #scheduledFor: scheduledFor,
+            #autoStart: autoStart,
           },
         ),
         returnValue:

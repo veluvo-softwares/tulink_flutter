@@ -271,4 +271,14 @@ class MockConvoyRepository extends _i1.Mock implements _i8.ConvoyRepository {
         returnValue: _i3.Future<void>.value(),
         returnValueForMissingStub: _i3.Future<void>.value(),
       ) as _i3.Future<void>);
+
+  @override
+  _i3.Future<void> ensureLiveConnection() => (super.noSuchMethod(
+        Invocation.method(
+          #ensureLiveConnection,
+          [],
+        ),
+        returnValue: _i3.Future<void>.value(),
+        returnValueForMissingStub: _i3.Future<void>.value(),
+      ) as _i3.Future<void>);
 }
