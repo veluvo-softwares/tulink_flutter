@@ -184,7 +184,9 @@ class ServiceLocator {
       _analyticsApiService,
     );
     _convoyRemoteDataSource = ConvoyRemoteDataSourceImpl(_convoyApiService);
-    _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl();
+    _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl(
+      authTokenProvider: TokenManager().getOrRefreshAuthToken,
+    );
 
     // Initialize repositories
     _authRepository = AuthRepositoryImpl(

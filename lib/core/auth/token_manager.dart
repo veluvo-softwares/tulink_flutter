@@ -147,6 +147,17 @@ class TokenManager {
     }
   }
 
+  /// Return an access token that can be used for a new authenticated channel.
+  ///
+  /// REST requests can recover from an expired access token after receiving a
+  /// 401, but WebSocket handshakes have no interceptor. Callers opening or
+  /// reopening a socket must therefore refresh proactively.
+  Future<String> getOrRefreshAuthToken() async {
+    final token = await getValidAuthToken();
+    if (token != null && token.isNotEmpty) return token;
+    return refreshAuthToken();
+  }
+
   /// Check if token will expire soon (within buffer time)
   Future<bool> willTokenExpireSoon() async {
     try {

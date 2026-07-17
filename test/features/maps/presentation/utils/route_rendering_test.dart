@@ -52,4 +52,59 @@ void main() {
       expect(result, isEmpty);
     });
   });
+
+  group('interpolateRoutePosition', () {
+    const rightAngleRoute = <List<double>>[
+      <double>[0, 0],
+      <double>[1, 0],
+      <double>[1, 1],
+    ];
+
+    test('follows route vertices instead of cutting across a turn', () {
+      final beforeCorner = interpolateRoutePosition(
+        routeCoordinates: rightAngleRoute,
+        startLongitude: 0.5,
+        startLatitude: 0,
+        startSegmentIndex: 0,
+        targetLongitude: 1,
+        targetLatitude: 0.5,
+        targetSegmentIndex: 1,
+        t: 0.25,
+      );
+      final afterCorner = interpolateRoutePosition(
+        routeCoordinates: rightAngleRoute,
+        startLongitude: 0.5,
+        startLatitude: 0,
+        startSegmentIndex: 0,
+        targetLongitude: 1,
+        targetLatitude: 0.5,
+        targetSegmentIndex: 1,
+        t: 0.75,
+      );
+
+      expect(beforeCorner.latitude, closeTo(0, 0.000001));
+      expect(beforeCorner.longitude, closeTo(0.75, 0.000001));
+      expect(beforeCorner.segmentIndex, 0);
+      expect(afterCorner.longitude, closeTo(1, 0.000001));
+      expect(afterCorner.latitude, closeTo(0.25, 0.000001));
+      expect(afterCorner.segmentIndex, 1);
+    });
+
+    test('returns the exact target at completion', () {
+      final result = interpolateRoutePosition(
+        routeCoordinates: rightAngleRoute,
+        startLongitude: 0.5,
+        startLatitude: 0,
+        startSegmentIndex: 0,
+        targetLongitude: 1,
+        targetLatitude: 0.5,
+        targetSegmentIndex: 1,
+        t: 1,
+      );
+
+      expect(result.longitude, 1);
+      expect(result.latitude, 0.5);
+      expect(result.segmentIndex, 1);
+    });
+  });
 }

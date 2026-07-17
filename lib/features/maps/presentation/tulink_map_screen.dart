@@ -42,7 +42,8 @@ class TulinkMapScreen extends StatefulWidget {
   State<TulinkMapScreen> createState() => _TulinkMapScreenState();
 }
 
-class _TulinkMapScreenState extends State<TulinkMapScreen> {
+class _TulinkMapScreenState extends State<TulinkMapScreen>
+    with WidgetsBindingObserver {
   MapboxMap? _mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
   String? _activeJourneyId;
@@ -50,11 +51,19 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   ConvoySnapshot? _lastSnapshot;
   int _lastUpdateHash = 0;
   bool _disposed = false;
+  bool _isAppActive = true;
+  int _mapGeneration = 0;
 
   /// True when it's safe to call the Mapbox channel — set false on dispose
   /// so async chains that resume after the widget is unmounted bail out
   /// instead of throwing PlatformException on a dead channel.
-  bool get _canUseMap => !_disposed && mounted && _mapboxMap != null;
+  bool get _canUseMap =>
+      !_disposed && _isAppActive && mounted && _mapboxMap != null;
+
+  /// Coalesces duplicate route setup calls from map creation and convoy
+  /// startup. Both lifecycle paths run during the same navigation transition.
+  Future<void>? _routeSetupFuture;
+  String? _routeSetupJourneyId;
 
   // Follow by default, but yield permanently to an explicit user pan until
   // they tap recenter. This lets drivers inspect the road ahead or the wider
@@ -112,6 +121,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   double? _navigationStartLongitude;
   double? _displayedNavigationLatitude;
   double? _displayedNavigationLongitude;
+  int? _displayedNavigationSegmentIndex;
   bool _navigationFrameRenderInFlight = false;
 
   /// Tracks the built-in Mapbox location puck's enabled state.
@@ -122,6 +132,42 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   bool? _puckEnabled;
   geo.Position? _lastRawPuckPosition;
   bool _rawPuckRemovedForNavigation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _isAppActive = false;
+      return;
+    }
+
+    if (state != AppLifecycleState.resumed || _isAppActive || !mounted) return;
+
+    // Recreate the native Mapbox view after a real background transition.
+    // On some devices the platform surface resumes black even though Flutter
+    // and the overlays continue rendering. A new keyed MapWidget gets a fresh
+    // surface; _onMapCreated restores route, destination, markers and camera.
+    _isAppActive = true;
+
+    // The server heartbeat monitor evicts the socket while we're suspended
+    // (Dart timers freeze, so no heartbeats go out). Bring it back up now
+    // with a fresh token instead of waiting for the next publish to fail.
+    unawaited(context.read<ConvoyProvider>().onAppResumed());
+    _mapboxMap = null;
+    _pointAnnotationManager = null;
+    _lastUpdateHash = 0;
+    _puckEnabled = null;
+    _rawPuckRemovedForNavigation = false;
+    _lastTrimAt = null;
+    setState(() => _mapGeneration++);
+  }
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
@@ -357,6 +403,31 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     Journey journey, {
     double? knownLat,
     double? knownLng,
+  }) {
+    final inFlight = _routeSetupFuture;
+    if (inFlight != null && _routeSetupJourneyId == journey.id) {
+      return inFlight;
+    }
+
+    final future = _drawActualRouteInternal(
+      journey,
+      knownLat: knownLat,
+      knownLng: knownLng,
+    );
+    _routeSetupJourneyId = journey.id;
+    _routeSetupFuture = future;
+    return future.whenComplete(() {
+      if (identical(_routeSetupFuture, future)) {
+        _routeSetupFuture = null;
+        _routeSetupJourneyId = null;
+      }
+    });
+  }
+
+  Future<void> _drawActualRouteInternal(
+    Journey journey, {
+    double? knownLat,
+    double? knownLng,
   }) async {
     if (_mapboxMap == null) return;
 
@@ -475,7 +546,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
 
     // Hand the route to the navigation layer for turn-by-turn guidance.
     if (mounted) {
-      await context.read<NavigationProvider>().startNavigation(
+      final navigation = context.read<NavigationProvider>();
+      if (navigation.activeRoute == route && navigation.isNavigating) return;
+      await navigation.startNavigation(
         route: route,
         onRerouteNeeded: () => _handleReroute(journey),
       );
@@ -576,8 +649,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
     if (progress == null) {
       unawaited(_drawRawPuck(position));
     }
-    final centerLat = progress?.snappedLatitude ?? position.latitude;
-    final centerLng = progress?.snappedLongitude ?? position.longitude;
+    final centerLat = _displayedNavigationLatitude ??
+        progress?.snappedLatitude ??
+        position.latitude;
+    final centerLng = _displayedNavigationLongitude ??
+        progress?.snappedLongitude ??
+        position.longitude;
 
     _isProgrammaticCameraMove = true;
     try {
@@ -623,6 +700,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           _displayedNavigationLatitude ?? progress.snappedLatitude;
       _navigationStartLongitude =
           _displayedNavigationLongitude ?? progress.snappedLongitude;
+      _displayedNavigationSegmentIndex ??= progress.currentSegmentIndex;
       _navigationTarget = progress;
       _navigationAnimationStartedAt = DateTime.now();
       _navigationFrameTicker ??= Timer.periodic(
@@ -656,10 +734,31 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
         animationDurationMs;
     final inverse = 1 - linearT;
     final easedT = 1 - (inverse * inverse * inverse);
-    final latitude = startLat + (target.snappedLatitude - startLat) * easedT;
-    final longitude = startLng + (target.snappedLongitude - startLng) * easedT;
+    final route = _navigationProvider?.activeRoute;
+    final rendered = route == null
+        ? (
+            longitude: startLng +
+                (target.snappedLongitude - startLng) * easedT,
+            latitude:
+                startLat + (target.snappedLatitude - startLat) * easedT,
+            segmentIndex: target.currentSegmentIndex,
+          )
+        : interpolateRoutePosition(
+            routeCoordinates: route.coordinates,
+            startLongitude: startLng,
+            startLatitude: startLat,
+            startSegmentIndex: _displayedNavigationSegmentIndex ??
+                target.currentSegmentIndex,
+            targetLongitude: target.snappedLongitude,
+            targetLatitude: target.snappedLatitude,
+            targetSegmentIndex: target.currentSegmentIndex,
+            t: easedT,
+          );
+    final latitude = rendered.latitude;
+    final longitude = rendered.longitude;
     _displayedNavigationLatitude = latitude;
     _displayedNavigationLongitude = longitude;
+    _displayedNavigationSegmentIndex = rendered.segmentIndex;
 
     final frame = RouteProgress(
       currentManeuver: target.currentManeuver,
@@ -669,7 +768,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
       snappedLatitude: latitude,
       snappedLongitude: longitude,
       isOffRoute: target.isOffRoute,
-      currentSegmentIndex: target.currentSegmentIndex,
+      currentSegmentIndex: rendered.segmentIndex,
     );
 
     _navigationFrameRenderInFlight = true;
@@ -1615,6 +1714,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _mapboxMap = null;
     // Stop the peer-marker interpolation ticker before the map handle is gone.
     _stopInterpolationTicker();
@@ -1677,7 +1777,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen> {
           // from receiving touch events, making the map impossible to pan.
           RepaintBoundary(
             child: MapWidget(
-              key: const ValueKey('mapbox_map'),
+              key: ValueKey('mapbox_map_$_mapGeneration'),
               onMapCreated: _onMapCreated,
               onScrollListener: (_) {
                 if (!_isProgrammaticCameraMove) {

@@ -166,6 +166,16 @@ class ConvoyProvider extends ChangeNotifier {
   /// in-flight Future instead of independently re-running the permission
   /// request, which would otherwise call Geolocator.requestPermission() twice
   /// and stack two native OS permission dialogs.
+  /// Called by UI lifecycle observers when the app returns to the foreground.
+  ///
+  /// While the app is suspended Dart timers freeze, so the server's heartbeat
+  /// monitor evicts the socket (~30s), and the client's reconnect budget or
+  /// backoff may have lapsed by the time it resumes. Force the socket back up
+  /// immediately — with a fresh auth token — instead of waiting for the next
+  /// failed publish to notice. Safe to call anytime: no-op when connected or
+  /// when no socket was ever opened.
+  Future<void> onAppResumed() => _repository.ensureLiveConnection();
+
   Future<void> startCoordination(String journeyId) async {
     // Already fully coordinating (subscribed + publishing GPS) — nothing to do.
     if (_currentJourneyId == journeyId && _isSubscribed && _isPublishing) {
@@ -503,7 +513,6 @@ class ConvoyProvider extends ChangeNotifier {
   /// Bails out (calls [stopCoordination]) on terminal failures:
   ///  - Journey is no longer active (backend rejects publish)
   ///  - Auth is dead (user is no longer authorized for this journey)
-  ///  - Too many consecutive failures (circuit breaker)
   ///
   /// Transient failures (network, rate limit) are logged and retried on the
   /// next GPS tick.
@@ -543,6 +552,7 @@ class ConvoyProvider extends ChangeNotifier {
       if (result.success) {
         _lastPublishTime = DateTime.now();
         _consecutivePublishFailures = 0;
+        _clearError();
         return;
       }
 
@@ -595,10 +605,14 @@ class ConvoyProvider extends ChangeNotifier {
 
     if (_consecutivePublishFailures >= _maxConsecutivePublishFailures) {
       print(
-        '🛑 Publish failure circuit breaker tripped — stopping coordination',
+        '⚠️ Publish failures sustained — keeping coordination alive for recovery',
       );
-      _setError('Connection lost. Tap to reconnect.');
-      await stopCoordination();
+      _setError('Connection lost. Reconnecting…');
+      // A mobile handoff or background radio suspension can easily last five
+      // publish intervals. Stopping here permanently removed this user from
+      // peers even after connectivity returned. Keep the guarded beacon loop
+      // alive; its next success clears the error and resets the counter.
+      _consecutivePublishFailures = _maxConsecutivePublishFailures;
     }
   }
 

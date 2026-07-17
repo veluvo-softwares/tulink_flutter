@@ -72,4 +72,13 @@ abstract class ConvoyRepository {
 
   /// Tear down the user-scoped channel (e.g. on logout).
   Future<void> disconnectUserChannel();
+
+  /// Recover the live WebSocket connection after an app resume.
+  ///
+  /// The server heartbeat monitor evicts sockets whose client was suspended
+  /// (Dart timers freeze in the background), and the client's reconnect
+  /// budget may be exhausted by the time the app returns. Forces an
+  /// immediate reconnect with a fresh auth token; no-op when already
+  /// connected or never connected.
+  Future<void> ensureLiveConnection();
 }
