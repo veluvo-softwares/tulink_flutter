@@ -266,6 +266,14 @@ class AuthRepositoryImpl implements AuthRepository {
       if (!hasRefresh) return false;
       final fresh = await dioClient.tryRefreshToken();
       return fresh != null && fresh.isNotEmpty;
+    } on TokenFailure catch (failure) {
+      // Transient refresh failure (offline at relaunch, timeout, auth
+      // service 5xx). The refresh token is intact and the session is
+      // recoverable — stay signed in; the Dio auth interceptor refreshes on
+      // the first 401 once connectivity returns. Sending the user to the
+      // login screen here manufactured a mid-journey "logout" out of a
+      // momentary network blip.
+      return !failure.requiresReauth;
     } catch (e) {
       return false;
     }

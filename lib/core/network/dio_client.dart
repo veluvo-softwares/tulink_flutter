@@ -259,11 +259,18 @@ class DioClient {
   }
 
   /// Exchange the stored refresh token for a fresh ID token. Returns the new
-  /// token, or null if there was nothing to refresh / the refresh failed (in
-  /// which case TokenManager has already cleared tokens and fired onAuthLost).
+  /// token, or null if the session is genuinely dead (in which case
+  /// TokenManager has already cleared tokens and fired onAuthLost).
+  ///
+  /// Throws [TokenFailure] with `requiresReauth == false` on a transient
+  /// failure (offline, timeout, auth service 5xx): the session is still
+  /// valid, so callers must NOT treat that as signed-out.
   Future<String?> tryRefreshToken() async {
     try {
       return await _tokenManager.refreshAuthToken();
+    } on TokenFailure catch (failure) {
+      if (failure.requiresReauth) return null;
+      rethrow;
     } catch (_) {
       return null;
     }

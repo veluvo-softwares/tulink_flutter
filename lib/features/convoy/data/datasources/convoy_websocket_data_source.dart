@@ -32,6 +32,13 @@ abstract class ConvoyWebSocketDataSource {
   /// Disconnect from WebSocket
   Future<void> disconnect();
 
+  /// Force an immediate reconnect attempt if the socket exists but is down.
+  ///
+  /// Resets backoff timers and give-up flags first. Intended for app-resume:
+  /// a client kicked by the server heartbeat monitor while backgrounded may
+  /// have exhausted its reconnect budget or be waiting out a long backoff.
+  Future<void> reconnectIfDisconnected();
+
   /// Join a journey room for real-time updates
   Future<void> joinJourney(String journeyId);
 
@@ -89,7 +96,12 @@ abstract class ConvoyWebSocketDataSource {
 
 /// Implementation of convoy WebSocket data source using Socket.IO
 class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
-  ConvoyWebSocketDataSourceImpl();
+  ConvoyWebSocketDataSourceImpl({this.authTokenProvider});
+
+  /// Supplies a fresh token before a reconnect handshake. Socket.IO retains
+  /// the auth payload from the original connection, which is commonly expired
+  /// after an app has spent an hour in navigation/background mode.
+  final Future<String> Function()? authTokenProvider;
 
   io.Socket? _socket;
   String? _currentJourneyId;
@@ -883,6 +895,20 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _reconnectTimer = null;
   }
 
+  @override
+  Future<void> reconnectIfDisconnected() async {
+    if (_socket == null || isConnected) return;
+
+    // Clear give-up state: the short-lived-connection breaker or exhausted
+    // attempt budget may have latched while the app was suspended, and a
+    // pending backoff timer would otherwise delay recovery after resume.
+    _intentionalDisconnect = false;
+    _reconnectAttempts = 0;
+    _shortLivedConnections = 0;
+    _stopReconnectTimer();
+    await _attemptReconnect();
+  }
+
   /// Attempt to reconnect
   Future<void> _attemptReconnect() async {
     if (isConnected || _intentionalDisconnect) return;
@@ -890,6 +916,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     try {
       print('🔄 Attempting reconnect...');
       _updateConnectionState(ConvoyConnectionState.reconnecting);
+
+      // Refresh the handshake credential before reconnecting. Reusing the
+      // token captured when the socket was first created causes an otherwise
+      // valid session to enter a connect/auth-failure loop after token expiry.
+      final tokenProvider = authTokenProvider;
+      if (tokenProvider != null) {
+        final token = await tokenProvider();
+        _socket?.auth = {'token': token};
+      }
 
       // Try to reconnect
       _socket?.connect();

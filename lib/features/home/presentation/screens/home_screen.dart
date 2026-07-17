@@ -129,6 +129,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<InviteProvider>().refreshInvitationsSilently(force: true);
+      // The invite-delivery socket is evicted by the server heartbeat monitor
+      // while the app is suspended; reconnect it so live invites resume.
+      unawaited(context.read<ConvoyProvider>().onAppResumed());
     }
   }
 

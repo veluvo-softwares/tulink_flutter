@@ -67,18 +67,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Future<void> _startCoordination(String journeyId) async {
     try {
       // Verify we have valid authentication before starting
-      final token = await _tokenManager.getValidAuthToken();
-      if (token == null) {
-        print('❌ Cannot start convoy coordination - no valid auth token');
-        final failure = ConvoyFailure(
-          message: 'Authentication required',
-          details: 'Please log in to join convoy coordination',
-          timestamp: DateTime.now(),
-          isRetryable: true,
-        );
-        _snapshotController.add((snapshot: null, failure: failure));
-        return;
-      }
+      await _tokenManager.getOrRefreshAuthToken();
 
       // First: Get immediate snapshot via REST (cold start)
       _fetchInitialSnapshot(journeyId);
@@ -110,14 +99,7 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Future<void> _connectWebSocket() async {
     try {
       // Get Firebase token for authentication
-      final token = await _tokenManager.getValidAuthToken();
-      if (token == null) {
-        throw ConvoyFailure(
-          message: 'No authentication token',
-          details: 'Cannot connect to WebSocket without valid token',
-          timestamp: DateTime.now(),
-        );
-      }
+      final token = await _tokenManager.getOrRefreshAuthToken();
 
       // Connect to WebSocket
       await _webSocketDataSource.connect(token);
@@ -367,15 +349,20 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       // Socket may already be up (e.g. mid-convoy) — connect() is a no-op then.
       if (_webSocketDataSource.isConnected) return;
 
-      final token = await _tokenManager.getValidAuthToken();
-      if (token == null) {
-        print('❌ Cannot start user channel - no valid auth token');
-        return;
-      }
+      final token = await _tokenManager.getOrRefreshAuthToken();
       await _webSocketDataSource.connect(token);
       print('🔌 User channel socket connected (invite delivery)');
     } catch (e) {
       print('❌ Failed to start user channel: $e');
+    }
+  }
+
+  @override
+  Future<void> ensureLiveConnection() async {
+    try {
+      await _webSocketDataSource.reconnectIfDisconnected();
+    } catch (e) {
+      print('❌ Resume reconnect failed: $e');
     }
   }
 
