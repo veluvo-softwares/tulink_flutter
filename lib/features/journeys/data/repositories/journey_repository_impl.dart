@@ -18,6 +18,8 @@ class JourneyRepositoryImpl implements JourneyRepository {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   }) async {
     try {
       final journey = await remoteDataSource.createJourney(
@@ -26,6 +28,8 @@ class JourneyRepositoryImpl implements JourneyRepository {
         longitude: longitude,
         destinationAddress: destinationAddress,
         lagThresholdMeters: lagThresholdMeters,
+        scheduledFor: scheduledFor,
+        autoStart: autoStart,
       );
       return (data: journey, failure: null);
     } on DioException catch (e) {

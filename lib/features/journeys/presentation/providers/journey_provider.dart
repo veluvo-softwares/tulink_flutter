@@ -69,6 +69,8 @@ class JourneyProvider extends ChangeNotifier {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   }) async {
     _setLoading(true);
     _setError(null);
@@ -79,6 +81,8 @@ class JourneyProvider extends ChangeNotifier {
       longitude: longitude,
       destinationAddress: destinationAddress,
       lagThresholdMeters: lagThresholdMeters,
+      scheduledFor: scheduledFor,
+      autoStart: autoStart,
     );
 
     if (result.isSuccess && result.data != null) {

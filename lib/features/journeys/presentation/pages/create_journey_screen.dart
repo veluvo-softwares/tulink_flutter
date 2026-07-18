@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
@@ -37,6 +38,11 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   String? _selectedAddress;
   bool _isSettingSelectedValue = false;
 
+  /// Null = start-now journey; set = scheduled journey (local time here,
+  /// converted to UTC at the API boundary).
+  DateTime? _scheduledFor;
+  bool _autoStart = false;
+
   /// Debounce for the destination search — only query the backend after a brief
   /// typing pause (FIX-05) so per-keystroke overlapping requests stop producing
   /// the spurious "check your internet" card.
@@ -54,6 +60,8 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     final journey = widget.journey!;
     _nameController.text = journey.name;
     _lagController.text = journey.lagThresholdMeters.toString();
+    _scheduledFor = journey.scheduledFor?.toLocal();
+    _autoStart = journey.autoStart;
     
     // Initialize destination from journey without triggering search
     setState(() {
@@ -96,6 +104,9 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
           'longitude': _selectedLng!,
         },
         'lagThresholdMeters': int.tryParse(_lagController.text) ?? 500,
+        if (_scheduledFor != null)
+          'scheduledFor': _scheduledFor!.toUtc().toIso8601String(),
+        if (_scheduledFor != null) 'autoStart': _autoStart,
       };
       
       success = await journeyProvider.updateJourney(
@@ -110,6 +121,8 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
         longitude: _selectedLng!,
         destinationAddress: _selectedAddress ?? '',
         lagThresholdMeters: int.tryParse(_lagController.text) ?? 500,
+        scheduledFor: _scheduledFor,
+        autoStart: _autoStart,
       );
     }
 
@@ -348,7 +361,13 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
               hintText: "500",
               keyboardType: TextInputType.number,
             ),
-            
+
+            const SizedBox(height: 24),
+
+            _buildLabel("START TIME"),
+            const SizedBox(height: 8),
+            _buildScheduleSection(colors),
+
             const SizedBox(height: 40),
             
             SizedBox(
@@ -378,6 +397,118 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
         ),
       ),
     );
+  }
+
+  /// "Start now" vs "Schedule for later" chooser. A scheduled journey keeps
+  /// the normal lobby (invite/accept) flow; the backend reminds everyone and
+  /// starts (or nudges the leader) at the chosen instant.
+  Widget _buildScheduleSection(TulinkColors colors) {
+    final scheduled = _scheduledFor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _pickSchedule,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colors.cardDark,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: scheduled != null
+                    ? colors.electricRed
+                    : colors.brushedSteel,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  scheduled != null ? Icons.event : Icons.bolt,
+                  color: scheduled != null ? colors.electricRed : colors.silver,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    scheduled != null
+                        ? _formatSchedule(scheduled)
+                        : 'Starts now — tap to schedule for later',
+                    style: TextStyle(
+                      color: scheduled != null ? Colors.white : colors.silver,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                if (scheduled != null)
+                  IconButton(
+                    icon: Icon(Icons.close, color: colors.silver, size: 18),
+                    tooltip: 'Clear schedule (start now)',
+                    onPressed: () => setState(() {
+                      _scheduledFor = null;
+                      _autoStart = false;
+                    }),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (scheduled != null)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Start automatically',
+              style: TextStyle(color: Colors.white, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Everyone is navigated to the map at the scheduled time',
+              style: TextStyle(color: colors.silver, fontSize: 12),
+            ),
+            activeThumbColor: colors.electricRed,
+            value: _autoStart,
+            onChanged: (value) => setState(() => _autoStart = value),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickSchedule() async {
+    final now = DateTime.now();
+    final initial = _scheduledFor ?? now.add(const Duration(hours: 1));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 60)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null || !mounted) return;
+
+    final picked = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    // Mirror the backend bound so the user hears about it before submitting.
+    if (picked.isBefore(DateTime.now().add(const Duration(minutes: 5)))) {
+      context.showErrorToast(
+        'Scheduled time must be at least 5 minutes from now',
+      );
+      return;
+    }
+    setState(() => _scheduledFor = picked);
+  }
+
+  String _formatSchedule(DateTime when) {
+    final formatted = DateFormat('EEE, MMM d • HH:mm').format(when);
+    return 'Scheduled: $formatted';
   }
 
   Widget _buildLabel(String label) {

@@ -16,11 +16,14 @@ class JourneyModel extends Journey {
     super.participants,
     super.startedAt,
     super.completedAt,
+    super.scheduledFor,
+    super.autoStart,
   });
 
   factory JourneyModel.fromJson(Map<String, dynamic> json) {
     final destination =
         json['destination'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final metadata = json['metadata'] as Map<String, dynamic>?;
     return JourneyModel(
       id: json['id']?.toString() ?? '',
       inviteCode: json['inviteCode']?.toString(),
@@ -45,6 +48,10 @@ class JourneyModel extends Journey {
       completedAt: json['completedAt'] != null
           ? DateTime.tryParse(json['completedAt'].toString())
           : null,
+      scheduledFor: json['scheduledFor'] != null
+          ? DateTime.tryParse(json['scheduledFor'].toString())
+          : null,
+      autoStart: metadata?['autoStart'] == true,
       participants: json['participants'] != null
           ? (json['participants'] as List<dynamic>)
                 .map(
@@ -128,6 +135,8 @@ class JourneyModel extends Journey {
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
       'startTime': startTime?.toIso8601String(),
+      'scheduledFor': scheduledFor?.toIso8601String(),
+      if (autoStart) 'metadata': {'autoStart': true},
     };
   }
 }

@@ -8,6 +8,8 @@ abstract class JourneyRepository {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   });
 
   Future<Result<Journey>> getJourneyById(String journeyId);

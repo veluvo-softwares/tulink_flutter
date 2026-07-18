@@ -50,6 +50,8 @@ class MockJourneyRemoteDataSource extends _i1.Mock
     required double? longitude,
     required String? destinationAddress,
     required int? lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool? autoStart = false,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -61,6 +63,8 @@ class MockJourneyRemoteDataSource extends _i1.Mock
             #longitude: longitude,
             #destinationAddress: destinationAddress,
             #lagThresholdMeters: lagThresholdMeters,
+            #scheduledFor: scheduledFor,
+            #autoStart: autoStart,
           },
         ),
         returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
@@ -74,6 +78,8 @@ class MockJourneyRemoteDataSource extends _i1.Mock
               #longitude: longitude,
               #destinationAddress: destinationAddress,
               #lagThresholdMeters: lagThresholdMeters,
+              #scheduledFor: scheduledFor,
+              #autoStart: autoStart,
             },
           ),
         )),

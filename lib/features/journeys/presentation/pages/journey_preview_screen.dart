@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1076,6 +1077,45 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                         ],
                       ),
                     ),
+
+                    if (journey.isScheduled) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colors.electricRed.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: colors.electricRed.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.event,
+                                color: colors.electricRed,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Scheduled for '
+                                  '${DateFormat('EEE, MMM d • HH:mm').format(journey.scheduledFor!.toLocal())}'
+                                  '${journey.autoStart ? ' — starts automatically' : ''}',
+                                  style: TextStyle(
+                                    color: colors.white,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 8),
 

@@ -12,6 +12,8 @@ abstract class JourneyRemoteDataSource {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   });
 
   Future<JourneyModel> getJourneyById(String journeyId);
@@ -46,6 +48,8 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
     required double longitude,
     required String destinationAddress,
     required int lagThresholdMeters,
+    DateTime? scheduledFor,
+    bool autoStart = false,
   }) async {
     final response = await dio.post<Map<String, dynamic>>(
       '/journeys',
@@ -54,6 +58,9 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
         'destination': {'latitude': latitude, 'longitude': longitude},
         'destinationAddress': destinationAddress,
         'lagThresholdMeters': lagThresholdMeters,
+        if (scheduledFor != null)
+          'scheduledFor': scheduledFor.toUtc().toIso8601String(),
+        if (scheduledFor != null) 'autoStart': autoStart,
       },
     );
 
