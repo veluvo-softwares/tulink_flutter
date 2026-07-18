@@ -42,41 +42,62 @@ double distanceMeters(
   return earthRadiusM * c;
 }
 
-/// One "Name — 2.1 km" line per convoy member, ordered nearest-first with
+/// One convoy member's distilled status for the glanceable surfaces.
+typedef MemberStatusEntry = ({
+  String userId,
+  String name,
+  double meters,
+  bool arrived,
+});
+
+/// Distance-to-destination per convoy member, ordered nearest-first with
 /// arrived members last. The current user is skipped — their own progress is
-/// the notification title line.
+/// the title line.
+List<MemberStatusEntry> buildMemberEntries({
+  required Map<String, MemberPosition> members,
+  required ConvoyDestination destination,
+  required Map<String, String> displayNames,
+  required String selfUserId,
+}) {
+  return members.entries.where((entry) => entry.key != selfUserId).map((
+    entry,
+  ) {
+    final position = entry.value;
+    return (
+      userId: entry.key,
+      name: displayNames[entry.key] ?? entry.key,
+      meters: distanceMeters(
+        position.latitude,
+        position.longitude,
+        destination.latitude,
+        destination.longitude,
+      ),
+      arrived: position.hasArrived,
+    );
+  }).toList()..sort((a, b) {
+    if (a.arrived != b.arrived) return a.arrived ? 1 : -1;
+    return a.meters.compareTo(b.meters);
+  });
+}
+
+/// "Name — 2.1 km" / "Name — arrived" display line for one member.
+String memberLine(MemberStatusEntry entry) => entry.arrived
+    ? '${entry.name} — arrived'
+    : '${entry.name} — ${formatDistance(entry.meters)}';
+
+/// One display line per convoy member (see [buildMemberEntries] for order).
 List<String> buildMemberLines({
   required Map<String, MemberPosition> members,
   required ConvoyDestination destination,
   required Map<String, String> displayNames,
   required String selfUserId,
 }) {
-  final entries =
-      members.entries.where((entry) => entry.key != selfUserId).map((entry) {
-        final position = entry.value;
-        final name = displayNames[entry.key] ?? entry.key;
-        final meters = distanceMeters(
-          position.latitude,
-          position.longitude,
-          destination.latitude,
-          destination.longitude,
-        );
-        return (
-          name: name,
-          meters: meters,
-          arrived: position.hasArrived,
-        );
-      }).toList()..sort((a, b) {
-        if (a.arrived != b.arrived) return a.arrived ? 1 : -1;
-        return a.meters.compareTo(b.meters);
-      });
-
-  return [
-    for (final entry in entries)
-      entry.arrived
-          ? '${entry.name} — arrived'
-          : '${entry.name} — ${formatDistance(entry.meters)}',
-  ];
+  return buildMemberEntries(
+    members: members,
+    destination: destination,
+    displayNames: displayNames,
+    selfUserId: selfUserId,
+  ).map(memberLine).toList();
 }
 
 /// Title line for the status notification.

@@ -1152,17 +1152,15 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       _stopInterpolationTicker();
     }
 
-    // Refresh the background journey-status notification (Android). The
-    // notifier throttles internally, so per-snapshot calls are cheap.
+    // Refresh the background journey-status surface (Android notification /
+    // iOS Live Activity). The notifier throttles internally, so per-snapshot
+    // calls are cheap.
     if (journey != null && currentUserId != null) {
       unawaited(
         _statusNotifier.update(
           journeyName: journey.name,
           selfUserId: currentUserId,
-          displayNames: {
-            for (final entry in _memberPresentation.entries)
-              entry.key: entry.value.displayName,
-          },
+          presentation: _memberPresentation,
           snapshot: convoySnapshot,
           progress: _navigationProvider?.currentProgress,
         ),
