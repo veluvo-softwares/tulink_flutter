@@ -12,6 +12,8 @@
 	<dict>
 		<key>xyz.tulink.app</key>
 		<string>TuLink App Store</string>
+		<key>xyz.tulink.app.TulinkJourneyWidget</key>
+		<string>TuLink Widget App Store</string>
 	</dict>
 </dict>
 </plist>

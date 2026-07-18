@@ -734,8 +734,9 @@
 				CODE_SIGN_ENTITLEMENTS = TulinkJourneyWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				PROVISIONING_PROFILE_SPECIFIER = "TuLink Widget App Store";
 				DEVELOPMENT_TEAM = 29M86UUNK8;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;

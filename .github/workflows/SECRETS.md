@@ -39,6 +39,7 @@ the encoding is implicit (matching the existing ci.yml convention).
 | `IOS_CERT_PASSWORD` | alpha-ios | Password used when exporting the `.p12` from Keychain |
 | `IOS_PROVISIONING_PROFILE` | alpha-ios | See [iOS signing assets](#ios-signing-assets) below |
 | `IOS_PROVISIONING_PROFILE_NAME` | alpha-ios | `TuLink App Store` |
+| `IOS_WIDGET_PROVISIONING_PROFILE` | alpha-ios | App Store profile for `xyz.tulink.app.TulinkJourneyWidget` named `TuLink Widget App Store`, base64-encoded like the main profile |
 | `IOS_KEYCHAIN_PASSWORD` | alpha-ios | Any strong random string (used for the temporary CI keychain) |
 | `APP_STORE_CONNECT_API_KEY` | alpha-ios | See [App Store Connect API key](#app-store-connect-api-key) below |
 | `APP_STORE_CONNECT_API_KEY_ID` | alpha-ios | `Z2ACV7GS97` |
@@ -97,6 +98,18 @@ server-side.
    ```
 5. Set `IOS_PROVISIONING_PROFILE_NAME` to the profile's display name exactly as
    it appears in Apple Developer (`TuLink App Store`).
+6. Widget extension (Live Activity, added 2026-07-18): the app and its
+   extension are separate bundle ids, each needing its own App Store profile,
+   and both App IDs carry the **App Groups** capability
+   (`group.xyz.tulink.app`). In Apple Developer:
+   - Identifiers → App Groups: register `group.xyz.tulink.app` if missing.
+   - App ID `xyz.tulink.app`: enable App Groups, assign the group — this
+     **invalidates the existing profile**; edit + re-save `TuLink App Store`,
+     re-download, re-encode into `IOS_PROVISIONING_PROFILE`.
+   - App ID `xyz.tulink.app.TulinkJourneyWidget` (Xcode may have created it):
+     enable App Groups, assign the group; create an App Store profile named
+     `TuLink Widget App Store` with the same distribution cert; download and
+     base64 into `IOS_WIDGET_PROVISIONING_PROFILE`.
 
 ### App Store Connect API key
 

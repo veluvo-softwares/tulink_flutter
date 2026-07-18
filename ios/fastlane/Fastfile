@@ -55,6 +55,18 @@ platform :ios do
     )
 
     install_provisioning_profile(path: profile_path)
+
+    # The widget extension signs against its own App Store profile
+    # (xyz.tulink.app.TulinkJourneyWidget → "TuLink Widget App Store").
+    widget_profile_path = ENV["IOS_WIDGET_PROVISIONING_PROFILE_PATH"]
+    if widget_profile_path && !widget_profile_path.empty? && File.exist?(widget_profile_path)
+      install_provisioning_profile(path: widget_profile_path)
+    else
+      UI.important(
+        "IOS_WIDGET_PROVISIONING_PROFILE_PATH not set — the archive will " \
+        "fail to sign TulinkJourneyWidgetExtension without it.",
+      )
+    end
   end
 
   desc "Upload an already-built, already-signed IPA to TestFlight"
