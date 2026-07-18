@@ -88,6 +88,17 @@ jobs:
           echo "$IOS_PROVISIONING_PROFILE" | base64 --decode > $HOME/ios-signing/TuLink_App_Store.mobileprovision
           echo "IOS_PROVISIONING_PROFILE_PATH=$HOME/ios-signing/TuLink_App_Store.mobileprovision" >> $GITHUB_ENV
 
+      # The TulinkJourneyWidget extension is a second bundle id
+      # (xyz.tulink.app.TulinkJourneyWidget) and needs its own App Store
+      # profile — the main profile cannot cover it.
+      - name: Decode widget provisioning profile
+        env:
+          IOS_WIDGET_PROVISIONING_PROFILE: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE }}
+        run: |
+          mkdir -p $HOME/ios-signing
+          echo "$IOS_WIDGET_PROVISIONING_PROFILE" | base64 --decode > $HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision
+          echo "IOS_WIDGET_PROVISIONING_PROFILE_PATH=$HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision" >> $GITHUB_ENV
+
       - name: Decode App Store Connect API key
         env:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
@@ -150,5 +161,6 @@ jobs:
         run: |
           rm -f $HOME/ios-signing/tulink-distribution.p12
           rm -f $HOME/ios-signing/TuLink_App_Store.mobileprovision
+          rm -f $HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision
           rm -f $HOME/ios-signing/asc-api-key.p8
           rm -f ios/Runner/GoogleService-Info.plist
