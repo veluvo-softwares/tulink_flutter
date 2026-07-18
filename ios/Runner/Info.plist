@@ -50,6 +50,8 @@
 	<string>TuLink uses your location to keep tracking your convoy while the app is in the background so the group stays coordinated.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TuLink uses your location to coordinate your convoy and keep you connected with other drivers in real time.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
