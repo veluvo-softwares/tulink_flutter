@@ -24,6 +24,70 @@ bool shouldReconnectAfterDisconnect(
   return !serverDisconnect || heartbeatTimedOut;
 }
 
+/// Builds socket options that leave all reconnect attempts to the app.
+@visibleForTesting
+Map<String, dynamic> buildConvoySocketOptions(String firebaseToken) {
+  return io.OptionBuilder()
+      .setTransports(['websocket'])
+      // The app owns reconnection so every attempt can refresh the Firebase
+      // credential first. Socket.IO's built-in loop otherwise races this loop
+      // and can reuse the expired auth payload captured at initial connection.
+      .disableReconnection()
+      .disableAutoConnect()
+      // socket_io_client caches managers by URL. A fresh manager prevents an
+      // older manager (created with reconnection enabled) from being reused.
+      .enableForceNew()
+      .setAuth({'token': firebaseToken})
+      .build();
+}
+
+/// Structured handshake-rejection codes emitted by the backend's Socket.IO
+/// auth middleware (`LocationGateway.authenticateSocket`). Kept in sync with
+/// the backend's `SocketAuthErrorCode` union.
+abstract class SocketAuthCode {
+  static const tokenExpired = 'TOKEN_EXPIRED';
+  static const tokenRevoked = 'TOKEN_REVOKED';
+  static const authTemporarilyUnavailable = 'AUTH_TEMPORARILY_UNAVAILABLE';
+  static const authFailed = 'AUTH_FAILED';
+
+  /// No `code` field was present on the failure payload — a raw transport
+  /// error (unreachable host, timeout) rather than a handshake rejection.
+  static const unknown = 'UNKNOWN';
+}
+
+/// A classified handshake failure, thrown by [_waitForConnection] so the
+/// reconnect loop can react to *why* the handshake failed instead of
+/// retrying every failure identically.
+class SocketHandshakeError implements Exception {
+  const SocketHandshakeError(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  /// Parses the payload carried by a `connect_error`/`error` event.
+  ///
+  /// The installed socket_io_client (2.0.3+1) does not translate a namespace
+  /// middleware rejection (server calling `next(err)`) into a `connect_error`
+  /// event the way the socket.io protocol / JS client does — it decodes the
+  /// CONNECT_ERROR packet and re-emits it as a plain `error` event instead
+  /// (see `Socket.onpacket` in that package). Both event sources carry the
+  /// same `{code, message}` map the backend attached via `ExtendedError.data`,
+  /// so both are parsed identically here.
+  @visibleForTesting
+  factory SocketHandshakeError.fromEventPayload(dynamic payload) {
+    final data = payload is Map ? payload : null;
+    final code = data?['code'] as String?;
+    final message =
+        (data?['message'] as String?) ??
+        payload?.toString() ??
+        'Connection failed';
+    return SocketHandshakeError(code ?? SocketAuthCode.unknown, message);
+  }
+
+  @override
+  String toString() => 'SocketHandshakeError($code: $message)';
+}
+
 /// Abstract interface for convoy WebSocket operations
 abstract class ConvoyWebSocketDataSource {
   /// Connect to convoy coordination WebSocket
@@ -142,6 +206,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   static const int _maxReconnectAttempts = 10;
   static const List<int> _reconnectDelays = [1, 2, 4, 8, 15, 30]; // seconds
 
+  /// Consecutive reconnect failures classified as
+  /// [SocketAuthCode.tokenExpired]. A refreshed handshake token
+  /// deterministically fixes this case, so those retries skip the normal
+  /// backoff — bounded by [_maxFastTokenRetries] so a persistent clock-skew
+  /// or refresh bug can't spin a tight retry loop.
+  int _consecutiveTokenExpiries = 0;
+  static const int _maxFastTokenRetries = 3;
+  static const Duration _tokenExpiredRetryDelay = Duration(milliseconds: 300);
+
   /// Wall-clock time when the current socket successfully connected.
   /// Used to distinguish a healthy long-lived connection (resets failure
   /// counters) from a "connect → immediately drop" loop (trips a separate
@@ -215,6 +288,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       // Fresh user-initiated connection — clear the short-lived counter so a
       // prior bad session doesn't immediately kill this one.
       _shortLivedConnections = 0;
+      _consecutiveTokenExpiries = 0;
       _updateConnectionState(ConvoyConnectionState.connecting);
 
       // Dispose any stale socket before creating a new one so we never leak an
@@ -227,11 +301,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       // Create Socket.IO client with authentication
       _socket = io.io(
         '${AppConfig.webSocketUrl}/location',
-        io.OptionBuilder()
-            .setTransports(['websocket'])
-            .disableAutoConnect()
-            .setAuth({'token': firebaseToken})
-            .build(),
+        buildConvoySocketOptions(firebaseToken),
       );
 
       _setupEventListeners();
@@ -820,27 +890,49 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   Future<void> _waitForConnection() async {
     const timeout = Duration(seconds: 10);
     final completer = Completer<void>();
+    final socket = _socket!;
 
-    Timer(timeout, () {
-      if (!completer.isCompleted) {
-        completer.completeError('Connection timeout');
-      }
-    });
-
-    // Setup one-time listeners for connection
-    _socket!.on('connect', (_) {
+    void onConnect(_) {
       if (!completer.isCompleted) {
         completer.complete();
       }
-    });
+    }
 
-    _socket!.on('connect_error', (error) {
+    void onConnectError(dynamic error) {
       if (!completer.isCompleted) {
-        completer.completeError(error as Object);
+        completer.completeError(SocketHandshakeError.fromEventPayload(error));
+      }
+    }
+
+    socket.on('connect', onConnect);
+    // Listen on both — see [SocketHandshakeError.fromEventPayload] for why a
+    // handshake rejection surfaces as `error` rather than `connect_error` on
+    // this socket_io_client version.
+    socket.on('connect_error', onConnectError);
+    socket.on('error', onConnectError);
+
+    final timer = Timer(timeout, () {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          const SocketHandshakeError(
+            SocketAuthCode.unknown,
+            'Connection timeout',
+          ),
+        );
       }
     });
 
-    await completer.future;
+    try {
+      await completer.future;
+    } finally {
+      // These listeners are re-added on every connect/reconnect attempt —
+      // without removing them, a long-lived socket that reconnects many
+      // times over a journey accumulates one dead listener pair per attempt.
+      timer.cancel();
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
+      socket.off('error', onConnectError);
+    }
   }
 
   /// Start heartbeat timer
@@ -905,6 +997,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _intentionalDisconnect = false;
     _reconnectAttempts = 0;
     _shortLivedConnections = 0;
+    _consecutiveTokenExpiries = 0;
     _stopReconnectTimer();
     await _attemptReconnect();
   }
@@ -936,8 +1029,28 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
 
       _reconnectAttempts = 0;
+      _consecutiveTokenExpiries = 0;
     } catch (e) {
       print('❌ Reconnect failed: $e');
+
+      // The token fetched above is deterministically stale-fixing for an
+      // expired-token rejection, so this failure mode gets a fast, bounded
+      // retry instead of the normal backoff — a live journey should not sit
+      // on a dead credential for up to 30s waiting for the next scheduled
+      // attempt. Anything else (revoked/invalid token, backend auth outage,
+      // network failure) falls through to the standard backoff below; this
+      // layer never signs the user out — that decision belongs solely to the
+      // REST auth/refresh path (see TokenManager.onAuthLost).
+      if (e is SocketHandshakeError &&
+          e.code == SocketAuthCode.tokenExpired &&
+          _consecutiveTokenExpiries < _maxFastTokenRetries) {
+        _consecutiveTokenExpiries++;
+        _stopReconnectTimer();
+        _reconnectTimer = Timer(_tokenExpiredRetryDelay, _attemptReconnect);
+        return;
+      }
+
+      _consecutiveTokenExpiries = 0;
       _scheduleReconnect();
     }
   }
