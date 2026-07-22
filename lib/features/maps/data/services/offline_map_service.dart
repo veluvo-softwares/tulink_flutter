@@ -23,8 +23,8 @@ class OfflineMapService {
 
   static const int diskQuotaBytes = 1024 * 1024 * 1024;
   static const double corridorRadiusMetres = 1000;
-  static const double minZoom = 8;
-  static const double maxZoom = 16;
+  static const int minZoom = 8;
+  static const int maxZoom = 16;
 
   final OfflineStorageService _storage;
   OfflineManager? _offlineManager;
