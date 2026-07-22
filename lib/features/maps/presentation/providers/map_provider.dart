@@ -8,27 +8,24 @@ import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
 import '../../domain/repositories/map_repository.dart';
 import '../../domain/usecases/search_places_usecase.dart';
-import '../../data/datasources/route_remote_data_source.dart';
 import '../../data/models/route_result_model.dart';
 
 class MapProvider with ChangeNotifier {
   final MapRepository _repository;
   final SearchPlacesUseCase _searchPlacesUseCase;
-  final RouteRemoteDataSource _routeDataSource;
 
-  MapProvider(
-    this._repository,
-    this._searchPlacesUseCase,
-    this._routeDataSource,
-  );
+  MapProvider(this._repository, this._searchPlacesUseCase);
 
   RouteResultModel? _currentRoute;
+  String? _currentRouteJourneyId;
   RouteResultModel? get currentRoute => _currentRoute;
 
   bool _isFetchingRoute = false;
   bool get isFetchingRoute => _isFetchingRoute;
 
   Future<RouteResultModel?> fetchRoute({
+    required String userId,
+    required String journeyId,
     required double originLat,
     required double originLng,
     required double destLat,
@@ -38,14 +35,22 @@ class MapProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _routeDataSource.getRoute(
+      final result = await _repository.getRoute(
+        userId: userId,
+        journeyId: journeyId,
         originLat: originLat,
         originLng: originLng,
-        destLat: destLat,
-        destLng: destLng,
+        destinationLat: destLat,
+        destinationLng: destLng,
       );
-      _currentRoute = result;
-      return result;
+      if (result != null) {
+        _currentRoute = result;
+        _currentRouteJourneyId = journeyId;
+        return result;
+      }
+      // A transient failure must not erase the route currently guiding this
+      // same active journey.
+      return _currentRouteJourneyId == journeyId ? _currentRoute : null;
     } finally {
       _isFetchingRoute = false;
       notifyListeners();
@@ -54,13 +59,14 @@ class MapProvider with ChangeNotifier {
 
   void clearRoute() {
     _currentRoute = null;
+    _currentRouteJourneyId = null;
     notifyListeners();
   }
 
   RaceRoute? _marathonRoute;
   bool _isLoading = false;
   String? _error;
-  
+
   List<PlaceSearchResult> _searchResults = [];
   bool _isSearching = false;
   String? _searchError;
@@ -73,7 +79,7 @@ class MapProvider with ChangeNotifier {
   RaceRoute? get marathonRoute => _marathonRoute;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  
+
   List<PlaceSearchResult> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
   String? get searchError => _searchError;
@@ -97,7 +103,7 @@ class MapProvider with ChangeNotifier {
     _marathonRoute = null;
     notifyListeners();
   }
-  
+
   Future<void> searchPlaces(String query) async {
     final trimmedQuery = query.trim();
 

@@ -97,12 +97,12 @@ class _AppBootstrapState extends State<AppBootstrap> {
       await Hive.initFlutter();
       Hive.registerAdapter(UserModelAdapter());
 
+      // OfflineManager/TileStore are initialized by ServiceLocator and need
+      // the token before their first native SDK call.
+      MapboxOptions.setAccessToken(AppConfig.mapboxAccessToken);
+
       final sl = ServiceLocator();
       await sl.init();
-
-      // Mapbox SDK registers a ConnectivityManager callback + CPU monitor
-      // on first touch — defer it until after Flutter is up.
-      MapboxOptions.setAccessToken(AppConfig.mapboxAccessToken);
 
       if (mounted) setState(() => _serviceLocator = sl);
     } catch (e) {
@@ -221,30 +221,76 @@ class MyApp extends StatelessWidget {
         Provider<PushNotificationService>.value(
           value: serviceLocator.pushNotificationService,
         ),
+        Provider.value(value: serviceLocator.offlineMapService),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: 'TuLink Flutter',
-            debugShowCheckedModeBanner: false,
+      child: _AppLifecycleCoordinator(
+        onResumed: serviceLocator.convoyProvider.onAppResumed,
+        child: Consumer<ThemeProvider>(
+          builder: (context, themeProvider, child) {
+            return MaterialApp(
+              title: 'TuLink Flutter',
+              debugShowCheckedModeBanner: false,
 
-            // Theme configuration - Tu-Link dark theme only
-            theme: AppTheme.tulinkTheme,
-            darkTheme: AppTheme.tulinkTheme,
-            themeMode: ThemeMode.dark, // Tu-Link is dark mode only
-            // Centralized routing with onGenerateRoute
-            onGenerateRoute: AppRouter.generateRoute,
+              // Theme configuration - Tu-Link dark theme only
+              theme: AppTheme.tulinkTheme,
+              darkTheme: AppTheme.tulinkTheme,
+              themeMode: ThemeMode.dark, // Tu-Link is dark mode only
+              // Centralized routing with onGenerateRoute
+              onGenerateRoute: AppRouter.generateRoute,
 
-            // Start at the Navigator root. Using `/home` here makes Flutter's
-            // initial-route expansion push both `/` and `/home`; because both
-            // routes render HomePage, two HomeScreen trees were mounted and
-            // every startup fetch/socket subscription ran twice.
-            initialRoute: '/',
-          );
-        },
+              // Start at the Navigator root. Using `/home` here makes Flutter's
+              // initial-route expansion push both `/` and `/home`; because both
+              // routes render HomePage, two HomeScreen trees were mounted and
+              // every startup fetch/socket subscription ran twice.
+              initialRoute: '/',
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+/// One app-scoped owner for transport recovery. Individual screens may still
+/// restore their own visual resources, but they no longer race to reconnect
+/// and rejoin the same journey room.
+class _AppLifecycleCoordinator extends StatefulWidget {
+  const _AppLifecycleCoordinator({
+    required this.onResumed,
+    required this.child,
+  });
+
+  final Future<void> Function() onResumed;
+  final Widget child;
+
+  @override
+  State<_AppLifecycleCoordinator> createState() =>
+      _AppLifecycleCoordinatorState();
+}
+
+class _AppLifecycleCoordinatorState extends State<_AppLifecycleCoordinator>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(widget.onResumed());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class HomePage extends StatelessWidget {

@@ -163,7 +163,6 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     // The server heartbeat monitor evicts the socket while we're suspended
     // (Dart timers freeze, so no heartbeats go out). Bring it back up now
     // with a fresh token instead of waiting for the next publish to fail.
-    unawaited(context.read<ConvoyProvider>().onAppResumed());
     _mapboxMap = null;
     _pointAnnotationManager = null;
     _lastUpdateHash = 0;
@@ -458,6 +457,11 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
     if (!mounted) return;
     final mapProvider = context.read<MapProvider>();
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) {
+      print('⚠️ Cannot load route without an authenticated user scope');
+      return;
+    }
 
     // Use the prefetched route if it matches this destination — no network call.
     RouteResultModel? route = mapProvider.currentRoute;
@@ -475,6 +479,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     } else {
       print('🌐 No prefetched route — fetching now');
       route = await mapProvider.fetchRoute(
+        userId: userId,
+        journeyId: journey.id,
         originLat: originLat,
         originLng: originLng,
         destLat: journey.destination.latitude,
@@ -554,6 +560,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       if (navigation.activeRoute == route && navigation.isNavigating) return;
       await navigation.startNavigation(
         route: route,
+        journeyId: journey.id,
         onRerouteNeeded: () => _handleReroute(journey),
       );
     }
@@ -653,10 +660,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     if (progress == null) {
       unawaited(_drawRawPuck(position));
     }
-    final centerLat = _displayedNavigationLatitude ??
+    final centerLat =
+        _displayedNavigationLatitude ??
         progress?.snappedLatitude ??
         position.latitude;
-    final centerLng = _displayedNavigationLongitude ??
+    final centerLng =
+        _displayedNavigationLongitude ??
         progress?.snappedLongitude ??
         position.longitude;
 
@@ -741,18 +750,16 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     final route = _navigationProvider?.activeRoute;
     final rendered = route == null
         ? (
-            longitude: startLng +
-                (target.snappedLongitude - startLng) * easedT,
-            latitude:
-                startLat + (target.snappedLatitude - startLat) * easedT,
+            longitude: startLng + (target.snappedLongitude - startLng) * easedT,
+            latitude: startLat + (target.snappedLatitude - startLat) * easedT,
             segmentIndex: target.currentSegmentIndex,
           )
         : interpolateRoutePosition(
             routeCoordinates: route.coordinates,
             startLongitude: startLng,
             startLatitude: startLat,
-            startSegmentIndex: _displayedNavigationSegmentIndex ??
-                target.currentSegmentIndex,
+            startSegmentIndex:
+                _displayedNavigationSegmentIndex ?? target.currentSegmentIndex,
             targetLongitude: target.snappedLongitude,
             targetLatitude: target.snappedLatitude,
             targetSegmentIndex: target.currentSegmentIndex,
@@ -1852,6 +1859,35 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
                 },
               ),
             ),
+
+          Consumer<NavigationProvider>(
+            builder: (context, navigation, _) {
+              if (!navigation.offlineReroutePending) {
+                return const SizedBox.shrink();
+              }
+              return Positioned(
+                top: MediaQuery.of(context).padding.top + 176,
+                left: 16,
+                right: 16,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xE61A1A1A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFB020)),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Text(
+                      'Offline — stay aware and return to the shown route. '
+                      'A new road route will be calculated after reconnecting.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // Arrival confirmation banner — replaces the turn card once the
           // current user is confirmed at the destination. Stays visible until

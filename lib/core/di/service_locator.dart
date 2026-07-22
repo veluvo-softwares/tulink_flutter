@@ -21,6 +21,7 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/stream_convoy_pos
 import 'package:tulink_flutter/features/convoy/domain/usecases/publish_my_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
+import 'package:tulink_flutter/features/convoy/data/services/location_outbox_service.dart';
 
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
@@ -38,6 +39,7 @@ import '../../features/journeys/presentation/providers/journey_provider.dart';
 import '../../features/maps/data/datasources/map_local_data_source.dart';
 import '../../features/maps/data/datasources/place_search_remote_data_source.dart';
 import '../../features/maps/data/datasources/route_remote_data_source.dart';
+import '../../features/maps/data/services/offline_map_service.dart';
 import '../../features/maps/data/repositories/map_repository_impl.dart';
 import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
@@ -46,6 +48,8 @@ import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
 import '../network/dio_client.dart';
 import '../services/push_notification_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/offline_storage_service.dart';
 import '../theme/theme_provider.dart';
 import '../auth/token_manager.dart';
 
@@ -59,6 +63,9 @@ class ServiceLocator {
   // Private fields for singleton instances
   late DioClient _dioClient;
   late Box<dynamic> _authBox;
+  late ConnectivityService _connectivityService;
+  late OfflineStorageService _offlineStorageService;
+  late OfflineMapService _offlineMapService;
   late AuthApiService _authApiService;
   late SocialAuthService _socialAuthService;
   late AuthLocalDataSource _authLocalDataSource;
@@ -105,6 +112,7 @@ class ServiceLocator {
   late PublishMyPosition _publishMyPosition;
   late FetchLatestSnapshot _fetchLatestSnapshot;
   late ConvoyProvider _convoyProvider;
+  late LocationOutboxService _locationOutboxService;
 
   // Push notifications (FCM)
   late PushNotificationService _pushNotificationService;
@@ -114,6 +122,9 @@ class ServiceLocator {
   PushNotificationService get pushNotificationService =>
       _pushNotificationService;
   Box<dynamic> get authBox => _authBox;
+  ConnectivityService get connectivityService => _connectivityService;
+  OfflineStorageService get offlineStorageService => _offlineStorageService;
+  OfflineMapService get offlineMapService => _offlineMapService;
   AuthApiService get authApiService => _authApiService;
   AuthLocalDataSource get authLocalDataSource => _authLocalDataSource;
   AuthRemoteDataSource get authRemoteDataSource => _authRemoteDataSource;
@@ -156,6 +167,13 @@ class ServiceLocator {
       print('✅ Auth box recreated successfully');
     }
 
+    _connectivityService = ConnectivityService();
+    await _connectivityService.init();
+    _offlineStorageService = OfflineStorageService();
+    await _offlineStorageService.init();
+    _offlineMapService = OfflineMapService(_offlineStorageService);
+    await _offlineMapService.init();
+
     // Initialize network client
     _dioClient = DioClient();
     _dioClient.initialize();
@@ -173,7 +191,7 @@ class ServiceLocator {
     // Initialize data sources
     _authLocalDataSource = AuthLocalDataSourceImpl(_authBox);
     _authRemoteDataSource = AuthRemoteDataSourceImpl(_authApiService);
-    _mapLocalDataSource = MapLocalDataSourceImpl();
+    _mapLocalDataSource = MapLocalDataSourceImpl(_offlineStorageService);
     _placeSearchRemoteDataSource = PlaceSearchRemoteDataSourceImpl(
       dio: _dioClient.dio,
     );
@@ -184,8 +202,12 @@ class ServiceLocator {
       _analyticsApiService,
     );
     _convoyRemoteDataSource = ConvoyRemoteDataSourceImpl(_convoyApiService);
+    _locationOutboxService = LocationOutboxService(_offlineStorageService);
     _convoyWebSocketDataSource = ConvoyWebSocketDataSourceImpl(
       authTokenProvider: TokenManager().getOrRefreshAuthToken,
+      offlineStorage: _offlineStorageService,
+      currentUserId: () async =>
+          (await _authLocalDataSource.getCachedUser())?.id,
     );
 
     // Initialize repositories
@@ -199,9 +221,15 @@ class ServiceLocator {
     _mapRepository = MapRepositoryImpl(
       localDataSource: _mapLocalDataSource,
       placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
+      routeRemoteDataSource: _routeRemoteDataSource,
+      connectivityService: _connectivityService,
     );
     _journeyRepository = JourneyRepositoryImpl(
       remoteDataSource: _journeyRemoteDataSource,
+      offlineStorage: _offlineStorageService,
+      connectivityService: _connectivityService,
+      currentUserId: () async =>
+          (await _authLocalDataSource.getCachedUser())?.id,
     );
     _inviteRepository = InviteRepositoryImpl(
       remoteDataSource: _inviteRemoteDataSource,
@@ -213,6 +241,10 @@ class ServiceLocator {
       remoteDataSource: _convoyRemoteDataSource,
       webSocketDataSource: _convoyWebSocketDataSource,
       tokenManager: TokenManager(),
+      outboxService: _locationOutboxService,
+      connectivityService: _connectivityService,
+      currentUserId: () async =>
+          (await _authLocalDataSource.getCachedUser())?.id,
     );
 
     // Initialize use cases
@@ -237,12 +269,13 @@ class ServiceLocator {
     _authProvider = AuthProvider(_authRepository);
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
     _themeProvider = ThemeProvider();
-    _mapProvider = MapProvider(
-      _mapRepository,
-      _searchPlacesUseCase,
-      _routeRemoteDataSource,
+    _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
+    _navigationProvider = NavigationProvider(
+      connectivityService: _connectivityService,
+      offlineStorage: _offlineStorageService,
+      currentUserId: () async =>
+          (await _authLocalDataSource.getCachedUser())?.id,
     );
-    _navigationProvider = NavigationProvider();
     _journeyProvider = JourneyProvider(
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),
@@ -271,8 +304,12 @@ class ServiceLocator {
     // and the user WebSocket channel so a signed-out client stops publishing GPS
     // (D11-1). Fire-and-forget the async teardown; the auth flow does not await it.
     _authProvider.onSessionEnded = () {
+      final userId = _authProvider.user?.id;
       unawaited(_convoyProvider.stopCoordination());
       unawaited(_convoyProvider.stopUserChannel());
+      if (userId != null) {
+        unawaited(_offlineStorageService.purgeUser(userId));
+      }
     };
 
     // Kick off auth initialization in the background. The first synchronous
@@ -284,6 +321,9 @@ class ServiceLocator {
 
   /// Dispose resources when app is closing
   Future<void> dispose() async {
+    await _convoyRepository.dispose();
+    await _connectivityService.dispose();
+    await _offlineStorageService.close();
     await _authBox.close();
   }
 }

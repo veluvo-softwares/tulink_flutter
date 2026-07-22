@@ -16,6 +16,12 @@ class RouteStepModel {
       maneuver: json['maneuver']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'instruction': instruction,
+    'distanceMetres': distanceMetres,
+    'maneuver': maneuver,
+  };
 }
 
 class RouteResultModel {
@@ -34,17 +40,27 @@ class RouteResultModel {
 
   factory RouteResultModel.fromJson(Map<String, dynamic> json) {
     final rawCoords = json['coordinates'] as List<dynamic>? ?? [];
-    final coordinates = rawCoords.map((c) {
-      final pair = c as List<dynamic>;
-      return [
-        (pair[0] as num).toDouble(),
-        (pair[1] as num).toDouble(),
-      ];
-    }).toList();
+    final coordinates = <List<double>>[];
+    for (final coordinate in rawCoords) {
+      if (coordinate is! List || coordinate.length < 2) continue;
+      final lng = coordinate[0];
+      final lat = coordinate[1];
+      if (lng is! num || lat is! num) continue;
+      final longitude = lng.toDouble();
+      final latitude = lat.toDouble();
+      if (longitude < -180 ||
+          longitude > 180 ||
+          latitude < -90 ||
+          latitude > 90) {
+        continue;
+      }
+      coordinates.add([longitude, latitude]);
+    }
 
     final rawSteps = json['steps'] as List<dynamic>? ?? [];
     final steps = rawSteps
-        .map((s) => RouteStepModel.fromJson(s as Map<String, dynamic>))
+        .whereType<Map>()
+        .map((s) => RouteStepModel.fromJson(s.cast<String, dynamic>()))
         .toList();
 
     return RouteResultModel(
@@ -54,4 +70,12 @@ class RouteResultModel {
       steps: steps,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'schemaVersion': 1,
+    'coordinates': coordinates,
+    'distanceMetres': distanceMetres,
+    'durationSeconds': durationSeconds,
+    'steps': steps.map((step) => step.toJson()).toList(growable: false),
+  };
 }

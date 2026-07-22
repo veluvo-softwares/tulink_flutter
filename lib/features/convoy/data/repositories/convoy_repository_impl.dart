@@ -9,6 +9,8 @@ import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/auth/token_manager.dart';
+import '../../../../core/services/connectivity_service.dart';
+import '../services/location_outbox_service.dart';
 
 /// Implementation of convoy repository
 /// Coordinates between WebSocket (real-time) and REST API (publishing/fallback)
@@ -21,13 +23,32 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     required ConvoyRemoteDataSource remoteDataSource,
     required ConvoyWebSocketDataSource webSocketDataSource,
     required TokenManager tokenManager,
+    required LocationOutboxService outboxService,
+    required ConnectivityService connectivityService,
+    required Future<String?> Function() currentUserId,
   }) : _remoteDataSource = remoteDataSource,
        _webSocketDataSource = webSocketDataSource,
-       _tokenManager = tokenManager;
+       _tokenManager = tokenManager,
+       _outboxService = outboxService,
+       _connectivityService = connectivityService,
+       _currentUserId = currentUserId {
+    _connectivitySubscription = _connectivityService.transitions.listen((
+      online,
+    ) {
+      if (!online) return;
+      unawaited(ensureLiveConnection());
+    });
+  }
 
   final ConvoyRemoteDataSource _remoteDataSource;
   final ConvoyWebSocketDataSource _webSocketDataSource;
   final TokenManager _tokenManager;
+  final LocationOutboxService _outboxService;
+  final ConnectivityService _connectivityService;
+  final Future<String?> Function() _currentUserId;
+  StreamSubscription<bool>? _connectivitySubscription;
+  bool _outboxFlushInFlight = false;
+  Future<void>? _recoveryInFlight;
 
   StreamSubscription<ConvoySnapshot>? _webSocketSubscription;
   final StreamController<({ConvoySnapshot? snapshot, Failure? failure})>
@@ -255,23 +276,42 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     double? speed,
     Map<String, dynamic>? metadata,
   }) async {
+    final locationUpdate = LocationUpdateDto.fromPosition(
+      journeyId: journeyId,
+      latitude: latitude,
+      longitude: longitude,
+      timestamp: timestamp,
+      accuracy: accuracy,
+      altitude: altitude,
+      heading: heading,
+      speed: speed,
+      metadata: metadata,
+    );
+    final userId = await _currentUserId();
+    if (userId == null || userId.isEmpty) {
+      return (success: false, failure: ConvoyFailure.notJourneyMember);
+    }
+
+    late final LocationUpdateDto queued;
     try {
-      final locationUpdate = LocationUpdateDto.fromPosition(
-        journeyId: journeyId,
-        latitude: latitude,
-        longitude: longitude,
-        timestamp: timestamp,
-        accuracy: accuracy,
-        altitude: altitude,
-        heading: heading,
-        speed: speed,
-        metadata: metadata,
-      );
+      queued = await _outboxService.enqueue(userId, locationUpdate);
+    } catch (error) {
+      print('❌ Could not persist location in the offline outbox: $error');
+      return (success: false, failure: ConvoyFailure.publishLocationFailed);
+    }
+
+    try {
+      // A reconnect handshake owns publication until peer resync and older
+      // trail backfill have completed.
+      await _recoveryInFlight;
 
       // Try WebSocket first if connected, otherwise use REST API
       if (_isWebSocketConnected) {
         try {
-          await _webSocketDataSource.publishLocationUpdate(locationUpdate);
+          await _webSocketDataSource.publishLocationUpdate(queued);
+          await _outboxService.acknowledge(userId, journeyId, [
+            queued.clientPointId!,
+          ]);
           return (success: true, failure: null);
         } catch (e) {
           print('❌ WebSocket publish failed, falling back to REST: $e');
@@ -280,12 +320,19 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       }
 
       // Publish via REST API as fallback or primary method
-      await _remoteDataSource.publishLocation(locationUpdate);
+      final delivered = await _remoteDataSource.publishLocation(queued);
+      if (delivered) {
+        await _outboxService.acknowledge(userId, journeyId, [
+          queued.clientPointId!,
+        ]);
+      }
+      // A throttled point remains safely queued for backfill.
       return (success: true, failure: null);
     } catch (e) {
-      print('❌ Failed to publish location: $e');
-      final failure = e is Failure ? e : ConvoyFailure.publishLocationFailed;
-      return (success: false, failure: failure);
+      print(
+        '📦 Live delivery unavailable; position retained in offline outbox: $e',
+      );
+      return (success: true, failure: null);
     }
   }
 
@@ -359,10 +406,75 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   @override
   Future<void> ensureLiveConnection() async {
+    final existing = _recoveryInFlight;
+    if (existing != null) return existing;
+    final recovery = _recoverLiveConnection();
+    _recoveryInFlight = recovery;
+    try {
+      await recovery;
+    } finally {
+      if (identical(_recoveryInFlight, recovery)) _recoveryInFlight = null;
+    }
+  }
+
+  Future<void> _recoverLiveConnection() async {
     try {
       await _webSocketDataSource.reconnectIfDisconnected();
+      await flushOfflineOutbox();
     } catch (e) {
       print('❌ Resume reconnect failed: $e');
+    }
+  }
+
+  @override
+  Future<void> flushOfflineOutbox() async {
+    if (_outboxFlushInFlight || !_connectivityService.isOnline.value) return;
+    final userId = await _currentUserId();
+    if (userId == null || userId.isEmpty) return;
+
+    _outboxFlushInFlight = true;
+    try {
+      for (final journeyId in _outboxService.journeyIds(userId)) {
+        while (true) {
+          final points = _outboxService.pending(userId, journeyId);
+          if (points.isEmpty) break;
+          final batchId = _outboxService.batchIdFor(points);
+          await _outboxService.markAttempt(
+            userId,
+            journeyId,
+            points.map((point) => point.clientPointId!).toList(growable: false),
+          );
+          final ack = await _remoteDataSource.backfillLocations(
+            journeyId: journeyId,
+            batchId: batchId,
+            points: points
+                .map(_outboxService.toBackfillPoint)
+                .toList(growable: false),
+          );
+          final acknowledged =
+              (ack['acknowledgedPointIds'] as List? ?? const [])
+                  .map((value) => value.toString())
+                  .toList(growable: false);
+          final rejected = (ack['rejected'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (value) =>
+                    value.map((key, entry) => MapEntry(key.toString(), entry)),
+              )
+              .toList(growable: false);
+          await _outboxService.quarantineRejected(userId, journeyId, rejected);
+          if (acknowledged.isEmpty && rejected.isEmpty) {
+            print('⚠️ Backfill made no progress for journey $journeyId');
+            break;
+          }
+          await _outboxService.acknowledge(userId, journeyId, acknowledged);
+          print('📦 Synced ${acknowledged.length} offline points');
+        }
+      }
+    } catch (error) {
+      print('⚠️ Offline outbox flush paused: $error');
+    } finally {
+      _outboxFlushInFlight = false;
     }
   }
 
@@ -412,5 +524,12 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
     _terminalFailureDetected = false;
 
     print('✅ Convoy coordination stopped completely');
+  }
+
+  Future<void> dispose() async {
+    await _connectivitySubscription?.cancel();
+    await _webSocketSubscription?.cancel();
+    _fallbackPollingTimer?.cancel();
+    await _snapshotController.close();
   }
 }

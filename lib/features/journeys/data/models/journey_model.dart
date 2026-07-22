@@ -135,7 +135,25 @@ class JourneyModel extends Journey {
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
       'startTime': startTime?.toIso8601String(),
+      'startedAt': startedAt?.toIso8601String(),
+      'completedAt': completedAt?.toIso8601String(),
       'scheduledFor': scheduledFor?.toIso8601String(),
+      if (participants != null)
+        'participants': participants!
+            .map(
+              (participant) => {
+                'id': participant.id,
+                'userId': participant.userId,
+                'journeyId': participant.journeyId,
+                'role': participant.role,
+                'status': participant.status,
+                'invitedBy': participant.invitedBy,
+                'connectionStatus': participant.connectionStatus,
+                'joinedAt': participant.joinedAt?.toIso8601String(),
+                'displayName': participant.displayName,
+              },
+            )
+            .toList(),
       if (autoStart) 'metadata': {'autoStart': true},
     };
   }

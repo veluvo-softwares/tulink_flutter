@@ -5,6 +5,7 @@ class LocationUpdateDto {
     required this.journeyId,
     required this.location,
     required this.timestamp,
+    this.clientPointId,
     this.accuracy,
     this.altitude,
     this.heading,
@@ -20,6 +21,7 @@ class LocationUpdateDto {
 
   /// Timestamp in milliseconds since epoch
   final int timestamp;
+  final String? clientPointId;
 
   /// Position accuracy in meters
   final double? accuracy;
@@ -46,6 +48,7 @@ class LocationUpdateDto {
       timestamp:
           (json['timestamp'] as num?)?.toInt() ??
           DateTime.now().millisecondsSinceEpoch,
+      clientPointId: json['clientPointId']?.toString(),
       accuracy: json['accuracy'] != null
           ? (json['accuracy'] as num).toDouble()
           : null,
@@ -66,6 +69,7 @@ class LocationUpdateDto {
       'journeyId': journeyId,
       'location': location.toJson(),
       'timestamp': timestamp,
+      if (clientPointId != null) 'clientPointId': clientPointId,
       if (accuracy != null) 'accuracy': accuracy,
       if (altitude != null) 'altitude': altitude,
       if (heading != null) 'heading': heading,
@@ -80,6 +84,7 @@ class LocationUpdateDto {
     required double latitude,
     required double longitude,
     required int timestamp,
+    String? clientPointId,
     double? accuracy,
     double? altitude,
     double? heading,
@@ -93,6 +98,7 @@ class LocationUpdateDto {
         longitude: longitude,
       ),
       timestamp: timestamp,
+      clientPointId: clientPointId,
       accuracy: accuracy,
       altitude: altitude,
       // Geolocator uses -1 when a simulator/device cannot determine these

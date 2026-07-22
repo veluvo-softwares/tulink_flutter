@@ -12,7 +12,9 @@ class ConvoyApiService {
   /// Publish location update to the convoy
   /// POST /locations
   /// Rate limited to 60 updates/minute per user per journey
-  Future<Map<String, dynamic>> publishLocation(LocationUpdateDto locationUpdate) async {
+  Future<Map<String, dynamic>> publishLocation(
+    LocationUpdateDto locationUpdate,
+  ) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/locations',
@@ -39,7 +41,7 @@ class ConvoyApiService {
           error: 'Location update rate limit exceeded. Please slow down.',
         );
       }
-      
+
       // Re-throw other Dio exceptions as-is
       rethrow;
     } catch (e) {
@@ -50,6 +52,30 @@ class ConvoyApiService {
         error: 'Unexpected error publishing location: $e',
       );
     }
+  }
+
+  Future<Map<String, dynamic>> backfillLocations({
+    required String journeyId,
+    required String batchId,
+    required List<Map<String, dynamic>> points,
+  }) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/locations/backfill',
+      data: {'journeyId': journeyId, 'batchId': batchId, 'points': points},
+    );
+    final body = response.data;
+    if (body == null) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+        error: 'Empty backfill response',
+      );
+    }
+    final data = body['data'];
+    return data is Map
+        ? data.map((key, value) => MapEntry(key.toString(), value))
+        : body;
   }
 
   /// Fetch latest convoy snapshot for cold start
@@ -80,13 +106,15 @@ class ConvoyApiService {
           error: 'Journey not found or no members have shared positions yet.',
         );
       }
-      
+
       // Re-throw other Dio exceptions as-is
       rethrow;
     } catch (e) {
       // Wrap other exceptions in DioException for consistent error handling
       throw DioException(
-        requestOptions: RequestOptions(path: '/locations/journeys/$journeyId/latest'),
+        requestOptions: RequestOptions(
+          path: '/locations/journeys/$journeyId/latest',
+        ),
         type: DioExceptionType.unknown,
         error: 'Unexpected error fetching convoy positions: $e',
       );
