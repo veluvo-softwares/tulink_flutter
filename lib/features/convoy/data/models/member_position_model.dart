@@ -17,6 +17,8 @@ class MemberPositionModel extends MemberPosition {
     super.statusChange,
     super.sequenceNumber,
     super.priority,
+    super.connectionState,
+    super.lastSeenAt,
   });
 
   /// Create from JSON (REST API response format)
@@ -25,16 +27,26 @@ class MemberPositionModel extends MemberPosition {
       userId: json['userId'] as String,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
-      timestamp: json['timestamp'] as int,
-      accuracy: json['accuracy'] != null ? (json['accuracy'] as num).toDouble() : null,
-      heading: json['heading'] != null ? _normalizeHeading((json['heading'] as num).toDouble()) : null,
+      timestamp:
+          _parseTimestamp(json['timestamp']) ??
+          DateTime.now().millisecondsSinceEpoch,
+      accuracy: json['accuracy'] != null
+          ? (json['accuracy'] as num).toDouble()
+          : null,
+      heading: json['heading'] != null
+          ? _normalizeHeading((json['heading'] as num).toDouble())
+          : null,
       speed: json['speed'] != null ? (json['speed'] as num).toDouble() : null,
-      altitude: json['altitude'] != null ? (json['altitude'] as num).toDouble() : null,
+      altitude: json['altitude'] != null
+          ? (json['altitude'] as num).toDouble()
+          : null,
       batteryLevel: json['batteryLevel'] as int?,
       isMoving: json['isMoving'] as bool? ?? false,
       statusChange: json['statusChange'] as String?,
       sequenceNumber: json['sequenceNumber'] as int?,
       priority: json['priority'] as String?,
+      connectionState: json['connectionState']?.toString(),
+      lastSeenAt: _parseTimestamp(json['lastSeenAt']),
     );
   }
 
@@ -42,16 +54,24 @@ class MemberPositionModel extends MemberPosition {
   factory MemberPositionModel.fromRtdb(Map<String, dynamic> rtdbData) {
     // Handle metadata field which might be nested
     final metadata = rtdbData['metadata'] as Map<String, dynamic>? ?? {};
-    
+
     return MemberPositionModel(
       userId: rtdbData['userId'] as String,
       latitude: (rtdbData['lat'] as num).toDouble(),
       longitude: (rtdbData['lng'] as num).toDouble(),
       timestamp: rtdbData['timestamp'] as int,
-      accuracy: rtdbData['accuracy'] != null ? (rtdbData['accuracy'] as num).toDouble() : null,
-      heading: rtdbData['heading'] != null ? _normalizeHeading((rtdbData['heading'] as num).toDouble()) : null,
-      speed: rtdbData['speed'] != null ? (rtdbData['speed'] as num).toDouble() : null,
-      altitude: rtdbData['altitude'] != null ? (rtdbData['altitude'] as num).toDouble() : null,
+      accuracy: rtdbData['accuracy'] != null
+          ? (rtdbData['accuracy'] as num).toDouble()
+          : null,
+      heading: rtdbData['heading'] != null
+          ? _normalizeHeading((rtdbData['heading'] as num).toDouble())
+          : null,
+      speed: rtdbData['speed'] != null
+          ? (rtdbData['speed'] as num).toDouble()
+          : null,
+      altitude: rtdbData['altitude'] != null
+          ? (rtdbData['altitude'] as num).toDouble()
+          : null,
       batteryLevel: metadata['batteryLevel'] as int?,
       isMoving: metadata['isMoving'] as bool? ?? false,
       statusChange: metadata['statusChange'] as String?,
@@ -76,6 +96,8 @@ class MemberPositionModel extends MemberPosition {
       if (statusChange != null) 'statusChange': statusChange,
       if (sequenceNumber != null) 'sequenceNumber': sequenceNumber,
       if (priority != null) 'priority': priority,
+      if (connectionState != null) 'connectionState': connectionState,
+      if (lastSeenAt != null) 'lastSeenAt': lastSeenAt,
     };
   }
 
@@ -95,6 +117,8 @@ class MemberPositionModel extends MemberPosition {
       statusChange: statusChange,
       sequenceNumber: sequenceNumber,
       priority: priority,
+      connectionState: connectionState,
+      lastSeenAt: lastSeenAt,
     );
   }
 
@@ -114,6 +138,8 @@ class MemberPositionModel extends MemberPosition {
       statusChange: entity.statusChange,
       sequenceNumber: entity.sequenceNumber,
       priority: entity.priority,
+      connectionState: entity.connectionState,
+      lastSeenAt: entity.lastSeenAt,
     );
   }
 
@@ -124,12 +150,23 @@ class MemberPositionModel extends MemberPosition {
     return normalized;
   }
 
+  static int? _parseTimestamp(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value) ??
+          DateTime.tryParse(value)?.millisecondsSinceEpoch;
+    }
+    return null;
+  }
+
   /// Create a list of models from RTDB snapshot
-  static List<MemberPositionModel> fromRtdbSnapshot(Map<String, dynamic>? snapshot) {
+  static List<MemberPositionModel> fromRtdbSnapshot(
+    Map<String, dynamic>? snapshot,
+  ) {
     if (snapshot == null) return [];
-    
+
     final positions = <MemberPositionModel>[];
-    
+
     for (final entry in snapshot.entries) {
       try {
         final userData = entry.value as Map<String, dynamic>;
@@ -139,16 +176,18 @@ class MemberPositionModel extends MemberPosition {
         print('⚠️ Failed to parse member position for ${entry.key}: $e');
       }
     }
-    
+
     return positions;
   }
 
   /// Create models map from RTDB snapshot
-  static Map<String, MemberPositionModel> mapFromRtdbSnapshot(Map<String, dynamic>? snapshot) {
+  static Map<String, MemberPositionModel> mapFromRtdbSnapshot(
+    Map<String, dynamic>? snapshot,
+  ) {
     if (snapshot == null) return {};
-    
+
     final positions = <String, MemberPositionModel>{};
-    
+
     for (final entry in snapshot.entries) {
       try {
         final userData = entry.value as Map<String, dynamic>;
@@ -159,7 +198,7 @@ class MemberPositionModel extends MemberPosition {
         print('⚠️ Failed to parse member position for ${entry.key}: $e');
       }
     }
-    
+
     return positions;
   }
 }

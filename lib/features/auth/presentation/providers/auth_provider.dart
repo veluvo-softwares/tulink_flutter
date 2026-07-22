@@ -36,10 +36,10 @@ class AuthProvider extends ChangeNotifier {
   /// Initialize auth state
   Future<void> initialize() async {
     _setLoading(true);
-    
+
     try {
       _isSignedIn = await _authRepository.isSignedIn();
-      
+
       if (_isSignedIn) {
         final result = await _authRepository.getCurrentUser();
         if (result.failure == null) {
@@ -58,10 +58,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Sign in with email and password
-  Future<bool> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> signIn({required String email, required String password}) async {
     print('🔵 AuthProvider.signIn() called with email: $email');
     _setLoading(true);
     _clearFailure();
@@ -72,7 +69,9 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
-      print('✅ AuthProvider received result: user=${result.user?.email}, failure=${result.failure}');
+      print(
+        '✅ AuthProvider received result: user=${result.user?.email}, failure=${result.failure}',
+      );
 
       if (result.failure == null) {
         _user = result.user;
@@ -80,17 +79,19 @@ class AuthProvider extends ChangeNotifier {
         _setLoading(false);
 
         if (result.user?.isEmailVerified == true) {
-          CarToastService.showSuccess('Welcome back, ${result.user?.name ?? 'User'}!');
+          CarToastService.showSuccess(
+            'Welcome back, ${result.user?.name ?? 'User'}!',
+          );
         }
 
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
-        
+
         // Show error toast with specific message
         CarToastService.showError(_getErrorMessage(result.failure));
-        
+
         return false;
       }
     } catch (e) {
@@ -122,17 +123,19 @@ class AuthProvider extends ChangeNotifier {
         _setLoading(false);
 
         if (result.user?.isEmailVerified == true) {
-          CarToastService.showSuccess('Account created successfully! Welcome ${result.user?.name ?? 'User'}!');
+          CarToastService.showSuccess(
+            'Account created successfully! Welcome ${result.user?.name ?? 'User'}!',
+          );
         }
 
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
-        
+
         // Show error toast with specific message
         CarToastService.showError(_getErrorMessage(result.failure));
-        
+
         return false;
       }
     } catch (e) {
@@ -161,10 +164,10 @@ class AuthProvider extends ChangeNotifier {
       } else {
         _setFailure(result.failure);
         _setLoading(false);
-        
+
         // Show error toast
         CarToastService.showError('Failed to sign out. Please try again.');
-        
+
         return false;
       }
     } catch (e) {
@@ -190,7 +193,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> refreshToken() async {
     try {
       final result = await _authRepository.refreshToken();
-      
+
       if (result.failure != null) {
         _setFailure(result.failure);
         return false;
@@ -203,10 +206,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Update user profile
-  Future<bool> updateProfile({
-    String? name,
-    String? profilePicture,
-  }) async {
+  Future<bool> updateProfile({String? name, String? profilePicture}) async {
     _setLoading(true);
     _clearFailure();
 
@@ -242,18 +242,18 @@ class AuthProvider extends ChangeNotifier {
 
       if (result.success) {
         _setLoading(false);
-        
+
         // Show success toast
         CarToastService.showSuccess('Password reset email sent successfully!');
-        
+
         return true;
       } else {
         _setFailure(result.failure);
         _setLoading(false);
-        
+
         // Show error toast
         CarToastService.showError(_getErrorMessage(result.failure));
-        
+
         return false;
       }
     } catch (e) {
@@ -296,6 +296,7 @@ class AuthProvider extends ChangeNotifier {
       final result = await _authRepository.deleteAccount();
 
       if (result.success) {
+        onSessionEnded?.call();
         _user = null;
         _isSignedIn = false;
         _setLoading(false);
@@ -327,7 +328,7 @@ class AuthProvider extends ChangeNotifier {
   /// but silently ignores a user-cancelled native flow (no error toast).
   Future<bool> _signInWithSocial(
     Future<({UserEntity? user, String? token, Failure? failure})> Function()
-        run,
+    run,
   ) async {
     _setLoading(true);
     _clearFailure();
@@ -394,7 +395,9 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      _setFailure(const ServerFailure(message: 'Failed to send verification email'));
+      _setFailure(
+        const ServerFailure(message: 'Failed to send verification email'),
+      );
       _setLoading(false);
       return false;
     }
@@ -432,24 +435,30 @@ class AuthProvider extends ChangeNotifier {
   void clearError() {
     _clearFailure();
   }
-  
+
   /// Get user-friendly error message from failure
   String _getErrorMessage(Failure? failure) {
     if (failure == null) return 'An unexpected error occurred';
-    
+
     switch (failure.runtimeType) {
       case AuthFailure:
         return 'Invalid email or password. Please check your credentials.';
       case NetworkFailure:
         return 'Network connection issue. Please check your internet connection.';
       case ServerFailure:
-        return failure.message.isNotEmpty ? failure.message : 'Server error. Please try again later.';
+        return failure.message.isNotEmpty
+            ? failure.message
+            : 'Server error. Please try again later.';
       case ValidationFailure:
-        return failure.message.isNotEmpty ? failure.message : 'Please check your input and try again.';
+        return failure.message.isNotEmpty
+            ? failure.message
+            : 'Please check your input and try again.';
       case TokenFailure:
         return 'Session expired. Please sign in again.';
       default:
-        return failure.message.isNotEmpty ? failure.message : 'Something went wrong. Please try again.';
+        return failure.message.isNotEmpty
+            ? failure.message
+            : 'Something went wrong. Please try again.';
     }
   }
 }

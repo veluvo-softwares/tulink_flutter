@@ -358,6 +358,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   /// and shows its loading pill as a fallback.
   void _prefetchRoute(Journey journey) {
     final mapProvider = context.read<MapProvider>();
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) return;
 
     // Skip if a route is already cached for this destination.
     final cached = mapProvider.currentRoute;
@@ -383,6 +385,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
 
         print('🚀 Prefetching route during countdown');
         await mapProvider.fetchRoute(
+          userId: userId,
+          journeyId: journey.id,
           originLat: pos.latitude,
           originLng: pos.longitude,
           destLat: journey.destination.latitude,

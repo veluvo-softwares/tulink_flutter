@@ -11,6 +11,11 @@ import '../../../../core/errors/failure.dart';
 abstract class ConvoyRemoteDataSource {
   /// Publish location update via REST API
   Future<bool> publishLocation(LocationUpdateDto locationUpdate);
+  Future<Map<String, dynamic>> backfillLocations({
+    required String journeyId,
+    required String batchId,
+    required List<Map<String, dynamic>> points,
+  });
 
   /// Fetch latest convoy snapshot via REST API
   Future<ConvoySnapshot> fetchLatestSnapshot(String journeyId);
@@ -25,13 +30,18 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
   @override
   Future<bool> publishLocation(LocationUpdateDto locationUpdate) async {
     try {
-      await _apiService.publishLocation(locationUpdate);
-      return true;
+      final response = await _apiService.publishLocation(locationUpdate);
+      final inner = response['data'];
+      if (inner is Map && inner.containsKey('success')) {
+        return inner['success'] == true;
+      }
+      return response['success'] == true;
     } on DioException catch (e) {
       // Convert DioException to appropriate failure
       if (e.response?.statusCode == 429) {
         throw ConvoyFailure.rateLimitExceeded;
-      } else if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+      } else if (e.response?.statusCode == 401 ||
+          e.response?.statusCode == 403) {
         throw ConvoyFailure.notJourneyMember;
       } else if (e.response?.statusCode == 404) {
         throw ConvoyFailure.journeyNotActive;
@@ -48,8 +58,8 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
         }
         throw ConvoyFailure.publishLocationFailed;
       } else if (e.type == DioExceptionType.connectionTimeout ||
-                 e.type == DioExceptionType.receiveTimeout ||
-                 e.type == DioExceptionType.connectionError) {
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
         throw NetworkFailure.connectionError;
       } else {
         throw ConvoyFailure.publishLocationFailed;
@@ -61,24 +71,35 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
   }
 
   @override
+  Future<Map<String, dynamic>> backfillLocations({
+    required String journeyId,
+    required String batchId,
+    required List<Map<String, dynamic>> points,
+  }) => _apiService.backfillLocations(
+    journeyId: journeyId,
+    batchId: batchId,
+    points: points,
+  );
+
+  @override
   Future<ConvoySnapshot> fetchLatestSnapshot(String journeyId) async {
     try {
       final responseData = await _apiService.fetchLatestPositions(journeyId);
-      
+
       // Parse the response according to API contract
       final snapshotDto = ConvoySnapshotDto.fromJson(responseData);
-      
+
       // Convert location data to member positions
       final memberPositions = <String, MemberPosition>{};
-      
+
       for (final entry in snapshotDto.locations.entries) {
         try {
           final locationData = entry.value as Map<String, dynamic>;
 
           // Backend embeds coordinates under a nested 'location' object.
           // Fall back to flat keys for any future schema that flattens them.
-          final nested =
-              (locationData['location'] as Map?)?.cast<String, dynamic>();
+          final nested = (locationData['location'] as Map?)
+              ?.cast<String, dynamic>();
           final lat = nested != null
               ? (nested['latitude'] as num?)?.toDouble()
               : (locationData['latitude'] as num?)?.toDouble();
@@ -90,8 +111,7 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
 
           // Prefer an explicit userId in the payload (added in a future backend
           // pass); fall back to the map key which is currently participantId.
-          final userId =
-              locationData['userId'] as String? ?? entry.key;
+          final userId = locationData['userId'] as String? ?? entry.key;
 
           final position = MemberPositionModel.fromJson({
             'userId': userId,
@@ -117,23 +137,28 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
               latitude: snapshotDto.destination!.latitude,
               longitude: snapshotDto.destination!.longitude,
             )
-          : const ConvoyDestination(latitude: 0.0, longitude: 0.0); // Default if missing
+          : const ConvoyDestination(
+              latitude: 0.0,
+              longitude: 0.0,
+            ); // Default if missing
 
       return ConvoySnapshot(
         journeyId: journeyId,
         members: memberPositions,
         destination: destination,
-        destinationAddress: snapshotDto.destinationAddress ?? 'Unknown destination',
+        destinationAddress:
+            snapshotDto.destinationAddress ?? 'Unknown destination',
         timestamp: DateTime.now(),
       );
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
         throw ConvoyFailure.journeyNotActive;
-      } else if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+      } else if (e.response?.statusCode == 401 ||
+          e.response?.statusCode == 403) {
         throw ConvoyFailure.notJourneyMember;
       } else if (e.type == DioExceptionType.connectionTimeout ||
-                 e.type == DioExceptionType.receiveTimeout ||
-                 e.type == DioExceptionType.connectionError) {
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError) {
         throw NetworkFailure.connectionError;
       } else {
         throw ServerFailure.fromStatusCode(e.response?.statusCode ?? 500);
@@ -142,7 +167,8 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
       if (e is Failure) rethrow;
       throw ServerFailure(
         message: 'Failed to fetch convoy snapshot',
-        details: 'An unexpected error occurred while fetching convoy positions: $e',
+        details:
+            'An unexpected error occurred while fetching convoy positions: $e',
         timestamp: DateTime.now(),
       );
     }

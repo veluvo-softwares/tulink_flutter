@@ -81,4 +81,10 @@ abstract class ConvoyRepository {
   /// immediate reconnect with a fresh auth token; no-op when already
   /// connected or never connected.
   Future<void> ensureLiveConnection();
+
+  /// Flushes durably queued GPS points through the idempotent backend endpoint.
+  Future<void> flushOfflineOutbox();
+
+  /// Release app-scoped retry, polling and stream subscriptions.
+  Future<void> dispose();
 }

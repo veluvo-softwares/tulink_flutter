@@ -12,6 +12,7 @@ import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
+import '../../../../core/services/offline_storage_service.dart';
 
 @visibleForTesting
 bool shouldReconnectAfterDisconnect(
@@ -160,12 +161,18 @@ abstract class ConvoyWebSocketDataSource {
 
 /// Implementation of convoy WebSocket data source using Socket.IO
 class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
-  ConvoyWebSocketDataSourceImpl({this.authTokenProvider});
+  ConvoyWebSocketDataSourceImpl({
+    this.authTokenProvider,
+    this.offlineStorage,
+    this.currentUserId,
+  });
 
   /// Supplies a fresh token before a reconnect handshake. Socket.IO retains
   /// the auth payload from the original connection, which is commonly expired
   /// after an app has spent an hour in navigation/background mode.
   final Future<String> Function()? authTokenProvider;
+  final OfflineStorageService? offlineStorage;
+  final Future<String?> Function()? currentUserId;
 
   io.Socket? _socket;
   String? _currentJourneyId;
@@ -228,6 +235,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// every time the TCP handshake succeeds, even if the heartbeat
   /// immediately times out.
   int _shortLivedConnections = 0;
+  final Map<String, Completer<void>> _pendingLocationAcks = {};
+  Completer<Map<String, dynamic>>? _pendingResync;
+  int _lastAppliedSequence = 0;
   static const int _maxShortLivedConnections = 3;
   static const Duration _shortLivedConnectionThreshold = Duration(seconds: 20);
 
@@ -398,6 +408,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
         );
       },
     );
+    await _restoreCursorAndResync(journeyId);
   }
 
   @override
@@ -434,6 +445,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
         'longitude': locationUpdate.location.longitude,
       },
       'timestamp': locationUpdate.timestamp,
+      if (locationUpdate.clientPointId != null)
+        'clientPointId': locationUpdate.clientPointId,
       if (locationUpdate.accuracy != null) 'accuracy': locationUpdate.accuracy,
       if (locationUpdate.altitude != null) 'altitude': locationUpdate.altitude,
       if (locationUpdate.heading != null) 'heading': locationUpdate.heading,
@@ -441,7 +454,19 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       if (locationUpdate.metadata != null) 'metadata': locationUpdate.metadata,
     };
 
+    final pointId = locationUpdate.clientPointId;
+    if (pointId == null) {
+      _socket!.emit('location-update', payload);
+      return;
+    }
+    final completer = Completer<void>();
+    _pendingLocationAcks[pointId] = completer;
     _socket!.emit('location-update', payload);
+    try {
+      await completer.future.timeout(const Duration(seconds: 10));
+    } finally {
+      _pendingLocationAcks.remove(pointId);
+    }
   }
 
   @override
@@ -461,8 +486,7 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   @override
   Future<void> requestResync(int fromSequence) async {
     if (!isConnected) return;
-
-    _socket!.emit('request-resync', {'fromSequence': fromSequence});
+    await _performResync(fromSequence);
   }
 
   /// Setup event listeners for WebSocket
@@ -476,14 +500,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       _connectedAt = DateTime.now();
       _updateConnectionState(ConvoyConnectionState.connected);
 
-      // Socket.IO room membership is connection-scoped. After any transport
-      // reconnect, explicitly rejoin the active journey or this client will
-      // look connected while silently missing convoy events.
-      final journeyId = _currentJourneyId;
-      if (journeyId != null) {
-        _socket!.emit('join-journey', {'journeyId': journeyId});
-        _roomDebug('🔁 rejoin journey after reconnect $journeyId');
-      }
+      // Room rejoin is deliberately owned by _attemptReconnect(), which awaits
+      // joined-journey before resync/backfill. Emitting here as well caused two
+      // joins and duplicate snapshots on every transport recovery.
     });
 
     _socket!.onDisconnect((reason) {
@@ -522,6 +541,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       // the connect→heartbeat-timeout→reconnect loop. The regular attempt
       // counter doesn't catch it because the TCP handshake itself succeeds.
       if (_shortLivedConnections >= _maxShortLivedConnections) {
+        if (_currentJourneyId != null) {
+          print(
+            '⚠️ Live journey connection is unstable; continuing at max backoff',
+          );
+          _shortLivedConnections = _maxShortLivedConnections;
+          _updateConnectionState(ConvoyConnectionState.reconnecting);
+          _scheduleReconnect(forceMaxDelay: true);
+          return;
+        }
         print(
           '🛑 Giving up reconnect: $_shortLivedConnections consecutive '
           'short-lived connections (auth or journey state is bad)',
@@ -656,14 +684,25 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
         final member = _members[userId];
         if (member != null) {
           _members[userId] = member.copyWith(
-            timestamp:
-                DateTime.now().millisecondsSinceEpoch -
-                60000, // Mark as 1 min old
+            connectionState: 'RECONNECTING',
+            lastSeenAt: DateTime.now().millisecondsSinceEpoch,
           );
           _emitConvoySnapshot();
         }
       }
       print('🔌 Participant disconnected: $userId');
+    });
+
+    _socket!.on('participant-connection-changed', (data) {
+      if (data is! Map) return;
+      final userId = data['userId']?.toString();
+      final member = userId == null ? null : _members[userId];
+      if (member == null) return;
+      _members[userId!] = member.copyWith(
+        connectionState: data['state']?.toString(),
+        lastSeenAt: _parseEventTimestamp(data['lastSeenAt']),
+      );
+      _emitConvoySnapshot();
     });
 
     // Location update events
@@ -674,6 +713,13 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     _socket!.on('location-update-ack', (data) {
       final sequenceNumber = data['sequenceNumber'] as int?;
+      final pointId = data['clientPointId']?.toString();
+      final pending = pointId == null
+          ? (_pendingLocationAcks.isEmpty
+                ? null
+                : _pendingLocationAcks.values.first)
+          : _pendingLocationAcks[pointId];
+      if (pending != null && !pending.isCompleted) pending.complete();
       print('✅ Location update acknowledged: $sequenceNumber');
     });
 
@@ -734,11 +780,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     // Resync events
     _socket!.on('resync-data', (data) {
-      final count = data['count'] as int?;
+      if (data is! Map) return;
+      final page = data.cast<String, dynamic>();
+      final count = page['count'] as int?;
       print('🔄 Resync data received: $count updates');
-
-      // TODO: Handle resync updates if needed
-      // final updates = data['updates'] as List<dynamic>?;
+      final pending = _pendingResync;
+      if (pending != null && !pending.isCompleted) {
+        pending.complete(page);
+      }
     });
   }
 
@@ -767,7 +816,16 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       };
 
       final position = MemberPositionModel.fromJson(memberData);
-      _members[userId] = position.toEntity();
+      final entity = position.toEntity();
+      final existing = _members[userId];
+      if (existing == null || entity.timestamp >= existing.timestamp) {
+        _members[userId] = entity;
+      }
+      final sequence = entity.sequenceNumber;
+      if (sequence != null && sequence > _lastAppliedSequence) {
+        _lastAppliedSequence = sequence;
+        unawaited(_persistSequenceCursor());
+      }
       print(
         '📍 Peer location update from $userId '
         '(${_members.length} members in convoy)',
@@ -840,6 +898,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
               'altitude': locationData['altitude'],
               'sequenceNumber': locationData['sequenceNumber'],
               'priority': locationData['priority'],
+              'connectionState': locationData['connectionState'],
+              'lastSeenAt': locationData['lastSeenAt'],
             }).toEntity();
 
             // Upsert: never let an older snapshot position overwrite a fresher
@@ -868,6 +928,73 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     } catch (e) {
       print('❌ Failed to handle latest locations: $e');
     }
+  }
+
+  Future<void> _restoreCursorAndResync(String journeyId) async {
+    final storage = offlineStorage;
+    final userProvider = currentUserId;
+    if (storage != null && userProvider != null) {
+      final userId = await userProvider();
+      final session = userId == null
+          ? null
+          : storage.loadSession(userId, journeyId);
+      _lastAppliedSequence =
+          (session?['lastAppliedSequence'] as num?)?.toInt() ??
+          _lastAppliedSequence;
+    }
+    if (_lastAppliedSequence > 0) {
+      await _performResync(_lastAppliedSequence);
+    }
+  }
+
+  Future<void> _performResync(int fromSequence) async {
+    var cursor = fromSequence;
+    while (isConnected) {
+      final completer = Completer<Map<String, dynamic>>();
+      _pendingResync = completer;
+      _socket!.emit('request-resync', {'fromSequence': cursor, 'limit': 500});
+      late final Map<String, dynamic> page;
+      try {
+        page = await completer.future.timeout(const Duration(seconds: 15));
+      } finally {
+        if (identical(_pendingResync, completer)) _pendingResync = null;
+      }
+
+      final updates = page['updates'] as List? ?? const [];
+      for (final raw in updates) {
+        if (raw is! Map) continue;
+        final update = raw.map((key, value) => MapEntry(key.toString(), value));
+        _handleLocationUpdate(update);
+      }
+      final next = (page['nextSequence'] as num?)?.toInt() ?? cursor;
+      if (next > _lastAppliedSequence) {
+        _lastAppliedSequence = next;
+        await _persistSequenceCursor();
+      }
+      cursor = next;
+      if (page['hasMore'] != true) break;
+    }
+  }
+
+  Future<void> _persistSequenceCursor() async {
+    final storage = offlineStorage;
+    final userProvider = currentUserId;
+    final journeyId = _currentJourneyId;
+    if (storage == null || userProvider == null || journeyId == null) return;
+    final userId = await userProvider();
+    if (userId == null) return;
+    await storage.mergeSession(userId, journeyId, {
+      'lastAppliedSequence': _lastAppliedSequence,
+    });
+  }
+
+  int? _parseEventTimestamp(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value) ??
+          DateTime.tryParse(value)?.millisecondsSinceEpoch;
+    }
+    return null;
   }
 
   /// Emit convoy snapshot to listeners
@@ -952,23 +1079,23 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   }
 
   /// Schedule reconnection with exponential backoff
-  void _scheduleReconnect() {
+  void _scheduleReconnect({bool forceMaxDelay = false}) {
     if (_intentionalDisconnect) {
       print('🔌 Skipping reconnect - intentional disconnect');
       return;
     }
 
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
+    if (_reconnectAttempts >= _maxReconnectAttempts &&
+        _currentJourneyId == null) {
       _updateConnectionState(ConvoyConnectionState.error);
       return;
     }
 
     _stopReconnectTimer();
 
-    final delayIndex = math.min(
-      _reconnectAttempts,
-      _reconnectDelays.length - 1,
-    );
+    final delayIndex = forceMaxDelay
+        ? _reconnectDelays.length - 1
+        : math.min(_reconnectAttempts, _reconnectDelays.length - 1);
     final delay = Duration(seconds: _reconnectDelays[delayIndex]);
 
     print(

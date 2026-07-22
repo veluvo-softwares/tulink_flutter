@@ -17,6 +17,8 @@ class MemberPosition extends Equatable {
     this.statusChange,
     this.sequenceNumber,
     this.priority,
+    this.connectionState,
+    this.lastSeenAt,
   });
 
   /// Unique identifier for the convoy member
@@ -57,15 +59,21 @@ class MemberPosition extends Equatable {
 
   /// Priority level for update processing
   final String? priority;
+  final String? connectionState;
+  final int? lastSeenAt;
 
   /// Get the age of this position in milliseconds
-  int get ageInMilliseconds => DateTime.now().millisecondsSinceEpoch - timestamp;
+  int get ageInMilliseconds =>
+      DateTime.now().millisecondsSinceEpoch - timestamp;
 
   /// Get the age of this position as a Duration
   Duration get age => Duration(milliseconds: ageInMilliseconds);
 
   /// Check if position is stale (older than 30 seconds)
-  bool get isStale => ageInMilliseconds > 30000;
+  bool get isStale =>
+      connectionState == 'RECONNECTING' ||
+      connectionState == 'DISCONNECTED' ||
+      ageInMilliseconds > 30000;
 
   /// Check if position is very stale (older than 60 seconds)
   bool get isVeryStale => ageInMilliseconds > 60000;
@@ -117,6 +125,8 @@ class MemberPosition extends Equatable {
     String? statusChange,
     int? sequenceNumber,
     String? priority,
+    String? connectionState,
+    int? lastSeenAt,
   }) {
     return MemberPosition(
       userId: userId ?? this.userId,
@@ -132,25 +142,29 @@ class MemberPosition extends Equatable {
       statusChange: statusChange ?? this.statusChange,
       sequenceNumber: sequenceNumber ?? this.sequenceNumber,
       priority: priority ?? this.priority,
+      connectionState: connectionState ?? this.connectionState,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
     );
   }
 
   @override
   List<Object?> get props => [
-        userId,
-        latitude,
-        longitude,
-        timestamp,
-        accuracy,
-        heading,
-        speed,
-        altitude,
-        batteryLevel,
-        isMoving,
-        statusChange,
-        sequenceNumber,
-        priority,
-      ];
+    userId,
+    latitude,
+    longitude,
+    timestamp,
+    accuracy,
+    heading,
+    speed,
+    altitude,
+    batteryLevel,
+    isMoving,
+    statusChange,
+    sequenceNumber,
+    priority,
+    connectionState,
+    lastSeenAt,
+  ];
 
   @override
   String toString() {

@@ -10,6 +10,8 @@ import '../services/maneuver_tracker_service.dart';
 import '../services/map_matching_service.dart';
 import '../services/off_route_detection_service.dart';
 import '../services/voice_instruction_service.dart';
+import '../../../../core/services/connectivity_service.dart';
+import '../../../../core/services/offline_storage_service.dart';
 
 /// Orchestrates the turn-by-turn navigation experience for an active journey.
 ///
@@ -27,22 +29,42 @@ import '../services/voice_instruction_service.dart';
 class NavigationProvider with ChangeNotifier {
   final ManeuverTrackerService _maneuverTracker;
   final VoiceInstructionService _voiceService;
+  final ConnectivityService _connectivityService;
+  final OfflineStorageService? _offlineStorage;
+  final Future<String?> Function()? _currentUserId;
   late final OffRouteDetectionService _offRouteDetector;
 
   StreamSubscription<geo.Position>? _positionSubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
   RouteResultModel? _activeRoute;
   RouteProgress? _currentProgress;
 
   Future<void> Function()? _onRerouteCallback;
+  bool _offlineReroutePending = false;
+  String? _journeyId;
+  int? _restoredSegmentIndex;
+  DateTime? _lastProgressPersistedAt;
 
   NavigationProvider({
     ManeuverTrackerService? maneuverTracker,
     VoiceInstructionService? voiceService,
+    ConnectivityService? connectivityService,
+    OfflineStorageService? offlineStorage,
+    Future<String?> Function()? currentUserId,
   }) : _maneuverTracker = maneuverTracker ?? ManeuverTrackerService(),
-       _voiceService = voiceService ?? VoiceInstructionService() {
+       _voiceService = voiceService ?? VoiceInstructionService(),
+       _connectivityService = connectivityService ?? ConnectivityService(),
+       _offlineStorage = offlineStorage,
+       _currentUserId = currentUserId {
     _offRouteDetector = OffRouteDetectionService(
       onRerouteNeeded: () async {
         if (_onRerouteCallback != null) {
+          if (!_connectivityService.isOnline.value) {
+            _offlineReroutePending = true;
+            print('📴 Off route while offline — retaining the cached route');
+            notifyListeners();
+            return;
+          }
           // Fire-and-forget the voice announcement — the route fetch must not
           // wait on TTS latency. Errors are swallowed so a voice failure
           // cannot prevent the reroute from starting.
@@ -57,7 +79,18 @@ class NavigationProvider with ChangeNotifier {
         }
       },
     );
+    _connectivitySubscription = _connectivityService.transitions.listen((
+      online,
+    ) {
+      if (online && _offlineReroutePending && _onRerouteCallback != null) {
+        _offlineReroutePending = false;
+        notifyListeners();
+        unawaited(_rerouteOnline());
+      }
+    });
   }
+
+  bool get offlineReroutePending => _offlineReroutePending;
 
   /// The current route being navigated, or null when navigation is inactive.
   RouteResultModel? get activeRoute => _activeRoute;
@@ -78,13 +111,17 @@ class NavigationProvider with ChangeNotifier {
   Future<void> startNavigation({
     required RouteResultModel route,
     required Future<void> Function() onRerouteNeeded,
+    String? journeyId,
   }) async {
     print('🧭 NavigationProvider: starting navigation');
 
     _onRerouteCallback = onRerouteNeeded;
+    _journeyId = journeyId;
     _activeRoute = route;
+    await _restoreProgressCursor();
     _maneuverTracker.loadRoute(route);
     _offRouteDetector.reset();
+    _offlineReroutePending = false;
     await _voiceService.init();
     // Pre-warm the platform TTS engine with a silent utterance so the first
     // real announcement (a turn instruction or "Recalculating route") doesn't
@@ -120,6 +157,7 @@ class NavigationProvider with ChangeNotifier {
         null; // stale segment index from old route must not seed the new snap window
     _maneuverTracker.loadRoute(route);
     _offRouteDetector.reset();
+    _offlineReroutePending = false;
     notifyListeners();
   }
 
@@ -137,6 +175,10 @@ class NavigationProvider with ChangeNotifier {
     _activeRoute = null;
     _currentProgress = null;
     _onRerouteCallback = null;
+    _offlineReroutePending = false;
+    _journeyId = null;
+    _restoredSegmentIndex = null;
+    _lastProgressPersistedAt = null;
 
     notifyListeners();
   }
@@ -158,7 +200,8 @@ class NavigationProvider with ChangeNotifier {
       rawLatitude: position.latitude,
       rawLongitude: position.longitude,
       route: route.coordinates,
-      currentSegmentIndex: _currentProgress?.currentSegmentIndex,
+      currentSegmentIndex:
+          _currentProgress?.currentSegmentIndex ?? _restoredSegmentIndex,
     );
     print(
       '🧭 dev=${snap.deviationMetres.toStringAsFixed(1)}m '
@@ -212,12 +255,74 @@ class NavigationProvider with ChangeNotifier {
       deviationMetres: snap.deviationMetres,
     );
 
+    await _persistProgress();
+
     notifyListeners();
+  }
+
+  Future<void> _rerouteOnline() async {
+    final callback = _onRerouteCallback;
+    if (callback == null) return;
+    unawaited(
+      _voiceService
+          .speakImmediate('Recalculating route')
+          .catchError(
+            (Object error) => print('⚠️ Voice announcement failed: $error'),
+          ),
+    );
+    await callback();
+  }
+
+  Future<void> _restoreProgressCursor() async {
+    final storage = _offlineStorage;
+    final userProvider = _currentUserId;
+    final journeyId = _journeyId;
+    if (storage == null || userProvider == null || journeyId == null) return;
+    final userId = await userProvider();
+    if (userId == null) return;
+    final session = storage.loadSession(userId, journeyId);
+    final progress = OfflineStorageService.readMap(
+      session?['navigationProgress'],
+    );
+    _restoredSegmentIndex = (progress?['currentSegmentIndex'] as num?)?.toInt();
+  }
+
+  Future<void> _persistProgress() async {
+    final progress = _currentProgress;
+    final storage = _offlineStorage;
+    final userProvider = _currentUserId;
+    final journeyId = _journeyId;
+    if (progress == null ||
+        storage == null ||
+        userProvider == null ||
+        journeyId == null) {
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastProgressPersistedAt != null &&
+        now.difference(_lastProgressPersistedAt!) <
+            const Duration(seconds: 5)) {
+      return;
+    }
+    final userId = await userProvider();
+    if (userId == null) return;
+    await storage.mergeSession(userId, journeyId, {
+      'navigationProgress': {
+        'currentSegmentIndex': progress.currentSegmentIndex,
+        'distanceRemainingMetres': progress.distanceRemainingMetres,
+        'durationRemainingSeconds': progress.durationRemainingSeconds,
+        'snappedLatitude': progress.snappedLatitude,
+        'snappedLongitude': progress.snappedLongitude,
+        'positionRecordedAt': now.toUtc().toIso8601String(),
+      },
+    });
+    _lastProgressPersistedAt = now;
   }
 
   @override
   void dispose() {
     _positionSubscription?.cancel();
+    _connectivitySubscription?.cancel();
     _voiceService.dispose();
     super.dispose();
   }

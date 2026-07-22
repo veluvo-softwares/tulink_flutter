@@ -50,6 +50,7 @@ dependencies:
   # Local Storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  connectivity_plus: ^7.0.0
   flutter_secure_storage: ^9.2.2
   
   # Error Handling
