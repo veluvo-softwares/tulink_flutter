@@ -1,6 +1,102 @@
+require "fileutils"
+require "tmpdir"
+
 default_platform(:android)
 
+# Google Play rejects a changelog longer than 500 characters outright, and this
+# repo's commit messages routinely exceed that, so every changelog is truncated
+# before it is written.
+PLAY_CHANGELOG_LIMIT = 500
+
+# The tracks the Play API always exposes. The closed-testing track is a custom
+# track whose identifier is its Play Console *display name* — for this app that
+# is literally "Tu-link Closed Testing", capitals and spaces included — so it is
+# validated separately against PLAY_CLOSED_TESTING_TRACK rather than hardcoded.
+PLAY_BUILTIN_TRACKS = %w[internal alpha beta production].freeze
+
+def play_json_key_path
+  ENV["GOOGLE_PLAY_JSON_KEY_PATH"] ||
+    UI.user_error!("GOOGLE_PLAY_JSON_KEY_PATH not set")
+end
+
+def play_closed_track
+  ENV["PLAY_CLOSED_TESTING_TRACK"].to_s
+end
+
+def play_dry_run?
+  ENV["PLAY_DRY_RUN"].to_s == "true"
+end
+
+# Fail on an unknown track BEFORE any upload, rather than letting supply reject
+# it after the artifact has been pushed.
+def validate_play_track!(track)
+  known = PLAY_BUILTIN_TRACKS + [play_closed_track].reject(&:empty?)
+  return if known.include?(track)
+
+  UI.user_error!(
+    "Unknown Play track #{track.inspect}. Known tracks: " \
+    "#{known.map(&:inspect).join(', ')}. If this is a custom closed track, " \
+    "set the PLAY_CLOSED_TESTING_TRACK repo variable to its exact Play " \
+    "Console identifier (it may contain spaces).",
+  )
+end
+
+def play_version_codes(track)
+  google_play_track_version_codes(track: track, json_key: play_json_key_path)
+rescue StandardError => e
+  UI.important("Could not read version codes for track #{track.inspect}: #{e.message}")
+  []
+end
+
+def play_changelog_text
+  raw = (ENV["RELEASE_NOTES"] || `git log -1 --pretty=%B`).to_s.strip
+  raw = "Automated release." if raw.empty?
+  return raw if raw.length <= PLAY_CHANGELOG_LIMIT
+
+  UI.important("Changelog is #{raw.length} chars; truncating to #{PLAY_CHANGELOG_LIMIT}.")
+  "#{raw[0, PLAY_CHANGELOG_LIMIT - 1].rstrip}…"
+end
+
+# supply has NO `release_notes:` option — passing one makes it raise. Changelogs
+# are read from <metadata_path>/<language>/changelogs/<version_code>.txt, so the
+# text has to be written to disk in that exact layout first.
+def write_play_changelog(version_code, language: "en-US")
+  root = File.join(Dir.tmpdir, "play-metadata")
+  dir = File.join(root, language, "changelogs")
+  FileUtils.mkdir_p(dir)
+  File.write(File.join(dir, "#{version_code}.txt"), play_changelog_text)
+  root
+end
+
+# Play refuses a staged rollout when the target track has no previous release —
+# a first production release must go out at 100%. Returns [rollout, status].
+def resolve_rollout(track)
+  return [nil, "completed"] unless track == "production"
+
+  if play_version_codes("production").empty?
+    UI.important(
+      "No existing production release — Play rejects a staged rollout for a " \
+      "first production release. Forcing 100% (completed).",
+    )
+    return [nil, "completed"]
+  end
+
+  pct = ENV["ROLLOUT_PERCENTAGE"].to_s.strip
+  return [nil, "completed"] if pct.empty? || pct.to_f >= 100
+
+  UI.user_error!("ROLLOUT_PERCENTAGE must be between 1 and 100 (got #{pct})") if pct.to_f <= 0
+  [(pct.to_f / 100).to_s, "inProgress"]
+end
+
 platform :android do
+  # ---------------------------------------------------------------------------
+  # Firebase App Distribution — RETAINED.
+  #
+  # Play closed testing needs 12 testers opted in continuously for 14 days
+  # before production access is granted, so develop pushes keep shipping here
+  # while the Play lane is brought up. Do not remove until Play is the proven
+  # path for day-to-day alpha builds.
+  # ---------------------------------------------------------------------------
   desc "Build a release APK and distribute to Firebase App Distribution"
   lane :beta do
     firebase_app_id = ENV["FIREBASE_ANDROID_APP_ID"] ||
@@ -23,12 +119,96 @@ platform :android do
     )
   end
 
-  desc "Production release to Play Store (NOT IMPLEMENTED YET)"
-  lane :production do
-    UI.user_error!(
-      "Android production lane is not implemented yet. " \
-      "This batch is beta-only. Wire up `supply` (Play Store API) and a " \
-      "production track in a future PR.",
+  # ---------------------------------------------------------------------------
+  # Google Play
+  # ---------------------------------------------------------------------------
+  desc "Write the highest versionCode currently on Play to $PLAY_VERSION_CODE_OUT"
+  lane :max_version_code do
+    tracks = PLAY_BUILTIN_TRACKS.dup
+    closed = play_closed_track
+    tracks << closed unless closed.empty? || tracks.include?(closed)
+
+    max = tracks.flat_map { |t| play_version_codes(t) }.map(&:to_i).max || 0
+    UI.message("Highest versionCode across #{tracks.size} Play tracks: #{max}")
+
+    out = ENV["PLAY_VERSION_CODE_OUT"]
+    File.write(out, max.to_s) unless out.to_s.empty?
+    max
+  end
+
+  desc "Upload a release AAB to a Google Play track"
+  lane :play do |options|
+    track = options[:track].to_s
+    UI.user_error!("track: not set (e.g. track:internal)") if track.empty?
+    validate_play_track!(track)
+
+    aab_path = ENV["AAB_PATH"] || "../build/app/outputs/bundle/release/app-release.aab"
+    UI.user_error!("AAB not found at #{aab_path}") unless File.exist?(aab_path)
+
+    version_code = ENV["BUILD_NUMBER"].to_s
+    UI.user_error!("BUILD_NUMBER not set") if version_code.empty?
+
+    rollout, release_status = resolve_rollout(track)
+    metadata_path = write_play_changelog(version_code)
+
+    UI.message("Uploading to track #{track.inspect} (status=#{release_status}, " \
+               "rollout=#{rollout || 'n/a'}, dry_run=#{play_dry_run?})")
+
+    supply(
+      track: track,
+      json_key: play_json_key_path,
+      aab: aab_path,
+      release_status: release_status,
+      rollout: rollout,
+      metadata_path: metadata_path,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false,
+      validate_only: play_dry_run?,
+    )
+  end
+
+  desc "Promote an existing closed-testing build to production (no rebuild)"
+  lane :promote do |options|
+    from_track = (options[:from] || play_closed_track).to_s
+    to_track = (options[:to] || "production").to_s
+    UI.user_error!("from: not set and PLAY_CLOSED_TESTING_TRACK is empty") if from_track.empty?
+    validate_play_track!(from_track)
+    validate_play_track!(to_track)
+
+    # Promotion reuses a version code that already passed through closed
+    # testing — it never rebuilds, so the exact bytes testers vetted are the
+    # bytes that reach production.
+    version_code = (options[:version_code] || ENV["PLAY_VERSION_CODE"]).to_s
+    if version_code.empty?
+      codes = play_version_codes(from_track).map(&:to_i)
+      UI.user_error!("No releases on track #{from_track.inspect} to promote") if codes.empty?
+      version_code = codes.max.to_s
+      UI.message("No version_code given; promoting the latest on #{from_track.inspect}: #{version_code}")
+    end
+
+    rollout, release_status = resolve_rollout(to_track)
+    metadata_path = write_play_changelog(version_code)
+
+    UI.message("Promoting #{version_code} from #{from_track.inspect} to #{to_track.inspect} " \
+               "(status=#{release_status}, rollout=#{rollout || '100%'}, dry_run=#{play_dry_run?})")
+
+    supply(
+      track: from_track,
+      track_promote_to: to_track,
+      track_promote_release_status: release_status,
+      version_code: version_code.to_i,
+      rollout: rollout,
+      json_key: play_json_key_path,
+      metadata_path: metadata_path,
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: false,
+      validate_only: play_dry_run?,
     )
   end
 end

@@ -1,64 +1,48 @@
-name: Production · App Stores
+# iOS production (App Store) scaffold — NOT yet implemented.
+#
+# Android production is NOT here: it lives in android-release.yml, which
+# promotes an existing closed-testing build to the production track. This file
+# is kept only so the iOS App Store lane has somewhere to land when it is
+# built. Every job below is gated off, so this workflow is inert.
+name: Production · App Store (iOS)
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       release_notes:
         description: "Release notes for this version"
         required: false
         type: string
-      target_track:
-        description: "Play Store / App Store track (internal, alpha, beta, production)"
-        required: false
-        default: "internal"
-        type: string
-      rollout_percentage:
-        description: "Staged rollout percentage (1-100)"
-        required: false
-        default: "10"
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-${{ github.ref }}
+  group: production-ios-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   guard:
-    name: Production not yet wired
+    name: iOS production not yet wired
     runs-on: ubuntu-latest
     steps:
       - name: Explain
         run: |
-          echo "Production releases are not yet implemented."
-          echo "This workflow is scaffolding for a future PR that will:"
-          echo "  - Android: ship to Play Store internal track via fastlane supply"
-          echo "  - iOS: ship to App Store Connect via fastlane deliver/pilot"
-          echo "Remove the 'if: false' gates on the jobs below and fill in"
-          echo "the production lanes in android/fastlane/Fastfile and"
-          echo "ios/fastlane/Fastfile when ready."
+          echo "iOS production releases are not yet implemented."
+          echo "Android production is handled by android-release.yml"
+          echo "(mode: promote — promotes a closed-testing build to production)."
+          echo ""
+          echo "To implement iOS production: remove the 'if: false' gate below,"
+          echo "add a production lane to ios/fastlane/Fastfile using deliver,"
+          echo "and reuse the signing setup from alpha-ios.yml."
           exit 0
-
-  android-production:
-    name: Android · Play Store
-    needs: guard
-    if: false # gate — flip to true when prod lane is implemented
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Placeholder
-        run: |
-          echo "TODO: build AAB and run fastlane android production"
 
   ios-production:
     name: iOS · App Store
     needs: guard
-    if: false # gate — flip to true when prod lane is implemented
+    # Gate: set the IOS_PRODUCTION_ENABLED repo variable to "true" once the
+    # iOS production lane exists. Unset means this job never runs.
+    if: vars.IOS_PRODUCTION_ENABLED == 'true'
     runs-on: macos-latest
     environment: production
     steps:
