@@ -37,10 +37,10 @@ class AppConfig {
   static String get baseUrl {
     if (_apiBaseUrlOverride.isNotEmpty) return _apiBaseUrlOverride;
     switch (_environment) {
-      // case 'production':
-      //   return 'https://api.tulink.com/v1';
-      // case 'staging':
-      //   return 'https://staging-api.tulink.com/v1';
+      case 'production':
+        return 'https://api.tulink.xyz';
+      case 'staging':
+        return 'https://api.staging.tulink.xyz';
       case 'development':
       default:
         return 'https://api.dev.tulink.xyz';
@@ -88,6 +88,10 @@ class AppConfig {
     if (_wsBaseUrlOverride.isNotEmpty) return _wsBaseUrlOverride;
     if (_legacyWsBaseUrlOverride.isNotEmpty) return _legacyWsBaseUrlOverride;
     switch (_environment) {
+      case 'production':
+        return 'https://api.tulink.xyz';
+      case 'staging':
+        return 'https://api.staging.tulink.xyz';
       case 'development':
       default:
         return 'https://api.dev.tulink.xyz';
