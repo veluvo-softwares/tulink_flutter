@@ -10,7 +10,17 @@ import '../constants/storage_keys.dart';
 /// Values are JSON-compatible maps so schema migrations remain explicit.
 class OfflineStorageService {
   OfflineStorageService({FlutterSecureStorage? secureStorage})
-    : _secureStorage = secureStorage ?? const FlutterSecureStorage();
+    : _secureStorage =
+          secureStorage ??
+          const FlutterSecureStorage(
+            // Matches TokenManager. This holds the Hive encryption key, which
+            // is read while a journey drains its outbox in the background —
+            // so it has to survive a locked screen too.
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock,
+            ),
+            aOptions: AndroidOptions(encryptedSharedPreferences: true),
+          );
 
   final FlutterSecureStorage _secureStorage;
   late Box<dynamic> _routes;
