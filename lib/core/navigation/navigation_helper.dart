@@ -17,13 +17,9 @@ class NavigationHelper {
     await Navigator.pushNamed(context, Routes.home);
   }
 
-  /// Replace current route with home
+  /// Return to the app's existing root without creating a second HomePage.
   static Future<void> toHomeAndClearStack(BuildContext context) async {
-    await Navigator.pushNamedAndRemoveUntil(
-      context,
-      Routes.home,
-      (route) => false,
-    );
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   /// Go back to previous screen

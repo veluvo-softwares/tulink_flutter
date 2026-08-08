@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/car_toast_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../../core/navigation/navigation_helper.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../journeys/presentation/widgets/journey_preview_map.dart';
@@ -24,6 +26,8 @@ class JourneyDetailsScreen extends StatefulWidget {
 }
 
 class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
+  bool _isReturningHome = false;
+
   @override
   void initState() {
     super.initState();
@@ -378,7 +382,9 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 child: ElevatedButton(
-                  onPressed: () => _navigateToHomeAndRefresh(context),
+                  onPressed: _isReturningHome
+                      ? null
+                      : () => _navigateToHomeAndRefresh(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: colors.electricRed,
                     foregroundColor: colors.white,
@@ -387,10 +393,21 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: _isReturningHome
+                      ? SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(
+                            color: colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Done',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 40), // Extra padding for bottom
@@ -483,51 +500,26 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
 
   /// Navigate to home screen and refresh data
   Future<void> _navigateToHomeAndRefresh(BuildContext context) async {
+    if (_isReturningHome) return;
+
     final analyticsProvider = context.read<AnalyticsProvider>();
     final journeyProvider = context.read<JourneyProvider>();
 
-    // Show loading indicator while refreshing data
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    setState(() => _isReturningHome = true);
 
     try {
-      // Refresh data: loadJourneyHistory and fetchActiveJourneys
       await Future.wait([
         analyticsProvider.loadJourneyHistory(),
         journeyProvider.fetchActiveJourneys(),
       ]);
-
-      if (context.mounted) {
-        // Dismiss loading dialog
-        Navigator.of(context).pop();
-
-        // Navigate to home screen (clear all routes)
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
-      }
     } catch (e) {
-      if (context.mounted) {
-        // Dismiss loading dialog
-        Navigator.of(context).pop();
-
-        // Show error but still navigate
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Data refresh failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-
-        // Navigate to home anyway
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
-      }
+      // Contextless: resolves its overlay from the global navigator key, so it
+      // is safe across the await without capturing a messenger beforehand.
+      CarToastService.showError('Data refresh failed: $e');
     }
+
+    if (!context.mounted) return;
+    await NavigationHelper.toHomeAndClearStack(context);
   }
 
   String _getTimeAgo(DateTime? date) {

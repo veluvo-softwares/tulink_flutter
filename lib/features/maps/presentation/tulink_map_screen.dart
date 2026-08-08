@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../core/navigation/navigation_helper.dart';
 import '../../../core/theme/tulink_colors.dart';
 import '../data/models/route_result_model.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
@@ -1496,9 +1497,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     if (journeyId == null) {
       // Journey already cleared externally — just navigate home cleanly.
       if (mounted) {
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
+        await NavigationHelper.toHomeAndClearStack(context);
       }
       return;
     }
@@ -1506,7 +1505,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     setState(() => _isJourneyExitInProgress = true);
     final success = await journeyProvider.endJourney(journeyId);
 
-    if (!context.mounted) return;
+    if (!mounted) return;
 
     if (success) {
       await _navigationProvider?.stopNavigation();
@@ -1516,18 +1515,18 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       journeyProvider.consumeLastCompletedJourney();
 
       if (completedJourney != null) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => JourneyDetailsScreen(
-              journey: completedJourney,
-              showDoneButton: true,
+        unawaited(
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (context) => JourneyDetailsScreen(
+                journey: completedJourney,
+                showDoneButton: true,
+              ),
             ),
           ),
         );
       } else {
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
+        await NavigationHelper.toHomeAndClearStack(context);
       }
     } else {
       setState(() => _isJourneyExitInProgress = false);
@@ -1565,7 +1564,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     await _navigationProvider?.stopNavigation();
     await convoyProvider.stopCoordination();
     if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    await NavigationHelper.toHomeAndClearStack(context);
   }
 
   /// Handles a `participant-arrived` WebSocket event.
@@ -1622,17 +1621,16 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
       final journey = journeyProvider.currentJourney;
       if (journey != null && journey.id == journeyId) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (context) =>
-                JourneyDetailsScreen(journey: journey, showDoneButton: true),
+        unawaited(
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (context) =>
+                  JourneyDetailsScreen(journey: journey, showDoneButton: true),
+            ),
           ),
-          (route) => false,
         );
       } else {
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
+        await NavigationHelper.toHomeAndClearStack(context);
       }
     }();
   }
@@ -1833,9 +1831,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
                   snapshot: convoySnapshot,
                   connectionState: convoyConnectionState,
                   onTap: _showConvoyBottomSheet,
-                  onBack: () => Navigator.of(
-                    context,
-                  ).pushNamedAndRemoveUntil('/home', (route) => false),
+                  onBack: () => NavigationHelper.toHomeAndClearStack(context),
                 ),
               ),
             ),

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../../core/navigation/navigation_helper.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/widgets/location_access_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -101,7 +102,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         journeyProvider.clearCurrentJourney();
         unawaited(journeyProvider.fetchActiveJourneys());
         final messenger = ScaffoldMessenger.of(context);
-        Navigator.of(context).pop();
+        // Idempotent: the leader who cancelled also runs _confirmAndCancel's
+        // return-home. Two raw pop()s would empty the stack and leave a black
+        // screen; popping to the root twice is a no-op the second time.
+        unawaited(NavigationHelper.toHomeAndClearStack(context));
         messenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -898,7 +902,9 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
       await convoy.stopCoordination();
     }
     if (!mounted) return;
-    Navigator.of(context).pop();
+    // The backend echoes journey-ended back to us, which independently returns
+    // home via didChangeDependencies. Both paths must be idempotent.
+    await NavigationHelper.toHomeAndClearStack(context);
   }
 
   @override
