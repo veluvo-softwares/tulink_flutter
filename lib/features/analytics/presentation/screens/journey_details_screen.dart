@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/car_toast_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/navigation/navigation_helper.dart';
 import '../../../../core/widgets/status_indicator.dart';
@@ -393,10 +394,10 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                     ),
                   ),
                   child: _isReturningHome
-                      ? const SizedBox.square(
+                      ? SizedBox.square(
                           dimension: 20,
                           child: CircularProgressIndicator(
-                            color: Colors.white,
+                            color: colors.white,
                             strokeWidth: 2,
                           ),
                         )
@@ -503,7 +504,6 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
 
     final analyticsProvider = context.read<AnalyticsProvider>();
     final journeyProvider = context.read<JourneyProvider>();
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     setState(() => _isReturningHome = true);
 
@@ -513,14 +513,9 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
         journeyProvider.fetchActiveJourneys(),
       ]);
     } catch (e) {
-      if (context.mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Data refresh failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      // Contextless: resolves its overlay from the global navigator key, so it
+      // is safe across the await without capturing a messenger beforehand.
+      CarToastService.showError('Data refresh failed: $e');
     }
 
     if (!context.mounted) return;
