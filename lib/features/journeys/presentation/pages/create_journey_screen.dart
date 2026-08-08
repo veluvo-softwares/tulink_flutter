@@ -139,10 +139,15 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
           ),
         );
       } else {
-        // Navigate to journey preview for new journey
-        await Navigator.of(context).pushNamed(
-          JourneyPreviewScreen.routeName,
-          arguments: journeyProvider.currentJourney?.id,
+        // Replace this screen with the preview rather than stacking on top of
+        // it. The journey now exists, so backing out of the preview must reach
+        // home — returning to a submitted create form would offer to create the
+        // same journey twice.
+        unawaited(
+          Navigator.of(context).pushReplacementNamed(
+            JourneyPreviewScreen.routeName,
+            arguments: journeyProvider.currentJourney?.id,
+          ),
         );
       }
     } else {
