@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/app_config.dart';
@@ -16,7 +17,14 @@ class TokenManager {
   static final TokenManager _instance = TokenManager._();
   factory TokenManager() => _instance;
 
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  /// Test seam. Secure-storage failures (locked Keychain, unavailable
+  /// Keystore) decide whether a session survives, and neither can be
+  /// provoked on a simulator — so the storage has to be substitutable to
+  /// cover them. Not used by app code.
+  @visibleForTesting
+  set secureStorage(FlutterSecureStorage storage) => _secureStorage = storage;
 
   /// In-flight refresh. A second caller arriving while the first is still
   /// awaiting the network response gets the same future — never two parallel
@@ -76,12 +84,34 @@ class TokenManager {
     }
   }
 
+  /// Read a stored token blob, separating "storage is unavailable" from "the
+  /// stored value is corrupt".
+  ///
+  /// A read that throws does NOT mean the token is gone. Secure storage is
+  /// routinely unavailable for reasons unrelated to the session: on iOS the
+  /// Keychain cannot be read while the device is locked, and on Android the
+  /// Keystore is unavailable before first unlock (Direct Boot), after a
+  /// lock-screen change invalidates the key, or when the app is restored onto
+  /// a new device. Reporting those as corruption cleared the tokens and signed
+  /// the user out mid-journey, which is exactly what happens when the screen
+  /// goes off during a journey and the app later wakes to refresh.
+  ///
+  /// Throws [TokenFailure.refreshTransient] so callers preserve the session and
+  /// retry. Returns null only when storage was readable and held nothing.
+  Future<String?> _readTokenBlob(String key) async {
+    try {
+      return await _secureStorage.read(key: key);
+    } catch (e) {
+      throw TokenFailure.refreshTransient;
+    }
+  }
+
   /// Get authentication token if valid
   Future<String?> getValidAuthToken() async {
-    try {
-      final tokenDataStr = await _secureStorage.read(key: StorageKeys.authToken);
-      if (tokenDataStr == null) return null;
+    final tokenDataStr = await _readTokenBlob(StorageKeys.authToken);
+    if (tokenDataStr == null) return null;
 
+    try {
       final tokenData = jsonDecode(tokenDataStr) as Map<String, dynamic>;
       final token = tokenData['token'] as String;
       final expiresAt = tokenData['expiresAt'] as String?;
@@ -98,18 +128,21 @@ class TokenManager {
       }
 
       return token;
+    } on TokenFailure {
+      rethrow;
     } catch (e) {
-      if (e is TokenFailure) rethrow;
+      // Only a genuine parse failure reaches here — the blob was readable but
+      // is not the shape we wrote.
       throw TokenFailure.tokenCorrupted;
     }
   }
 
   /// Get refresh token if valid
   Future<String?> getValidRefreshToken() async {
-    try {
-      final tokenDataStr = await _secureStorage.read(key: StorageKeys.refreshToken);
-      if (tokenDataStr == null) return null;
+    final tokenDataStr = await _readTokenBlob(StorageKeys.refreshToken);
+    if (tokenDataStr == null) return null;
 
+    try {
       final tokenData = jsonDecode(tokenDataStr) as Map<String, dynamic>;
       final token = tokenData['token'] as String;
       final expiresAt = tokenData['expiresAt'] as String?;
@@ -121,8 +154,11 @@ class TokenManager {
       }
 
       return token;
+    } on TokenFailure {
+      rethrow;
     } catch (e) {
-      if (e is TokenFailure) rethrow;
+      // Only a genuine parse failure reaches here — the blob was readable but
+      // is not the shape we wrote.
       throw TokenFailure.tokenCorrupted;
     }
   }
@@ -138,10 +174,20 @@ class TokenManager {
   }
 
   /// Check if refresh token exists and is valid
+  /// Whether a usable refresh token is present.
+  ///
+  /// Rethrows a transient [TokenFailure] rather than answering `false`. A bool
+  /// cannot express "storage was unreadable", and callers treat `false` as
+  /// "no session" — so swallowing it here signed the user out whenever the
+  /// Keychain/Keystore was momentarily unavailable. Callers that must not
+  /// end the session on a maybe already branch on `requiresReauth`.
   Future<bool> hasValidRefreshToken() async {
     try {
       final token = await getValidRefreshToken();
       return token != null;
+    } on TokenFailure catch (failure) {
+      if (!failure.requiresReauth) rethrow;
+      return false;
     } catch (e) {
       return false;
     }
@@ -266,14 +312,26 @@ class TokenManager {
   }
 
   Future<String> _doRefresh() async {
-    String? refreshToken;
+    final String? refreshToken;
     try {
       refreshToken = await getValidRefreshToken();
-    } on TokenFailure {
-      refreshToken = null;
+    } on TokenFailure catch (failure) {
+      // "Could not read the token" is not "there is no token". Secure storage
+      // is unavailable in situations that have nothing to do with the session
+      // being over: on iOS the Keychain cannot be read while the device is
+      // locked, and on Android the Keystore is unavailable before first unlock
+      // (Direct Boot), after a lock-screen change invalidates the key, or when
+      // the app is restored onto a new device. Treating those as "no token"
+      // cleared the tokens and signed the user out mid-journey.
+      //
+      // Only a positively terminal failure ends the session; everything else
+      // is transient and the next attempt recovers.
+      if (failure.requiresReauth) rethrow;
+      throw TokenFailure.refreshTransient;
     }
 
-    // No refresh token at all is genuinely terminal — nothing to recover from.
+    // A successful read that came back empty is genuinely terminal — the
+    // session really has nothing left to refresh from.
     if (refreshToken == null || refreshToken.isEmpty) {
       await _failRefresh();
     }
@@ -388,7 +446,7 @@ class TokenManager {
   Future<void> validateAndCleanupTokens() async {
     try {
       // Check and clean auth token
-      final authTokenStr = await _secureStorage.read(key: StorageKeys.authToken);
+      final authTokenStr = await _readTokenBlob(StorageKeys.authToken);
       if (authTokenStr != null) {
         try {
           final authTokenData = jsonDecode(authTokenStr) as Map<String, dynamic>;
@@ -404,7 +462,7 @@ class TokenManager {
       }
 
       // Check and clean refresh token
-      final refreshTokenStr = await _secureStorage.read(key: StorageKeys.refreshToken);
+      final refreshTokenStr = await _readTokenBlob(StorageKeys.refreshToken);
       if (refreshTokenStr != null) {
         try {
           final refreshTokenData = jsonDecode(refreshTokenStr) as Map<String, dynamic>;
@@ -418,9 +476,16 @@ class TokenManager {
           await clearRefreshToken();
         }
       }
+    } on TokenFailure catch (failure) {
+      // Storage was unreadable, not invalid. The tokens are very likely intact
+      // and simply locked away — wiping them here signed the user out for a
+      // dark screen. The per-token blocks above already clear genuinely
+      // corrupt entries.
+      if (failure.requiresReauth) await clearAllTokens();
     } catch (e) {
-      // If validation fails, clear all tokens for security
-      await clearAllTokens();
+      // Unclassifiable: bias toward preserving the session, consistent with
+      // _doRefresh. A dead session still fails closed at the next 401.
+      debugPrint('TokenManager: token validation skipped — $e');
     }
   }
 
