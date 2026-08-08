@@ -64,6 +64,10 @@ ios testflight distribution files/
 docs/
 /test_cache/
 
+# AI assistant config / planning artifacts — local only, never committed
+AGENTS.md
+.codex/
+
 # Fastlane
 **/fastlane/report.xml
 **/fastlane/Preview.html
