@@ -17,7 +17,15 @@ class TokenManager {
   static final TokenManager _instance = TokenManager._();
   factory TokenManager() => _instance;
 
-  FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
+    // The app publishes location from a background/foreground service, so it
+    // reads tokens while the screen is off. The iOS default
+    // (kSecAttrAccessibleWhenUnlocked) makes that impossible on a locked
+    // device; first_unlock keeps the item readable after the first unlock
+    // since boot, which is the weakest class that still works in background.
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   /// Test seam. Secure-storage failures (locked Keychain, unavailable
   /// Keystore) decide whether a session survives, and neither can be
