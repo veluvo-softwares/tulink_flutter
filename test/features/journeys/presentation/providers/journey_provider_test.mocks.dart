@@ -90,6 +90,16 @@ class MockJourneyRepository extends _i1.Mock implements _i2.JourneyRepository {
           ) as _i3.Future<({List<_i4.Journey>? data, _i5.Failure? failure})>);
 
   @override
+  _i3.Future<List<_i4.Journey>> getCachedActiveJourneys() =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #getCachedActiveJourneys,
+          [],
+        ),
+        returnValue: _i3.Future<List<_i4.Journey>>.value(<_i4.Journey>[]),
+      ) as _i3.Future<List<_i4.Journey>>);
+
+  @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> joinJourneyByCode(
           String? inviteCode) =>
       (super.noSuchMethod(

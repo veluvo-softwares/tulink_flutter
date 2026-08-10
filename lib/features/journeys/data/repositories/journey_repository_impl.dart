@@ -84,6 +84,16 @@ class JourneyRepositoryImpl implements JourneyRepository {
     }
   }
 
+  /// Active journeys already on disk, for painting before the network answers.
+  ///
+  /// Failures flatten to an empty list: the caller wants something to show,
+  /// and "nothing cached" and "cache unreadable" lead to the same screen.
+  @override
+  Future<List<Journey>> getCachedActiveJourneys() async {
+    final cached = await _cachedActiveJourneysResult();
+    return cached.data ?? const [];
+  }
+
   @override
   Future<Result<List<Journey>>> getActiveJourneys() async {
     if (connectivityService?.isOnline.value == false) {
