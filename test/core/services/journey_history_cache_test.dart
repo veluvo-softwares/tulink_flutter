@@ -115,4 +115,35 @@ void main() {
   test('reading before anything is cached returns empty, not an error', () {
     expect(storage.loadJourneyHistory('nobody'), isEmpty);
   });
+
+  group('route retention', () {
+    test('deleting a route leaves other journeys untouched', () async {
+      await storage.routes.put(storage.routeKey('user-1', 'journey-a'), {
+        'schemaVersion': 1,
+        'route': {'coordinates': []},
+      });
+      await storage.routes.put(storage.routeKey('user-1', 'journey-b'), {
+        'schemaVersion': 1,
+        'route': {'coordinates': []},
+      });
+
+      await storage.deleteRoute('user-1', 'journey-a');
+
+      expect(storage.routes.get(storage.routeKey('user-1', 'journey-a')),
+          isNull);
+      expect(storage.routes.get(storage.routeKey('user-1', 'journey-b')),
+          isNotNull);
+    });
+
+    test('deleting a route another user holds is not possible by id', () async {
+      await storage.routes.put(storage.routeKey('user-2', 'journey-a'), {
+        'schemaVersion': 1,
+      });
+
+      await storage.deleteRoute('user-1', 'journey-a');
+
+      expect(storage.routes.get(storage.routeKey('user-2', 'journey-a')),
+          isNotNull);
+    });
+  });
 }

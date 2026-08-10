@@ -352,6 +352,12 @@ class JourneyRepositoryImpl implements JourneyRepository {
     final userId = await resolveUserId();
     if (userId != null) {
       await storage.deleteSession(userId, journeyId);
+      // The stored route goes with it. This runs on the three terminal
+      // transitions — end, cancel, leave — after which the journey can never
+      // be navigated again, so its polyline is the largest thing on disk with
+      // nothing left to do. Without this they accumulate for the life of the
+      // install.
+      await storage.deleteRoute(userId, journeyId);
     }
   }
 }

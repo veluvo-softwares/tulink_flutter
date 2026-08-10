@@ -102,6 +102,15 @@ class OfflineStorageService {
   Future<void> deleteSession(String userId, String journeyId) =>
       _sessions.delete(sessionKey(userId, journeyId));
 
+  /// Drop a journey's stored route.
+  ///
+  /// Polylines are by far the largest per-journey artefact — hundreds to
+  /// thousands of coordinate pairs each — and exist solely so navigation can
+  /// resume. Once a journey has ended it will never be navigated again, so the
+  /// route is dead weight from that moment on.
+  Future<void> deleteRoute(String userId, String journeyId) =>
+      _routes.delete(routeKey(userId, journeyId));
+
   String journeyHistoryKey(String userId) =>
       '${StorageKeys.journeyHistoryPrefix}$userId';
 
