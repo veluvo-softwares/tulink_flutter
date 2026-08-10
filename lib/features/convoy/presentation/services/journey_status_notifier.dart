@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:live_activities/live_activities.dart';
 
@@ -149,16 +150,12 @@ class JourneyStatusNotifier {
     }
     if (!await _liveActivities.areActivitiesEnabled()) return;
 
-    final visible = entries.take(_maxLiveActivityMembers).toList();
-    final data = <String, dynamic>{
-      'title': title,
-      'subtitle': progress != null
-          ? formatEta(progress.durationRemainingSeconds)
-          : '${entries.length + 1} in convoy',
-      'extraMembers': entries.length - visible.length,
-      for (var i = 0; i < visible.length; i++)
-        'member$i': _encodeMemberRow(visible[i], presentation),
-    };
+    final data = buildLiveActivityData(
+      title: title,
+      entries: entries,
+      presentation: presentation,
+      progress: progress,
+    );
 
     final existing = _activityId;
     if (existing == null) {
@@ -170,6 +167,37 @@ class JourneyStatusNotifier {
     } else {
       await _liveActivities.updateActivity(existing, data);
     }
+  }
+
+  /// The app-group payload the TulinkJourneyWidget extension renders.
+  ///
+  /// Every member slot is written, including the empty ones. The widget reads
+  /// these keys from app-group UserDefaults, which outlive any single
+  /// activity: a slot left unwritten keeps whatever the previous journey put
+  /// there, which is how a solo journey came to show a member — and their
+  /// distance — inherited from an earlier convoy. An empty value decodes to no
+  /// row on the Swift side, so blanking is enough to clear one.
+  @visibleForTesting
+  Map<String, dynamic> buildLiveActivityData({
+    required String title,
+    required List<MemberStatusEntry> entries,
+    required Map<String, ConvoyMemberPresentation> presentation,
+    RouteProgress? progress,
+  }) {
+    final visible = entries.take(_maxLiveActivityMembers).toList();
+    return <String, dynamic>{
+      'title': title,
+      'subtitle': progress != null
+          ? formatEta(progress.durationRemainingSeconds)
+          : entries.isEmpty
+          ? 'Solo journey'
+          : '${entries.length + 1} in convoy',
+      'extraMembers': entries.length - visible.length,
+      for (var i = 0; i < _maxLiveActivityMembers; i++)
+        'member$i': i < visible.length
+            ? _encodeMemberRow(visible[i], presentation)
+            : '',
+    };
   }
 
   /// "INITIALS|Name — 2.1 km|#RRGGBB|arrivedFlag" — the pipe-separated row
