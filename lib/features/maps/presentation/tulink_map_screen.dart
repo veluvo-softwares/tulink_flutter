@@ -1949,6 +1949,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
                   currentUserId: currentUserId,
                   isLeader: isLeader,
                   routeProgress: navigation.currentProgress,
+                  lastKnownProgress: navigation.lastKnownProgress,
                   onEndJourney: _showEndJourneyConfirmation,
                   onLeaveJourney: _showLeaveJourneyConfirmation,
                   isActionInProgress: _isJourneyExitInProgress,
