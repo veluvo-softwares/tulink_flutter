@@ -94,6 +94,7 @@ class ServiceLocator {
   late AnalyticsRemoteDataSource _analyticsRemoteDataSource;
   late AnalyticsRepository _analyticsRepository;
   late GetJourneyHistoryUseCase _getJourneyHistoryUseCase;
+  late GetCachedJourneyHistoryUseCase _getCachedJourneyHistoryUseCase;
   late GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
   late GetJourneySummaryUseCase _getJourneySummaryUseCase;
   late AnalyticsProvider _analyticsProvider;
@@ -236,6 +237,9 @@ class ServiceLocator {
     );
     _analyticsRepository = AnalyticsRepositoryImpl(
       remoteDataSource: _analyticsRemoteDataSource,
+      offlineStorage: _offlineStorageService,
+      currentUserId: () async =>
+          (await _authLocalDataSource.getCachedUser())?.id,
     );
     _convoyRepository = ConvoyRepositoryImpl(
       remoteDataSource: _convoyRemoteDataSource,
@@ -254,6 +258,9 @@ class ServiceLocator {
       _analyticsRepository,
     );
     _getJourneySummaryUseCase = GetJourneySummaryUseCase(_analyticsRepository);
+    _getCachedJourneyHistoryUseCase = GetCachedJourneyHistoryUseCase(
+      _analyticsRepository,
+    );
     _streamConvoyPositions = StreamConvoyPositions(_convoyRepository);
     _publishMyPosition = PublishMyPosition(_convoyRepository);
     _fetchLatestSnapshot = FetchLatestSnapshot(_convoyRepository);
@@ -287,11 +294,15 @@ class ServiceLocator {
       switchActiveJourneyUseCase: SwitchActiveJourney(_journeyRepository),
       cancelJourneyUseCase: CancelJourney(_journeyRepository),
       leaveJourneyUseCase: LeaveJourney(_journeyRepository),
+      getCachedActiveJourneysUseCase: GetCachedActiveJourneys(
+        _journeyRepository,
+      ),
     );
     _analyticsProvider = AnalyticsProvider(
       _getJourneyHistoryUseCase,
       _getJourneyAnalyticsUseCase,
       _getJourneySummaryUseCase,
+      _getCachedJourneyHistoryUseCase,
     );
     _convoyProvider = ConvoyProvider(
       streamConvoyPositions: _streamConvoyPositions,

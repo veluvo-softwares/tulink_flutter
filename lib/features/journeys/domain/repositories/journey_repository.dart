@@ -16,6 +16,14 @@ abstract class JourneyRepository {
 
   Future<Result<List<Journey>>> getActiveJourneys();
 
+  /// Active journeys already held on this device.
+  ///
+  /// Separate from [getActiveJourneys] because a Future resolves once and so
+  /// cannot both paint immediately and reconcile afterwards. Returns an empty
+  /// list rather than a failure when nothing is cached — having no journey is
+  /// an ordinary state, not an error.
+  Future<List<Journey>> getCachedActiveJourneys();
+
   Future<Result<Journey>> joinJourneyByCode(String inviteCode);
 
   Future<Result<Journey>> startJourney(String journeyId);

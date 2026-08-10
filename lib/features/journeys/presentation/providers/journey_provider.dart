@@ -16,6 +16,10 @@ class JourneyProvider extends ChangeNotifier {
   final CancelJourney cancelJourneyUseCase;
   final LeaveJourney leaveJourneyUseCase;
 
+  /// Optional so existing construction sites keep working; without it the
+  /// provider simply has nothing to paint before the network answers.
+  final GetCachedActiveJourneys? getCachedActiveJourneysUseCase;
+
   JourneyProvider({
     required this.createJourneyUseCase,
     required this.getJourneyByIdUseCase,
@@ -27,6 +31,7 @@ class JourneyProvider extends ChangeNotifier {
     required this.switchActiveJourneyUseCase,
     required this.cancelJourneyUseCase,
     required this.leaveJourneyUseCase,
+    this.getCachedActiveJourneysUseCase,
   });
 
   bool _isLoading = false;
@@ -100,6 +105,11 @@ class JourneyProvider extends ChangeNotifier {
     _setLoading(true);
     _setError(null);
 
+    // Paint what the device already knows before waiting on the network, so a
+    // returning driver is not shown "no active journeys" for the second or two
+    // it takes the request to answer.
+    await _hydrateActiveJourneysFromCache();
+
     final result = await getActiveJourneysUseCase();
 
     if (result.isSuccess && result.data != null) {
@@ -128,6 +138,29 @@ class JourneyProvider extends ChangeNotifier {
     }
 
     _setLoading(false);
+  }
+
+  /// Seed the active list from disk and paint.
+  ///
+  /// Deliberately does not run the reconciliation that follows a real fetch.
+  /// That logic clears [_currentJourney] when the server stops listing it,
+  /// which is only meaningful against a server-authoritative answer — applying
+  /// it to cached data would let a stale cache retire a live journey.
+  Future<void> _hydrateActiveJourneysFromCache() async {
+    final useCase = getCachedActiveJourneysUseCase;
+    if (useCase == null || _activeJourneys.isNotEmpty) return;
+
+    try {
+      final cached = await useCase();
+      if (cached.isEmpty) return;
+
+      _activeJourneys = cached;
+      _currentJourney ??= cached.first;
+      notifyListeners();
+    } catch (e) {
+      // Cache trouble must never block the live fetch.
+      print('⚠️ Could not read cached active journeys: $e');
+    }
   }
 
   Future<void> fetchJourneyById(String journeyId) async {

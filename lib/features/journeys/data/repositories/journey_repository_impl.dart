@@ -84,6 +84,16 @@ class JourneyRepositoryImpl implements JourneyRepository {
     }
   }
 
+  /// Active journeys already on disk, for painting before the network answers.
+  ///
+  /// Failures flatten to an empty list: the caller wants something to show,
+  /// and "nothing cached" and "cache unreadable" lead to the same screen.
+  @override
+  Future<List<Journey>> getCachedActiveJourneys() async {
+    final cached = await _cachedActiveJourneysResult();
+    return cached.data ?? const [];
+  }
+
   @override
   Future<Result<List<Journey>>> getActiveJourneys() async {
     if (connectivityService?.isOnline.value == false) {
@@ -342,6 +352,12 @@ class JourneyRepositoryImpl implements JourneyRepository {
     final userId = await resolveUserId();
     if (userId != null) {
       await storage.deleteSession(userId, journeyId);
+      // The stored route goes with it. This runs on the three terminal
+      // transitions — end, cancel, leave — after which the journey can never
+      // be navigated again, so its polyline is the largest thing on disk with
+      // nothing left to do. Without this they accumulate for the life of the
+      // install.
+      await storage.deleteRoute(userId, journeyId);
     }
   }
 }

@@ -18,6 +18,7 @@ class StorageKeys {
   static const String offlineRoutesBox = 'offline_routes_v1';
   static const String offlineSessionsBox = 'offline_sessions_v1';
   static const String offlineTileMetadataBox = 'offline_tile_metadata_v1';
+  static const String journeyHistoryBox = 'journey_history_v1';
   static const String locationOutboxBox = 'location_outbox_v1';
   static const String offlineStorageCipherKey = 'offline_storage_cipher_key_v1';
 
@@ -34,6 +35,7 @@ class StorageKeys {
   static const String notificationsPrefix = 'notifications_';
   static const String offlineRoutePrefix = 'offline_route_';
   static const String offlineSessionPrefix = 'offline_session_';
+  static const String journeyHistoryPrefix = 'journey_history_';
   static const String offlineTilePrefix = 'offline_tile_';
 
   // Helper methods to generate dynamic keys

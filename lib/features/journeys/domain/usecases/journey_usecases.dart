@@ -48,6 +48,16 @@ class GetActiveJourneys {
   }
 }
 
+/// Active journeys already on this device, for painting the home screen
+/// before the network answers.
+class GetCachedActiveJourneys {
+  final JourneyRepository repository;
+
+  GetCachedActiveJourneys(this.repository);
+
+  Future<List<Journey>> call() => repository.getCachedActiveJourneys();
+}
+
 class JoinJourneyByCode {
   final JourneyRepository repository;
 

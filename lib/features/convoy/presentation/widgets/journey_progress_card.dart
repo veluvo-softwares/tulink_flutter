@@ -5,6 +5,7 @@ import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../journeys/domain/entities/journey.dart';
 import '../../../../core/theme/tulink_colors.dart';
+import '../../../maps/domain/entities/last_known_progress.dart';
 import '../../../maps/domain/entities/route_progress.dart';
 import '../utils/convoy_member_presentation.dart';
 
@@ -20,6 +21,7 @@ class JourneyProgressCard extends StatelessWidget {
     this.onEndJourney,
     this.onLeaveJourney,
     this.routeProgress,
+    this.lastKnownProgress,
     this.isActionInProgress = false,
     this.isExpanded = false,
     this.onToggleExpanded,
@@ -32,6 +34,11 @@ class JourneyProgressCard extends StatelessWidget {
   final VoidCallback? onEndJourney;
   final VoidCallback? onLeaveJourney;
   final RouteProgress? routeProgress;
+
+  /// Figures recovered from disk, shown while [routeProgress] is still null so
+  /// a resumed journey reads its real distance and ETA instead of placeholders.
+  final LastKnownProgress? lastKnownProgress;
+
   final bool isActionInProgress;
 
   /// When false the card renders as a compact pill to keep the map visible.
@@ -181,35 +188,62 @@ class JourneyProgressCard extends StatelessWidget {
     );
   }
 
-  /// Build distance and ETA stats
+  /// Build distance and ETA stats.
+  ///
+  /// Prefers live progress, falls back to the snapshot restored from disk, and
+  /// only shows placeholders when neither exists. A restored snapshot older
+  /// than [LastKnownProgress.freshFor] is dimmed and labelled with its age —
+  /// the beacon writes every few seconds, so anything newer is effectively
+  /// live and flagging it would be noise on every resume.
   Widget _buildStats(TulinkColors colors) {
-    final distance = _calculateDistance();
-    final eta = _calculateETA();
+    final restored = routeProgress == null ? lastKnownProgress : null;
     final hasRouteProgress = routeProgress != null;
+    final hasFigures = hasRouteProgress || restored != null;
+
+    final distance = hasRouteProgress
+        ? _calculateDistance()
+        : (restored?.distanceRemainingMetres ?? 0) / 1000;
+    final eta = hasRouteProgress
+        ? _calculateETA()
+        : (restored?.durationRemainingSeconds ?? 0) / 60;
+
+    final isStale = restored?.isStaleAt(DateTime.now()) ?? false;
+    final figureColor = isStale ? colors.silver : colors.white;
 
     return Row(
       children: [
         Icon(Icons.location_on, color: colors.electricRed, size: 16),
         const SizedBox(width: 4),
         Text(
-          hasRouteProgress ? '${distance.toStringAsFixed(1)} km' : '-- km',
+          hasFigures ? '${distance.toStringAsFixed(1)} km' : '-- km',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: colors.white,
+            color: figureColor,
           ),
         ),
         const SizedBox(width: 16),
         Icon(Icons.access_time, color: colors.silver, size: 16),
         const SizedBox(width: 4),
         Text(
-          hasRouteProgress ? '${eta.ceil()} min ETA' : 'Calculating ETA',
+          hasFigures ? '${eta.ceil()} min ETA' : 'Calculating ETA',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: colors.white,
+            color: figureColor,
           ),
         ),
+        if (isStale && restored != null) ...[
+          const SizedBox(width: 6),
+          Text(
+            _ageLabel(restored.ageAt(DateTime.now())),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: colors.silver,
+            ),
+          ),
+        ],
         const Spacer(),
         _buildProgressBadge(colors),
       ],
@@ -473,6 +507,14 @@ class JourneyProgressCard extends StatelessWidget {
   }
 
   /// Calculate distance to destination
+  /// Short age for a stale snapshot, e.g. "2 min ago".
+  static String _ageLabel(Duration age) {
+    if (age.inMinutes < 1) return '${age.inSeconds} sec ago';
+    if (age.inMinutes < 60) return '${age.inMinutes} min ago';
+    final hours = age.inHours;
+    return '$hours hr${hours == 1 ? '' : 's'} ago';
+  }
+
   double _calculateDistance() {
     if (routeProgress != null) {
       return routeProgress!.distanceRemainingMetres / 1000;

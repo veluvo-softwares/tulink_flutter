@@ -24,6 +24,27 @@ class MapRepositoryImpl implements MapRepository {
     required this.connectivityService,
   });
 
+  /// The route already stored for this journey, if one matches the
+  /// destination.
+  ///
+  /// Separate from [getRoute] because a Future resolves once and so cannot
+  /// both draw immediately and refresh afterwards. Callers draw this while the
+  /// live route is fetched. Returns null when nothing usable is stored — the
+  /// same shape as [getRoute], so a caller can fall through without special
+  /// casing.
+  @override
+  Future<RouteResultModel?> getCachedRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  }) => localDataSource.loadRoute(
+    userId: userId,
+    journeyId: journeyId,
+    destinationLat: destinationLat,
+    destinationLng: destinationLng,
+  );
+
   @override
   Future<RouteResultModel?> getRoute({
     required String userId,

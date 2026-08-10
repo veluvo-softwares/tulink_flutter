@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
+import 'package:tulink_flutter/core/common/result.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/repositories/journey_repository.dart';
 import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
@@ -36,7 +39,11 @@ void main() {
       switchActiveJourneyUseCase: SwitchActiveJourney(repository),
       cancelJourneyUseCase: CancelJourney(repository),
       leaveJourneyUseCase: LeaveJourney(repository),
+      getCachedActiveJourneysUseCase: GetCachedActiveJourneys(repository),
     );
+    // Default: nothing cached, so tests that do not care about hydration
+    // behave exactly as they did before.
+    when(repository.getCachedActiveJourneys()).thenAnswer((_) async => const []);
   });
 
   test(
@@ -52,6 +59,73 @@ void main() {
       expect(provider.activeJourneys, [pendingJourney]);
     },
   );
+
+  group('painting from cache before the network answers', () {
+    test('cached journeys are shown without waiting for the fetch', () async {
+      when(
+        repository.getCachedActiveJourneys(),
+      ).thenAnswer((_) async => [pendingJourney]);
+      // A fetch that never resolves stands in for a slow cold start.
+      when(
+        repository.getActiveJourneys(),
+      ).thenAnswer((_) => Completer<Result<List<Journey>>>().future);
+
+      unawaited(provider.fetchActiveJourneys());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.activeJourneys, [pendingJourney]);
+      expect(provider.currentJourney, pendingJourney);
+    });
+
+    test('the server answer replaces what the cache painted', () async {
+      const serverJourney = Journey(
+        id: 'journey-from-server',
+        name: 'Server convoy',
+        leaderId: 'leader-1',
+        status: JourneyStatus.ACTIVE,
+        destination: LatLng(latitude: -1.28, longitude: 36.82),
+        destinationAddress: 'Nairobi',
+        lagThresholdMeters: 500,
+      );
+      when(
+        repository.getCachedActiveJourneys(),
+      ).thenAnswer((_) async => [pendingJourney]);
+      when(
+        repository.getActiveJourneys(),
+      ).thenAnswer((_) async => (data: [serverJourney], failure: null));
+
+      await provider.fetchActiveJourneys();
+
+      expect(provider.activeJourneys, [serverJourney]);
+    });
+
+    test('a stale cache cannot retire a live journey', () async {
+      // Reconciliation clears currentJourney when the server stops listing it.
+      // That is only meaningful against a server-authoritative answer — running
+      // it over cached data would let an out-of-date cache cancel a journey
+      // that is actually still running.
+      when(
+        repository.getCachedActiveJourneys(),
+      ).thenAnswer((_) async => const []);
+      when(
+        repository.getActiveJourneys(),
+      ).thenAnswer((_) async => (data: [pendingJourney], failure: null));
+
+      await provider.fetchActiveJourneys();
+      expect(provider.currentJourney, pendingJourney);
+
+      // A second pass whose cache is empty must leave the journey alone until
+      // the server itself says otherwise.
+      when(
+        repository.getActiveJourneys(),
+      ).thenAnswer((_) => Completer<Result<List<Journey>>>().future);
+
+      unawaited(provider.fetchActiveJourneys());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.currentJourney, pendingJourney);
+    });
+  });
 
   test(
     'joining with a code promotes the journey into local open state',

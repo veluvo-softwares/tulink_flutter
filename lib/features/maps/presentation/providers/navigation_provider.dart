@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 
 import '../../data/models/route_result_model.dart';
+import '../../domain/entities/last_known_progress.dart';
 import '../../domain/entities/maneuver.dart';
 import '../../domain/entities/route_progress.dart';
 import '../services/maneuver_tracker_service.dart';
@@ -43,6 +44,7 @@ class NavigationProvider with ChangeNotifier {
   bool _offlineReroutePending = false;
   String? _journeyId;
   int? _restoredSegmentIndex;
+  LastKnownProgress? _lastKnownProgress;
   DateTime? _lastProgressPersistedAt;
 
   NavigationProvider({
@@ -97,6 +99,12 @@ class NavigationProvider with ChangeNotifier {
 
   /// Latest progress snapshot. Null until the first GPS reading arrives.
   RouteProgress? get currentProgress => _currentProgress;
+
+  /// Progress recovered from disk, for the window between opening a journey
+  /// and the first live fix. Cleared once [currentProgress] takes over, so a
+  /// caller preferring live data can simply fall back to this when null.
+  LastKnownProgress? get lastKnownProgress =>
+      _currentProgress != null ? null : _lastKnownProgress;
 
   /// Whether navigation is currently active.
   bool get isNavigating => _positionSubscription != null;
@@ -178,6 +186,7 @@ class NavigationProvider with ChangeNotifier {
     _offlineReroutePending = false;
     _journeyId = null;
     _restoredSegmentIndex = null;
+    _lastKnownProgress = null;
     _lastProgressPersistedAt = null;
 
     notifyListeners();
@@ -285,6 +294,13 @@ class NavigationProvider with ChangeNotifier {
       session?['navigationProgress'],
     );
     _restoredSegmentIndex = (progress?['currentSegmentIndex'] as num?)?.toInt();
+
+    // _persistProgress writes distance, duration and the snapped position
+    // alongside the cursor. Reading only the cursor meant the driver stared at
+    // "-- km / Calculating ETA" until a GPS fix and a fresh route arrived,
+    // while a few-seconds-old answer sat unread on disk.
+    _lastKnownProgress = LastKnownProgress.fromStorage(progress);
+    if (_lastKnownProgress != null) notifyListeners();
   }
 
   Future<void> _persistProgress() async {
