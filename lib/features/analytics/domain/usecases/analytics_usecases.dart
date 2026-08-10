@@ -15,6 +15,16 @@ class GetJourneyHistoryUseCase {
   }
 }
 
+/// Finished journeys already on this device, for painting the history list
+/// before the network answers.
+class GetCachedJourneyHistoryUseCase {
+  final AnalyticsRepository repository;
+
+  GetCachedJourneyHistoryUseCase(this.repository);
+
+  Future<List<Journey>> call() => repository.getCachedJourneyHistory();
+}
+
 class GetJourneyAnalyticsUseCase {
   final AnalyticsRepository repository;
 

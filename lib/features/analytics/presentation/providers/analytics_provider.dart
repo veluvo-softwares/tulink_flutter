@@ -9,11 +9,16 @@ class AnalyticsProvider extends ChangeNotifier {
   final GetJourneyAnalyticsUseCase _getJourneyAnalyticsUseCase;
   final GetJourneySummaryUseCase _getJourneySummaryUseCase;
 
+  /// Optional so existing construction sites keep working; without it the
+  /// provider simply has nothing to paint before the network answers.
+  final GetCachedJourneyHistoryUseCase? _getCachedJourneyHistoryUseCase;
+
   AnalyticsProvider(
     this._getJourneyHistoryUseCase,
     this._getJourneyAnalyticsUseCase,
-    this._getJourneySummaryUseCase,
-  );
+    this._getJourneySummaryUseCase, [
+    this._getCachedJourneyHistoryUseCase,
+  ]);
 
   // State
   List<Journey> _recentJourneys = [];
@@ -125,6 +130,14 @@ class AnalyticsProvider extends ChangeNotifier {
     _setLoading(true);
     _clearError();
 
+    // Paint what the device already knows before waiting on the network.
+    // A finished journey never changes, so cached history is not "stale" in
+    // any way that matters — it is simply the past. Without this the list
+    // renders its empty state on every cold start and only fills in once the
+    // request returns, which reads as "you have no journeys" to a returning
+    // driver.
+    final hadCache = await _hydrateHistoryFromCache();
+
     try {
       final result = await _getJourneyHistoryUseCase(limit: limit);
 
@@ -139,17 +152,45 @@ class AnalyticsProvider extends ChangeNotifier {
             result.failure?.message ?? 'Failed to load journey history';
         print('❌ Failed to load journey history: $errorMessage');
         _setError(errorMessage);
-        _journeyHistory = [];
-        _recentJourneys = []; // Clear recent journeys too
+        // Keep whatever was hydrated: the fetch failing says nothing about
+        // whether those journeys happened. Blanking the list here would turn
+        // a dropped request into "your history is gone".
+        if (!hadCache) {
+          _journeyHistory = [];
+          _recentJourneys = [];
+        }
       }
     } catch (e) {
       print('❌ Exception loading journey history: $e');
       _setError('Failed to load journey history: $e');
-      _journeyHistory = [];
-      _recentJourneys = []; // Clear recent journeys too
+      if (!hadCache) {
+        _journeyHistory = [];
+        _recentJourneys = [];
+      }
     }
 
     _setLoading(false);
+  }
+
+  /// Fill the list from disk and paint. Returns whether anything was found.
+  Future<bool> _hydrateHistoryFromCache() async {
+    final useCase = _getCachedJourneyHistoryUseCase;
+    if (useCase == null || _journeyHistory.isNotEmpty) return false;
+
+    try {
+      final cached = await useCase();
+      if (cached.isEmpty) return false;
+
+      _journeyHistory = cached;
+      _deriveRecentJourneysFromHistory(4);
+      print('💾 Painted ${cached.length} journeys from cache');
+      notifyListeners();
+      return true;
+    } catch (e) {
+      // Cache trouble must never block the live fetch.
+      print('⚠️ Could not read cached journey history: $e');
+      return false;
+    }
   }
 
   /// Get journey analytics by ID

@@ -27,11 +27,22 @@ class OfflineStorageService {
   late Box<dynamic> _sessions;
   late Box<dynamic> _outbox;
   late Box<dynamic> _tileMetadata;
+  late Box<dynamic> _journeyHistory;
 
   Box<dynamic> get routes => _routes;
   Box<dynamic> get sessions => _sessions;
   Box<dynamic> get outbox => _outbox;
   Box<dynamic> get tileMetadata => _tileMetadata;
+  Box<dynamic> get journeyHistory => _journeyHistory;
+
+  /// How many finished journeys to keep per user.
+  ///
+  /// Bounded by count rather than age on purpose: a daily driver accumulates
+  /// ninety journeys in ninety days while an occasional one has five in a
+  /// year, so a time window bounds storage for neither. At roughly 2KB of
+  /// metadata each this ceiling is about 200KB, and it is far past what the
+  /// home list and "see all" ever scroll to.
+  static const int journeyHistoryRetentionCount = 100;
 
   Future<void> init() async {
     final cipher = HiveAesCipher(await _loadOrCreateCipherKey());
@@ -49,6 +60,10 @@ class OfflineStorageService {
     );
     _tileMetadata = await Hive.openBox<dynamic>(
       StorageKeys.offlineTileMetadataBox,
+      encryptionCipher: cipher,
+    );
+    _journeyHistory = await Hive.openBox<dynamic>(
+      StorageKeys.journeyHistoryBox,
       encryptionCipher: cipher,
     );
   }
@@ -87,6 +102,48 @@ class OfflineStorageService {
   Future<void> deleteSession(String userId, String journeyId) =>
       _sessions.delete(sessionKey(userId, journeyId));
 
+  String journeyHistoryKey(String userId) =>
+      '${StorageKeys.journeyHistoryPrefix}$userId';
+
+  /// Replace a user's cached finished-journey list, trimmed to
+  /// [journeyHistoryRetentionCount].
+  ///
+  /// Trimming happens here rather than on a timer or at startup: this is the
+  /// only moment the list can exceed its bound, so enforcing it here needs no
+  /// scheduling and costs nothing at launch. [journeys] is expected
+  /// newest-first, matching the order the history endpoint returns.
+  Future<void> saveJourneyHistory(
+    String userId,
+    List<Map<String, dynamic>> journeys,
+  ) async {
+    final retained = journeys.length > journeyHistoryRetentionCount
+        ? journeys.sublist(0, journeyHistoryRetentionCount)
+        : journeys;
+    await _journeyHistory.put(journeyHistoryKey(userId), <String, dynamic>{
+      'schemaVersion': 1,
+      'userId': userId,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      'journeys': retained,
+    });
+  }
+
+  /// A user's cached finished journeys, newest-first. Empty when nothing has
+  /// been cached yet or the entry predates this schema.
+  List<Map<String, dynamic>> loadJourneyHistory(String userId) {
+    final value = readMap(_journeyHistory.get(journeyHistoryKey(userId)));
+    if (value == null || value['schemaVersion'] != 1) return const [];
+    if (value['userId'] != userId) return const [];
+    final journeys = value['journeys'];
+    if (journeys is! List) return const [];
+    return journeys
+        .map(readMap)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+  }
+
+  Future<void> deleteJourneyHistory(String userId) =>
+      _journeyHistory.delete(journeyHistoryKey(userId));
+
   static Map<String, dynamic>? readMap(dynamic value) {
     if (value is! Map) return null;
     return value.map((key, value) => MapEntry(key.toString(), value));
@@ -117,6 +174,10 @@ class OfflineStorageService {
           .toList(growable: false);
       await box.deleteAll(keys);
     }
+    // History is keyed per user rather than per journey, so it has no
+    // '<userId>:' segment for the loop above to match. Deleted explicitly so
+    // signing out cannot leave one person's journeys readable to the next.
+    await deleteJourneyHistory(userId);
   }
 
   Future<void> close() async {
@@ -125,6 +186,7 @@ class OfflineStorageService {
       _sessions.close(),
       _outbox.close(),
       _tileMetadata.close(),
+      _journeyHistory.close(),
     ]);
   }
 }
