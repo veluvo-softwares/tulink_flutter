@@ -34,6 +34,17 @@ class MapProvider with ChangeNotifier {
     _isFetchingRoute = true;
     notifyListeners();
 
+    // Draw the stored route first so a resumed journey has a line on the map
+    // straight away. Routes are keyed by journey and validated against the
+    // destination, so a hit is the same road the driver was already following;
+    // the live fetch below still replaces it once it returns.
+    await _drawCachedRoute(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+    );
+
     try {
       final result = await _repository.getRoute(
         userId: userId,
@@ -54,6 +65,34 @@ class MapProvider with ChangeNotifier {
     } finally {
       _isFetchingRoute = false;
       notifyListeners();
+    }
+  }
+
+  /// Show the stored route for this journey, if one is held and nothing is
+  /// already drawn for it.
+  Future<void> _drawCachedRoute({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+  }) async {
+    if (_currentRouteJourneyId == journeyId && _currentRoute != null) return;
+
+    try {
+      final cached = await _repository.getCachedRoute(
+        userId: userId,
+        journeyId: journeyId,
+        destinationLat: destLat,
+        destinationLng: destLng,
+      );
+      if (cached == null) return;
+
+      _currentRoute = cached;
+      _currentRouteJourneyId = journeyId;
+      notifyListeners();
+    } catch (e) {
+      // Cache trouble must never block the live fetch.
+      print('⚠️ Could not read cached route: $e');
     }
   }
 

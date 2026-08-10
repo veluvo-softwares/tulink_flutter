@@ -20,4 +20,19 @@ abstract class MapRepository {
     required double destinationLat,
     required double destinationLng,
   });
+
+  /// The route already stored for this journey, if one matches the
+  /// destination.
+  ///
+  /// Separate from [getRoute] because a Future resolves once and so cannot
+  /// both draw immediately and refresh afterwards. Takes no origin: a stored
+  /// route is keyed by journey and validated against its destination, and the
+  /// caller may not have a GPS fix yet — which is precisely the moment this
+  /// is worth reading.
+  Future<RouteResultModel?> getCachedRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  });
 }
