@@ -21,14 +21,12 @@ class StatusIndicator extends StatelessWidget {
     final colors = Theme.of(context).tulinkColors;
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: _getStatusColor(status, colors).withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: _getStatusColor(status, colors),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _getStatusColor(status, colors), width: 1),
       ),
       child: Text(
         _getStatusText(status),
@@ -44,13 +42,13 @@ class StatusIndicator extends StatelessWidget {
   Color _getStatusColor(JourneyStatus status, TulinkColors colors) {
     switch (status) {
       case JourneyStatus.PENDING:
-        return colors.electricRed;
+        return colors.sunsetOrange;
       case JourneyStatus.ACTIVE:
         return Colors.green;
       case JourneyStatus.PAUSED:
         return Colors.orange;
       case JourneyStatus.COMPLETED:
-        return colors.silver;
+        return colors.muted;
       case JourneyStatus.CANCELLED:
         return Colors.red;
     }

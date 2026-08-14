@@ -45,12 +45,15 @@ Future<bool> ensureLocationReady(BuildContext context) async {
     permission = await LocationPermissionService.requestPermissionGuarded();
   }
 
-  final granted = permission == LocationPermission.whileInUse ||
+  final granted =
+      permission == LocationPermission.whileInUse ||
       permission == LocationPermission.always;
   if (!granted) {
     if (context.mounted) {
       await showLocationRequiredSheet(
-          context, LocationBlockReason.permissionDenied);
+        context,
+        LocationBlockReason.permissionDenied,
+      );
     }
     return false;
   }
@@ -77,7 +80,8 @@ Future<void> maybeShowLocationPriming(BuildContext context) async {
 
   final proceed = await showModalBottomSheet<bool>(
     context: context,
-    backgroundColor: colors.cardDark,
+    backgroundColor: colors.surface,
+    showDragHandle: true,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -85,7 +89,8 @@ Future<void> maybeShowLocationPriming(BuildContext context) async {
     builder: (sheetContext) => _LocationSheet(
       icon: Icons.my_location_rounded,
       title: 'Share your location with your convoy',
-      body: 'Tu-Link uses your location to place you on the map, keep your '
+      body:
+          'Tulink uses your location to place you on the map, keep your '
           'convoy in sync, and guide you turn-by-turn. You can change this '
           'anytime in settings.',
       steps: 'Next, allow location — choose “While using the app”.',
@@ -113,7 +118,8 @@ Future<void> showLocationRequiredSheet(
 
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: colors.cardDark,
+    backgroundColor: colors.surface,
+    showDragHandle: true,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -123,13 +129,13 @@ Future<void> showLocationRequiredSheet(
           ? Icons.location_off_rounded
           : Icons.my_location_rounded,
       title: servicesOff
-          ? 'Turn on location to drive with Tu-Link'
-          : 'Tu-Link needs your location',
+          ? 'Turn on location to drive with Tulink'
+          : 'Tulink needs your location',
       body: servicesOff
-          ? 'Your device location is off. Tu-Link uses your location to place '
-              'you on the map and keep your convoy in sync.'
+          ? 'Your device location is off. Tulink uses your location to place '
+                'you on the map and keep your convoy in sync.'
           : 'Allow location access so your convoy can see you and you get '
-              'turn-by-turn guidance.',
+                'turn-by-turn guidance.',
       steps: servicesOff
           ? 'Open settings, then turn on Location.'
           : 'Open settings, then allow Location — choose “While using the app”.',
@@ -177,36 +183,25 @@ class _LocationSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 24),
-                decoration: BoxDecoration(
-                  color: colors.silver.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: colors.electricRed.withValues(alpha: 0.15),
+                color: colors.routeTeal.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: colors.electricRed, size: 32),
+              child: Icon(icon, color: colors.routeTeal, size: 32),
             ),
             const SizedBox(height: 20),
             Text(
               title,
               style: TextStyle(
-                color: colors.white,
+                color: colors.ink,
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
               ),
@@ -214,21 +209,17 @@ class _LocationSheet extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               body,
-              style: TextStyle(
-                color: colors.silver,
-                fontSize: 14,
-                height: 1.4,
-              ),
+              style: TextStyle(color: colors.muted, fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 14),
             Row(
               children: [
-                Icon(Icons.settings_outlined, size: 16, color: colors.silver),
+                Icon(Icons.settings_outlined, size: 16, color: colors.muted),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     steps,
-                    style: TextStyle(color: colors.silver, fontSize: 13),
+                    style: TextStyle(color: colors.muted, fontSize: 13),
                   ),
                 ),
               ],
@@ -238,10 +229,8 @@ class _LocationSheet extends StatelessWidget {
               height: 52,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: colors.electricRed,
-                  foregroundColor: colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 onPressed: onPrimary,
@@ -262,7 +251,7 @@ class _LocationSheet extends StatelessWidget {
                 child: Text(
                   secondaryLabel,
                   style: TextStyle(
-                    color: colors.silver,
+                    color: colors.deepTeal,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
