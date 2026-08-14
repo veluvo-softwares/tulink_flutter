@@ -23,6 +23,50 @@ Major flows successfully completed:
 - Profile display, scrolling, View Journeys, sign-out cancellation, and map-state return.
 - Location-denied Start Journey gate without creating server data.
 
+## Remediation Update — 2026-08-14
+
+The redesign was checkpointed in `7ba1bdb`, then the audit findings were
+addressed in isolated remediation commits. The following findings are resolved
+in source and covered by static/unit/build verification:
+
+- `TUL-E2E-001`: Journey History, Journey Details, shared journey cards, and
+  status presentation now use the warm semantic theme with readable app bars.
+- `TUL-E2E-002`: authentication loading no longer replaces the login subtree;
+  failed login retains both fields and displays a durable inline error. A
+  focused widget regression test covers the in-flight and failed states.
+- `TUL-E2E-003`: login, registration, password recovery, and email verification
+  now use the Tulink brand mark, Manrope hierarchy, semantic surfaces, and
+  labelled password/sign-out controls.
+- `TUL-E2E-004`: unsupported Edit, Notifications, Privacy, Linked Accounts, and
+  Help rows were removed. Profile now advertises only working actions.
+- `TUL-E2E-005`: voice navigation is restored from local storage before the app
+  renders and persisted on change. A focused provider test covers restore/save.
+- `TUL-E2E-006`: location sheets use the light theme, current Tulink naming,
+  semantic actions, and a single framework drag handle.
+- `TUL-E2E-007`: reachable live-map and convoy overlays now use the semantic
+  light palette and inherit Manrope. A misleading hard-coded marathon header
+  and its non-functional settings control were removed.
+- `TUL-E2E-008`: partially remediated in the touched flows through labelled icon
+  controls, semantic journey rows, and grouped settings; a dedicated full-app
+  screen-reader audit is still recommended.
+- `TUL-E2E-011`: the auth gate now switches only during one-time initialization,
+  so resend/sign-out loading cannot dispose and recreate the verification UI.
+  A simulator rerun is still recommended for the original timing anomaly.
+
+Verification after remediation:
+
+- `flutter test`: 177 passed, 14 explicitly skipped native/live integration
+  cases, 0 failed.
+- `flutter build ios --simulator --debug --no-codesign`: succeeded.
+- Focused `dart analyze` runs: no compile errors; repository-wide pre-existing
+  lint/documentation debt remains as described in `TUL-E2E-009`.
+
+The overall release verdict remains **BLOCKED** until the environment supplies
+a verified disposable second account or inbox/verification-link capture. The
+invitation, valid join-code, two-user live journey, reconnect, leave/end, push
+routing, and network-interruption scenarios below have not been converted from
+Blocked to Pass by source changes alone.
+
 Flows blocked by environment or test-account constraints:
 
 - Email verification completion for disposable User B.
