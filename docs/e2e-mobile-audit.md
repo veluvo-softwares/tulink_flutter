@@ -49,6 +49,8 @@ in source and covered by static/unit/build verification:
 - `TUL-E2E-008`: partially remediated in the touched flows through labelled icon
   controls, semantic journey rows, and grouped settings; a dedicated full-app
   screen-reader audit is still recommended.
+- `TUL-E2E-010`: draft and Go Again route previews now show an explicit route
+  loading state and keep Start Journey disabled until route fetching finishes.
 - `TUL-E2E-011`: the auth gate now switches only during one-time initialization,
   so resend/sign-out loading cannot dispose and recreate the verification UI.
   A simulator rerun is still recommended for the original timing anomaly.
