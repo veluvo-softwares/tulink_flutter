@@ -663,6 +663,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final analytics = context.watch<AnalyticsProvider>();
     final recentJourney = analytics.recentJourneys.firstOrNull;
     final activeJourney = context.watch<JourneyProvider>().currentJourney;
+    final isRouteLoading = context.watch<MapProvider>().isFetchingRoute;
     final firstHistoryJourney = analytics.journeyHistory.firstOrNull;
 
     if (widget.selectedTab == 1 &&
@@ -707,6 +708,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 destinationTitle: _destinationTitle(_destination!.displayName),
                 companions: _companions,
                 isStarting: _isStarting,
+                isRouteLoading: isRouteLoading,
                 onClose: _clearDraft,
                 onChooseCompanions: _chooseCompanions,
                 onStart: _startJourney,
@@ -1321,6 +1323,7 @@ class _ReadyJourneySheet extends StatelessWidget {
     required this.destinationTitle,
     required this.companions,
     required this.isStarting,
+    required this.isRouteLoading,
     required this.onClose,
     required this.onChooseCompanions,
     required this.onStart,
@@ -1329,6 +1332,7 @@ class _ReadyJourneySheet extends StatelessWidget {
   final String destinationTitle;
   final List<_SelectedCompanion> companions;
   final bool isStarting;
+  final bool isRouteLoading;
   final VoidCallback onClose;
   final VoidCallback onChooseCompanions;
   final VoidCallback onStart;
@@ -1420,11 +1424,30 @@ class _ReadyJourneySheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 22),
+          if (isRouteLoading) ...[
+            Row(
+              children: [
+                SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.routeTeal,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Finding the best route…',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: isStarting ? null : onStart,
-              icon: isStarting
+              onPressed: isStarting || isRouteLoading ? null : onStart,
+              icon: isStarting || isRouteLoading
                   ? const SizedBox(
                       width: 18,
                       height: 18,
@@ -1432,7 +1455,13 @@ class _ReadyJourneySheet extends StatelessWidget {
                     )
                   : const Icon(Icons.arrow_forward_rounded),
               iconAlignment: IconAlignment.end,
-              label: Text(isStarting ? 'Starting…' : 'Start journey'),
+              label: Text(
+                isStarting
+                    ? 'Starting…'
+                    : isRouteLoading
+                    ? 'Finding route…'
+                    : 'Start journey',
+              ),
             ),
           ),
         ],
