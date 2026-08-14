@@ -3,14 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
-import 'package:google_fonts/google_fonts.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/navigation/navigation_helper.dart';
 import '../../../core/theme/tulink_colors.dart';
 import '../data/models/route_result_model.dart';
-import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'providers/map_provider.dart';
 import 'services/convoy_interpolation_service.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
@@ -20,7 +18,6 @@ import '../../convoy/presentation/widgets/convoy_status_bar.dart';
 import '../../convoy/presentation/widgets/convoy_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/journey_progress_card.dart';
-import '../../convoy/presentation/widgets/driver_marker.dart';
 import '../../convoy/presentation/widgets/convoy_route_line.dart';
 import '../../convoy/presentation/services/journey_status_notifier.dart';
 import '../../convoy/presentation/utils/convoy_member_presentation.dart';
@@ -2151,7 +2148,7 @@ class _ArrivalBanner extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: allArrived
@@ -2187,7 +2184,7 @@ class _ArrivalBanner extends StatelessWidget {
                 children: [
                   Text(
                     allArrived ? 'Everyone has arrived!' : "You've arrived!",
-                    style: GoogleFonts.rajdhani(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: Colors.green,
@@ -2200,18 +2197,18 @@ class _ArrivalBanner extends StatelessWidget {
                       total > 1
                           ? 'Waiting for $waiting more member${waiting == 1 ? '' : 's'} — $arrived/$total arrived'
                           : 'Journey complete',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: colors.silver,
+                        color: colors.muted,
                         height: 1.3,
                       ),
                     )
                   else
                     Text(
                       'Ending journey…',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: colors.silver,
+                        color: colors.muted,
                         height: 1.3,
                       ),
                     ),
@@ -2228,12 +2225,12 @@ class _ArrivalBanner extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.electricRed,
+                    color: colors.sunsetOrange,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     'End',
-                    style: GoogleFonts.rajdhani(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
@@ -2260,10 +2257,10 @@ class _RouteLoadingPill extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: colors.carbonBlack.withOpacity(0.95),
+          color: colors.surface.withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: colors.electricRed.withOpacity(0.45),
+            color: colors.routeTeal.withValues(alpha: 0.45),
             width: 1.5,
           ),
           boxShadow: [
@@ -2282,16 +2279,16 @@ class _RouteLoadingPill extends StatelessWidget {
               height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2.0,
-                valueColor: AlwaysStoppedAnimation(colors.electricRed),
+                valueColor: AlwaysStoppedAnimation(colors.routeTeal),
               ),
             ),
             const SizedBox(width: 10),
             Text(
               'Calculating route',
-              style: GoogleFonts.rajdhani(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: colors.white,
+                color: colors.ink,
                 letterSpacing: 1.5,
               ),
             ),

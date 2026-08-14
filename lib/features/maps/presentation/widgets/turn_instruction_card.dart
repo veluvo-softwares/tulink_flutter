@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/tulink_colors.dart';
 import '../../domain/entities/route_progress.dart';
@@ -35,9 +34,9 @@ class TurnInstructionCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+        border: Border.all(color: colors.divider),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -68,12 +67,12 @@ class TurnInstructionCard extends StatelessWidget {
       width: 56,
       height: 56,
       decoration: BoxDecoration(
-        color: colors.electricRed.withOpacity(0.15),
+        color: colors.routeTeal.withValues(alpha: 0.12),
         shape: BoxShape.circle,
       ),
       child: Icon(
         _iconForManeuver(p.currentManeuver.maneuverType),
-        color: colors.electricRed,
+        color: colors.routeTeal,
         size: 32,
       ),
     );
@@ -86,10 +85,10 @@ class TurnInstructionCard extends StatelessWidget {
       children: [
         Text(
           _formatDistance(p.distanceToNextManeuverMetres),
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w700,
-            color: colors.electricRed,
+            color: colors.deepTeal,
             height: 1.0,
             letterSpacing: 0.5,
           ),
@@ -99,10 +98,10 @@ class TurnInstructionCard extends StatelessWidget {
           p.currentManeuver.instruction,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: colors.white,
+            color: colors.ink,
             height: 1.3,
           ),
         ),
@@ -117,12 +116,12 @@ class TurnInstructionCard extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: colors.brushedSteel.withOpacity(0.3),
+          color: colors.warmSand,
           shape: BoxShape.circle,
         ),
         child: Icon(
           isVoiceEnabled ? Icons.volume_up : Icons.volume_off,
-          color: isVoiceEnabled ? colors.white : colors.silver,
+          color: isVoiceEnabled ? colors.deepTeal : colors.muted,
           size: 20,
         ),
       ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/member_position.dart';
-import '../../../../core/theme/tulink_colors.dart';
 
 /// Driver marker widget for convoy members on the map
 /// Shows circular markers with initials and status indicators
@@ -34,7 +33,7 @@ class _DriverMarkerState extends State<DriverMarker>
   // Color palette for 5 different users
   static const List<Color> _driverColors = [
     Color(0xFFE53E3E), // Red
-    Color(0xFF3182CE), // Blue  
+    Color(0xFF3182CE), // Blue
     Color(0xFF38A169), // Green
     Color(0xFFDD6B20), // Orange
     Color(0xFF805AD5), // Purple
@@ -43,20 +42,16 @@ class _DriverMarkerState extends State<DriverMarker>
   @override
   void initState() {
     super.initState();
-    
+
     // Setup pulsing animation for moving drivers
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.3,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
 
     // Start pulsing if driver is moving
     if (widget.position.isMoving) {
@@ -73,7 +68,7 @@ class _DriverMarkerState extends State<DriverMarker>
   @override
   void didUpdateWidget(DriverMarker oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // Update pulsing based on movement status
     if (widget.position.isMoving && !oldWidget.position.isMoving) {
       _pulseController.repeat(reverse: true);
@@ -85,7 +80,6 @@ class _DriverMarkerState extends State<DriverMarker>
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<TulinkColors>()!;
     final isStale = widget.position.isStale;
     final hasLowBattery = widget.position.hasLowBattery;
     final isMoving = widget.position.isMoving;
@@ -129,13 +123,15 @@ class _DriverMarkerState extends State<DriverMarker>
                   color: _getBorderColor(isStale, hasLowBattery, driverColor),
                   width: 3,
                 ),
-                boxShadow: isStale ? null : [
-                  BoxShadow(
-                    color: driverColor.withOpacity(0.4),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ],
+                boxShadow: isStale
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: driverColor.withOpacity(0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
               ),
               child: Center(
                 child: Text(
@@ -144,7 +140,6 @@ class _DriverMarkerState extends State<DriverMarker>
                     color: Colors.white,
                     fontSize: widget.size * 0.35,
                     fontWeight: FontWeight.w900,
-                    fontFamily: 'Rajdhani',
                   ),
                 ),
               ),
@@ -201,14 +196,15 @@ class _DriverMarkerState extends State<DriverMarker>
   String _getInitials(String name) {
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) return '?';
-    
+
     final words = trimmedName.split(' ');
     if (words.length == 1) {
       // Single name: return first letter
       return words[0].substring(0, 1).toUpperCase();
     } else {
       // Multiple names: return first letter of first and last name
-      return (words[0].substring(0, 1) + words.last.substring(0, 1)).toUpperCase();
+      return (words[0].substring(0, 1) + words.last.substring(0, 1))
+          .toUpperCase();
     }
   }
 
@@ -227,11 +223,7 @@ class _DriverMarkerState extends State<DriverMarker>
 
 /// Destination marker widget with checkered flag
 class DestinationMarker extends StatelessWidget {
-  const DestinationMarker({
-    super.key,
-    this.size = 56.0,
-    this.onTap,
-  });
+  const DestinationMarker({super.key, this.size = 56.0, this.onTap});
 
   final double size;
   final VoidCallback? onTap;
@@ -246,10 +238,7 @@ class DestinationMarker extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.black,
-          border: Border.all(
-            color: Colors.white,
-            width: 3,
-          ),
+          border: Border.all(color: Colors.white, width: 3),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.4),

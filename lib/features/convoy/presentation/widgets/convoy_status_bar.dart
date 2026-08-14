@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../../../core/theme/tulink_colors.dart';
@@ -32,21 +31,17 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
   @override
   void initState() {
     super.initState();
-    
+
     // Setup pulsing animation for status indicator
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 0.5,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    
+
+    _pulseAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     _pulseController.repeat(reverse: true);
   }
 
@@ -59,16 +54,16 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<TulinkColors>()!;
-    
+
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
         margin: const EdgeInsets.only(top: 50, left: 16, right: 16),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: colors.cardDark.withOpacity(0.95),
+          color: colors.surface.withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+          border: Border.all(color: colors.divider),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.3),
@@ -87,18 +82,16 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
                   height: 34,
                   margin: const EdgeInsets.only(right: 10),
                   decoration: BoxDecoration(
-                    color: colors.brushedSteel.withOpacity(0.5),
+                    color: colors.warmSand,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.arrow_back, color: colors.white, size: 18),
+                  child: Icon(Icons.arrow_back, color: colors.ink, size: 18),
                 ),
               ),
             ],
             _buildStatusIndicator(colors),
             const SizedBox(width: 10),
-            Expanded(
-              child: _buildStatusInfo(colors),
-            ),
+            Expanded(child: _buildStatusInfo(colors)),
             _buildConnectionIndicator(colors),
           ],
         ),
@@ -147,10 +140,10 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
       children: [
         Text(
           statusText,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: colors.white,
+            color: colors.ink,
             letterSpacing: 0.5,
           ),
         ),
@@ -158,10 +151,10 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
           const SizedBox(height: 2),
           Text(
             memberText,
-            style: GoogleFonts.rajdhani(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: colors.silver,
+              color: colors.muted,
               letterSpacing: 0.3,
             ),
           ),
@@ -174,7 +167,7 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
   Widget _buildConnectionIndicator(TulinkColors colors) {
     IconData icon;
     Color iconColor;
-    
+
     switch (widget.connectionState) {
       case ConvoyConnectionState.connected:
         icon = Icons.signal_wifi_4_bar;
@@ -190,29 +183,24 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
         iconColor = Colors.red;
         break;
       case ConvoyConnectionState.disconnected:
-      default:
         icon = Icons.signal_wifi_0_bar;
-        iconColor = colors.silver;
+        iconColor = colors.muted;
         break;
     }
-    
-    return Icon(
-      icon,
-      size: 18,
-      color: iconColor,
-    );
+
+    return Icon(icon, size: 18, color: iconColor);
   }
 
   /// Get status indicator color based on convoy state
   Color _getStatusColor(TulinkColors colors) {
     final snapshot = widget.snapshot;
-    
-    if (snapshot == null) return colors.silver;
-    
+
+    if (snapshot == null) return colors.muted;
+
     if (snapshot.laggingMembers.isNotEmpty) return Colors.orange;
     if (snapshot.allMembersArrived) return Colors.blue;
-    if (snapshot.movingMemberCount > 0) return colors.electricRed;
-    
+    if (snapshot.movingMemberCount > 0) return colors.routeTeal;
+
     return Colors.green;
   }
 
@@ -221,12 +209,12 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
     if (snapshot.allMembersArrived) return 'ALL ARRIVED';
     if (snapshot.laggingMembers.isNotEmpty) return 'MEMBERS LAGGING';
     if (snapshot.movingMemberCount > 0) return 'IN PROGRESS';
-    
+
     // For solo journeys, show journey status instead of waiting
     if (snapshot.totalMembers <= 1) return 'SOLO JOURNEY';
-    
+
     if (!snapshot.hasActiveMembers) return 'WAITING';
-    
+
     return 'CONVOY READY';
   }
 
@@ -235,20 +223,20 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
     final total = snapshot.totalMembers;
     final active = snapshot.activeMemberCount;
     final moving = snapshot.movingMemberCount;
-    
+
     if (total == 0) return 'NO MEMBERS';
     if (total == 1) return 'SOLO MODE';
-    
+
     String baseText = '$total MEMBERS';
-    
+
     if (active < total) {
       baseText += ' • $active ACTIVE';
     }
-    
+
     if (moving > 0) {
       baseText += ' • $moving MOVING';
     }
-    
+
     return baseText;
   }
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
@@ -23,19 +22,16 @@ class ConvoyBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<TulinkColors>()!;
-    
+
     return Container(
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+        border: Border.all(color: colors.divider),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildHeader(colors),
-          _buildMemberList(colors),
-        ],
+        children: [_buildHeader(colors), _buildMemberList(colors)],
       ),
     );
   }
@@ -45,9 +41,7 @@ class ConvoyBottomSheet extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: colors.brushedSteel.withOpacity(0.3)),
-        ),
+        border: Border(bottom: BorderSide(color: colors.divider)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,23 +52,23 @@ class ConvoyBottomSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.silver.withOpacity(0.5),
+                color: colors.muted.withValues(alpha: 0.45),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Header row
           Row(
             children: [
               Expanded(
                 child: Text(
                   'CONVOY STATUS',
-                  style: GoogleFonts.rajdhani(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: colors.white,
+                    color: colors.ink,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -82,9 +76,9 @@ class ConvoyBottomSheet extends StatelessWidget {
               if (onClose != null)
                 IconButton(
                   onPressed: onClose,
-                  icon: Icon(Icons.close, color: colors.silver),
+                  icon: Icon(Icons.close, color: colors.ink),
                   style: IconButton.styleFrom(
-                    backgroundColor: colors.brushedSteel.withOpacity(0.3),
+                    backgroundColor: colors.warmSand,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -92,9 +86,9 @@ class ConvoyBottomSheet extends StatelessWidget {
                 ),
             ],
           ),
-          
+
           const SizedBox(height: 12),
-          
+
           // Convoy summary
           _buildConvoySummary(colors),
         ],
@@ -106,11 +100,7 @@ class ConvoyBottomSheet extends StatelessWidget {
   Widget _buildConvoySummary(TulinkColors colors) {
     return Row(
       children: [
-        _buildSummaryItem(
-          colors,
-          'TOTAL',
-          snapshot.totalMembers.toString(),
-        ),
+        _buildSummaryItem(colors, 'TOTAL', snapshot.totalMembers.toString()),
         const SizedBox(width: 24),
         _buildSummaryItem(
           colors,
@@ -145,20 +135,20 @@ class ConvoyBottomSheet extends StatelessWidget {
       children: [
         Text(
           label,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: colors.silver,
+            color: colors.muted,
             letterSpacing: 0.5,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: isStatus ? 12 : 16,
             fontWeight: FontWeight.w700,
-            color: isStatus ? _getStatusColor(value, colors) : colors.white,
+            color: isStatus ? _getStatusColor(value, colors) : colors.ink,
             letterSpacing: 0.3,
           ),
         ),
@@ -169,17 +159,17 @@ class ConvoyBottomSheet extends StatelessWidget {
   /// Build scrollable member list
   Widget _buildMemberList(TulinkColors colors) {
     final members = snapshot.membersList;
-    
+
     if (members.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(40),
         child: Center(
           child: Text(
             'No convoy members',
-            style: GoogleFonts.rajdhani(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: colors.silver,
+              color: colors.muted,
             ),
           ),
         ),
@@ -205,9 +195,7 @@ class ConvoyBottomSheet extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: colors.brushedSteel.withOpacity(0.1)),
-          ),
+          border: Border(bottom: BorderSide(color: colors.divider)),
         ),
         child: Row(
           children: [
@@ -217,9 +205,9 @@ class ConvoyBottomSheet extends StatelessWidget {
               memberName: member.userId, // TODO: Get actual member name
               size: 40,
             ),
-            
+
             const SizedBox(width: 16),
-            
+
             // Member info
             Expanded(
               child: Column(
@@ -230,24 +218,32 @@ class ConvoyBottomSheet extends StatelessWidget {
                       Expanded(
                         child: Text(
                           member.userId, // TODO: Get actual member name
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: colors.white,
+                            color: colors.ink,
                           ),
                         ),
                       ),
                       MemberStatusChip(status: member.memberStatus),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   Row(
                     children: [
-                      _buildMemberStat(colors, 'SPEED', '${member.speedKmh.toStringAsFixed(1)} km/h'),
+                      _buildMemberStat(
+                        colors,
+                        'SPEED',
+                        '${member.speedKmh.toStringAsFixed(1)} km/h',
+                      ),
                       const SizedBox(width: 20),
-                      _buildMemberStat(colors, 'UPDATED', _getTimeAgo(member.age)),
+                      _buildMemberStat(
+                        colors,
+                        'UPDATED',
+                        _getTimeAgo(member.age),
+                      ),
                       if (member.batteryLevel != null) ...[
                         const SizedBox(width: 20),
                         _buildMemberStat(
@@ -279,19 +275,19 @@ class ConvoyBottomSheet extends StatelessWidget {
       children: [
         Text(
           label,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w600,
-            color: colors.silver,
+            color: colors.muted,
             letterSpacing: 0.5,
           ),
         ),
         Text(
           value,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: isWarning ? Colors.orange : colors.white,
+            color: isWarning ? Colors.orange : colors.ink,
             letterSpacing: 0.3,
           ),
         ),
@@ -302,25 +298,25 @@ class ConvoyBottomSheet extends StatelessWidget {
   Color _getStatusColor(String status, TulinkColors colors) {
     switch (status.toUpperCase()) {
       case 'IN PROGRESS':
-        return colors.electricRed;
+        return colors.routeTeal;
       case 'ALL ARRIVED':
         return Colors.blue;
       case 'MEMBERS LAGGING':
         return Colors.orange;
       case 'WAITING':
-        return colors.silver;
+        return colors.muted;
       default:
-        return colors.white;
+        return colors.ink;
     }
   }
 
   String _getTimeAgo(Duration age) {
     final seconds = age.inSeconds;
     if (seconds < 60) return '${seconds}s ago';
-    
+
     final minutes = age.inMinutes;
     if (minutes < 60) return '${minutes}m ago';
-    
+
     final hours = age.inHours;
     return '${hours}h ago';
   }
