@@ -10,7 +10,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:tulink_flutter/features/maps/presentation/tulink_map_screen.dart';
 
 import 'core/config/app_config.dart';
 import 'core/di/service_locator.dart';
@@ -309,7 +308,7 @@ class HomePage extends StatelessWidget {
           // verification screen with this spinner disposed and recreated it,
           // resetting its local state and producing a blank/remount loop when
           // the resend endpoint was rate-limited.
-          if (authProvider.isLoading && !authProvider.isSignedIn) {
+          if (!authProvider.isInitialized) {
             return const Center(child: CircularProgressIndicator());
           }
 

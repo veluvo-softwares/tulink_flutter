@@ -22,12 +22,14 @@ class AuthProvider extends ChangeNotifier {
   // State variables
   UserEntity? _user;
   bool _isLoading = false;
+  bool _isInitialized = false;
   Failure? _failure;
   bool _isSignedIn = false;
 
   // Getters
   UserEntity? get user => _user;
   bool get isLoading => _isLoading;
+  bool get isInitialized => _isInitialized;
   Failure? get failure => _failure;
   bool get isSignedIn => _isSignedIn;
   String get errorMessage => _failure?.message ?? '';
@@ -53,6 +55,7 @@ class AuthProvider extends ChangeNotifier {
       _isSignedIn = false;
       _setFailure(const ServerFailure(message: 'Initialization failed'));
     } finally {
+      _isInitialized = true;
       _setLoading(false);
     }
   }

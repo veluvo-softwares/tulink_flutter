@@ -61,12 +61,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         return Scaffold(
-          backgroundColor: colors.carbonBlack,
+          backgroundColor: colors.warmSand,
           appBar: AppBar(
-            backgroundColor: colors.carbonBlack,
-            elevation: 0,
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back, color: colors.white),
+            leading: IconButton.filledTonal(
+              tooltip: 'Sign out and return to login',
+              icon: const Icon(Icons.arrow_back_rounded),
               onPressed: authProvider.isLoading ? null : _handleSignOut,
             ),
           ),
@@ -81,7 +80,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     width: 80,
                     height: 80,
                     colorFilter: ColorFilter.mode(
-                      colors.electricRed,
+                      colors.routeTeal,
                       BlendMode.srcIn,
                     ),
                   ),
@@ -89,9 +88,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   Text(
                     'Check your inbox',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: colors.ink,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Consumer<EmailVerificationProvider>(
@@ -101,9 +100,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                         ' ${provider.userEmail ?? ''}.'
                         ' Tap the link in the email to continue.'
                         " Can't find it? Check your spam or junk folder.",
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: colors.silver,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: colors.muted),
                         textAlign: TextAlign.center,
                       );
                     },
@@ -134,16 +133,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: colors.silver,
+                            color: colors.muted,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'Signing out...',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: colors.silver),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(color: colors.muted),
                         ),
                       ],
                     ),

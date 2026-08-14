@@ -36,18 +36,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final colors = Theme.of(context).extension<TulinkColors>()!;
 
     return Scaffold(
-      backgroundColor: colors.carbonBlack,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Reset password'),
-      ),
+      backgroundColor: colors.warmSand,
+      appBar: AppBar(title: const Text('Reset password')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
-          child: _emailSent
-              ? _buildConfirmation(colors)
-              : _buildForm(colors),
+          child: _emailSent ? _buildConfirmation(colors) : _buildForm(colors),
         ),
       ),
     );
@@ -63,15 +57,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           Text(
             'Forgot your password?',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+              color: colors.ink,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Enter the email associated with your account and we\'ll send you '
             'a link to reset your password.',
-            style: TextStyle(color: colors.silver),
+            style: TextStyle(color: colors.muted),
           ),
           const SizedBox(height: 24),
 
@@ -123,22 +117,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 24),
-        Icon(Icons.mark_email_read_outlined, size: 64, color: colors.electricRed),
+        Icon(Icons.mark_email_read_outlined, size: 64, color: colors.routeTeal),
         const SizedBox(height: 24),
         Text(
           'Check your email',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: colors.white,
-                fontWeight: FontWeight.w700,
-              ),
+            color: colors.ink,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 12),
         Text(
           'If an account exists for $_sentTo, we\'ve sent a password reset '
           'link. Open it to choose a new password, then sign in.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: colors.silver),
+          style: TextStyle(color: colors.muted),
         ),
         const SizedBox(height: 32),
         ElevatedButton(
