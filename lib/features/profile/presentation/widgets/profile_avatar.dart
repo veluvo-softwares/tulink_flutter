@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/tulink_colors.dart';
+import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 
 class ProfileAvatar extends StatelessWidget {
-  final String initials;
-  final bool isOnline;
-  final double size;
-  final String? imageUrl;
-
   const ProfileAvatar({
-    super.key,
     required this.initials,
+    super.key,
     this.isOnline = false,
     this.size = 120,
     this.imageUrl,
   });
+
+  final String initials;
+  final bool isOnline;
+  final double size;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -24,29 +24,23 @@ class ProfileAvatar extends StatelessWidget {
       height: size,
       child: Stack(
         children: [
-          // Main Avatar Container
           Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: colors.electricRed,
-                width: 3,
-              ),
+              border: Border.all(color: colors.surface, width: 4),
               boxShadow: [
                 BoxShadow(
-                  color: colors.electricRed.withValues(alpha: 0.3),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
+                  color: colors.deepTeal.withValues(alpha: 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
             child: Container(
               margin: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(shape: BoxShape.circle),
               child: ClipOval(
                 child: imageUrl != null
                     ? Image.network(
@@ -60,8 +54,7 @@ class ProfileAvatar extends StatelessWidget {
               ),
             ),
           ),
-          
-          // Online Status Indicator
+
           if (isOnline)
             Positioned(
               bottom: size * 0.1,
@@ -71,16 +64,12 @@ class ProfileAvatar extends StatelessWidget {
                 height: size * 0.25,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.green,
-                  border: Border.all(
-                    color: colors.carbonBlack,
-                    width: 3,
-                  ),
+                  color: colors.routeTeal,
+                  border: Border.all(color: colors.surface, width: 3),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.green.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: colors.routeTeal.withValues(alpha: 0.25),
+                      blurRadius: 6,
                     ),
                   ],
                 ),
@@ -95,22 +84,12 @@ class ProfileAvatar extends StatelessWidget {
     return Container(
       width: double.infinity,
       height: double.infinity,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [
-            colors.brushedSteel,
-            colors.brushedSteel.withValues(alpha: 0.8),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: colors.deepTeal),
       child: Center(
         child: Text(
           initials,
           style: TextStyle(
-            color: colors.white,
+            color: Colors.white,
             fontSize: size * 0.35,
             fontWeight: FontWeight.w800,
             letterSpacing: 2,

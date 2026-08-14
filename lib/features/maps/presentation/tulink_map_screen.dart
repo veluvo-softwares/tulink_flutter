@@ -175,6 +175,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     _mapboxMap = mapboxMap;
+    await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
     _pointAnnotationManager = await mapboxMap.annotations
         .createPointAnnotationManager();
 
@@ -1809,7 +1810,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
                   _cameraFollowEnabled = false;
                 }
               },
-              styleUri: MapboxStyles.DARK,
+              styleUri: MapboxStyles.MAPBOX_STREETS,
               cameraOptions: CameraOptions(
                 center: Point(
                   coordinates: Position(36.8219, -1.2921), // Nairobi

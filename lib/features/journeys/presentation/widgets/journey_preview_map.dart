@@ -7,10 +7,7 @@ import '../../domain/entities/journey.dart';
 class JourneyPreviewMap extends StatefulWidget {
   final Journey journey;
 
-  const JourneyPreviewMap({
-    super.key,
-    required this.journey,
-  });
+  const JourneyPreviewMap({super.key, required this.journey});
 
   @override
   State<JourneyPreviewMap> createState() => _JourneyPreviewMapState();
@@ -35,6 +32,7 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
   Future<void> _onMapCreated(MapboxMap mapboxMap) async {
     if (_disposed) return;
     _mapboxMap = mapboxMap;
+    await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
     await _addJourneyDestinationPin();
     if (!_canUseMap) return;
     await _fitToJourney();
@@ -46,11 +44,17 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
     const ringId = 'preview-dest-ring';
     const dotId = 'preview-dest-dot';
 
-    try { await _mapboxMap!.style.removeStyleLayer(ringId); } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(ringId);
+    } catch (_) {}
     if (!_canUseMap) return;
-    try { await _mapboxMap!.style.removeStyleLayer(dotId); } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleLayer(dotId);
+    } catch (_) {}
     if (!_canUseMap) return;
-    try { await _mapboxMap!.style.removeStyleSource(sourceId); } catch (_) {}
+    try {
+      await _mapboxMap!.style.removeStyleSource(sourceId);
+    } catch (_) {}
     if (!_canUseMap) return;
 
     try {
@@ -71,26 +75,30 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
       );
       if (!_canUseMap) return;
 
-      await _mapboxMap!.style.addLayer(CircleLayer(
-        id: ringId,
-        sourceId: sourceId,
-        circleRadius: 14.0,
-        circleColor: 0x33E8002D,
-        circleStrokeColor: 0xFFE8002D,
-        circleStrokeWidth: 2.5,
-        circleOpacity: 1.0,
-      ));
+      await _mapboxMap!.style.addLayer(
+        CircleLayer(
+          id: ringId,
+          sourceId: sourceId,
+          circleRadius: 14.0,
+          circleColor: 0x33E8002D,
+          circleStrokeColor: 0xFFE8002D,
+          circleStrokeWidth: 2.5,
+          circleOpacity: 1.0,
+        ),
+      );
       if (!_canUseMap) return;
 
-      await _mapboxMap!.style.addLayer(CircleLayer(
-        id: dotId,
-        sourceId: sourceId,
-        circleRadius: 7.0,
-        circleColor: 0xFFE8002D,
-        circleStrokeColor: 0xFFFFFFFF,
-        circleStrokeWidth: 2.0,
-        circleOpacity: 1.0,
-      ));
+      await _mapboxMap!.style.addLayer(
+        CircleLayer(
+          id: dotId,
+          sourceId: sourceId,
+          circleRadius: 7.0,
+          circleColor: 0xFFE8002D,
+          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeWidth: 2.0,
+          circleOpacity: 1.0,
+        ),
+      );
     } catch (e) {
       if (_disposed) return;
       debugPrint('⚠️ Failed to render journey preview destination pin: $e');
@@ -100,15 +108,17 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
   Future<void> _fitToJourney() async {
     if (!_canUseMap) return;
     try {
-      await _mapboxMap!.setCamera(CameraOptions(
-        center: Point(
-          coordinates: Position(
-            widget.journey.destination.longitude,
-            widget.journey.destination.latitude,
+      await _mapboxMap!.setCamera(
+        CameraOptions(
+          center: Point(
+            coordinates: Position(
+              widget.journey.destination.longitude,
+              widget.journey.destination.latitude,
+            ),
           ),
+          zoom: 13.0,
         ),
-        zoom: 13.0,
-      ));
+      );
     } catch (e) {
       if (_disposed) return;
       debugPrint('⚠️ Failed to fit journey preview camera: $e');
@@ -120,15 +130,13 @@ class _JourneyPreviewMapState extends State<JourneyPreviewMap> {
     return Container(
       height: 180,
       width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: MapWidget(
           key: ValueKey('journey_preview_${widget.journey.id}'),
           onMapCreated: _onMapCreated,
-          styleUri: MapboxStyles.DARK,
+          styleUri: MapboxStyles.MAPBOX_STREETS,
           cameraOptions: CameraOptions(
             center: Point(
               coordinates: Position(
