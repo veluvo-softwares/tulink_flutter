@@ -46,6 +46,7 @@ import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
 import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
+import '../constants/storage_keys.dart';
 import '../network/dio_client.dart';
 import '../services/push_notification_service.dart';
 import '../services/connectivity_service.dart';
@@ -282,7 +283,12 @@ class ServiceLocator {
       offlineStorage: _offlineStorageService,
       currentUserId: () async =>
           (await _authLocalDataSource.getCachedUser())?.id,
+      loadVoiceEnabled: () async =>
+          _authBox.get(StorageKeys.voiceNavigationEnabled) as bool?,
+      saveVoiceEnabled: (enabled) =>
+          _authBox.put(StorageKeys.voiceNavigationEnabled, enabled),
     );
+    await _navigationProvider.initializePreferences();
     _journeyProvider = JourneyProvider(
       createJourneyUseCase: CreateJourney(_journeyRepository),
       getJourneyByIdUseCase: GetJourneyById(_journeyRepository),

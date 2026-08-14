@@ -45,14 +45,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         title: const Text('Profile'),
-        actions: [
-          IconButton(
-            tooltip: 'Edit profile',
-            onPressed: _showEditProfileMessage,
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: SafeArea(
         top: false,
@@ -66,7 +58,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 email: user?.email ?? 'driver@tulink.app',
                 imageUrl: user?.profilePicture,
                 isVerified: user?.isEmailVerified ?? false,
-                onEdit: _showEditProfileMessage,
               ),
               const SizedBox(height: 18),
               ProfileStatsGrid(
@@ -114,6 +105,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: 'Voice navigation',
                       subtitle: 'Hear turns and convoy updates',
                       showArrow: false,
+                      onTap: () => navigation.setVoiceEnabled(
+                        !navigation.isVoiceEnabled,
+                      ),
                       trailing: Switch.adaptive(
                         value: navigation.isVoiceEnabled,
                         onChanged: navigation.setVoiceEnabled,
@@ -121,37 +115,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-                  SettingsMenuItem(
-                    icon: Icons.notifications_none_rounded,
-                    title: 'Notifications',
-                    subtitle: 'Journey invites and live updates',
-                    onTap: () => _showComingSoon('Notifications'),
-                  ),
-                  SettingsMenuItem(
-                    icon: Icons.shield_outlined,
-                    title: 'Privacy',
-                    subtitle: 'Location and profile visibility',
-                    onTap: () => _showComingSoon('Privacy settings'),
-                  ),
-                  SettingsMenuItem(
-                    icon: Icons.link_rounded,
-                    title: 'Linked accounts',
-                    subtitle: 'Manage connected accounts',
-                    onTap: () => _showComingSoon('Linked accounts'),
-                  ),
                 ],
               ),
               const SizedBox(height: 28),
-              const _SectionHeader(title: 'Support'),
+              const _SectionHeader(title: 'Account'),
               const SizedBox(height: 10),
               _SettingsGroup(
                 children: [
-                  SettingsMenuItem(
-                    icon: Icons.help_outline_rounded,
-                    title: 'Help & support',
-                    subtitle: 'Get help travelling with Tulink',
-                    onTap: () => _showComingSoon('Help & support'),
-                  ),
                   SettingsMenuItem(
                     icon: Icons.logout_rounded,
                     title: 'Sign out',
@@ -167,14 +137,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
-  }
-
-  void _showEditProfileMessage() => _showComingSoon('Profile editing');
-
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$feature is coming soon')));
   }
 
   Future<void> _showSignOutDialog() async {
@@ -212,14 +174,12 @@ class _ProfileHero extends StatelessWidget {
     required this.email,
     required this.imageUrl,
     required this.isVerified,
-    required this.onEdit,
   });
 
   final String name;
   final String email;
   final String? imageUrl;
   final bool isVerified;
-  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -277,15 +237,6 @@ class _ProfileHero extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Edit profile'),
             ),
           ),
         ],

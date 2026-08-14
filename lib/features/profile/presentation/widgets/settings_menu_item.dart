@@ -27,64 +27,70 @@ class SettingsMenuItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: (iconColor ?? colors.routeTeal).withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor ?? colors.deepTeal,
-                  size: 20,
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: titleColor ?? colors.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
+    return Semantics(
+      container: true,
+      button: onTap != null,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: (iconColor ?? colors.routeTeal).withValues(
+                      alpha: .1,
                     ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: TextStyle(color: colors.muted, fontSize: 12),
-                      ),
-                    ],
-                  ],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: iconColor ?? colors.deepTeal,
+                    size: 20,
+                  ),
                 ),
-              ),
 
-              if (trailing != null)
-                trailing!
-              else if (showArrow)
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: colors.muted,
-                  size: 22,
+                const SizedBox(width: 16),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: titleColor ?? colors.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(color: colors.muted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-            ],
+
+                if (trailing != null)
+                  trailing!
+                else if (showArrow)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.muted,
+                    size: 22,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
