@@ -10,6 +10,7 @@ abstract class JourneyRemoteDataSource {
     required String name,
     required double latitude,
     required double longitude,
+    String? destinationName,
     required String destinationAddress,
     required int lagThresholdMeters,
     DateTime? scheduledFor,
@@ -46,6 +47,7 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
     required String name,
     required double latitude,
     required double longitude,
+    String? destinationName,
     required String destinationAddress,
     required int lagThresholdMeters,
     DateTime? scheduledFor,
@@ -56,6 +58,10 @@ class JourneyRemoteDataSourceImpl implements JourneyRemoteDataSource {
       data: {
         'name': name,
         'destination': {'latitude': latitude, 'longitude': longitude},
+        // Omitted entirely when unknown so the backend keeps NULL rather than
+        // storing an empty string.
+        if (destinationName != null && destinationName.isNotEmpty)
+          'destinationName': destinationName,
         'destinationAddress': destinationAddress,
         'lagThresholdMeters': lagThresholdMeters,
         if (scheduledFor != null)

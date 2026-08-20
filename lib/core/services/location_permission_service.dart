@@ -1,6 +1,27 @@
 import 'package:geolocator/geolocator.dart';
 import '../errors/failure.dart';
 
+/// Injectable seam over [LocationPermissionService.requestLocationPermission].
+///
+/// The OS permission dialog can stay open indefinitely, so anything that awaits
+/// it sits on an unbounded wait. Callers on lifecycle-critical paths must be
+/// able to substitute this in tests to prove they do not block on it — see
+/// `ConvoyProvider`, which joins the convoy room before requesting permission.
+abstract class LocationPermissionGate {
+  /// Request foreground location permission.
+  Future<({bool granted, Failure? failure})> request();
+}
+
+/// [LocationPermissionGate] backed by the real OS permission flow.
+class DefaultLocationPermissionGate implements LocationPermissionGate {
+  /// Creates the production permission gate.
+  const DefaultLocationPermissionGate();
+
+  @override
+  Future<({bool granted, Failure? failure})> request() =>
+      LocationPermissionService.requestLocationPermission();
+}
+
 /// Service for handling location permissions for convoy coordination
 class LocationPermissionService {
   static const String _locationDeniedMessage =
@@ -40,15 +61,13 @@ class LocationPermissionService {
   }
 
   /// Check and request location permissions for convoy coordination
-  static Future<({bool granted, Failure? failure})> requestLocationPermission() async {
+  static Future<({bool granted, Failure? failure})>
+  requestLocationPermission() async {
     try {
       // Check if location services are enabled
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        return (
-          granted: false,
-          failure: ConvoyFailure.locationServiceDisabled,
-        );
+        return (granted: false, failure: ConvoyFailure.locationServiceDisabled);
       }
 
       // Check current permission status
@@ -71,35 +90,36 @@ class LocationPermissionService {
               isRetryable: true,
             ),
           );
-          
+
         case LocationPermission.deniedForever:
           return (
             granted: false,
             failure: ConvoyFailure(
               message: 'Location permission permanently denied',
-              details: 'Location permissions are permanently denied. Please enable them in your device settings to participate in convoy coordination.',
+              details:
+                  'Location permissions are permanently denied. Please enable them in your device settings to participate in convoy coordination.',
               timestamp: DateTime.now(),
               isRetryable: false,
             ),
           );
-          
+
         case LocationPermission.unableToDetermine:
           return (
             granted: false,
             failure: ConvoyFailure(
               message: 'Unable to determine location permission',
-              details: 'Location permission status could not be determined. Please check your device settings.',
+              details:
+                  'Location permission status could not be determined. Please check your device settings.',
               timestamp: DateTime.now(),
               isRetryable: true,
             ),
           );
-          
+
         case LocationPermission.whileInUse:
         case LocationPermission.always:
           // Permission granted
           return (granted: true, failure: null);
       }
-      
     } catch (e) {
       return (
         granted: false,
@@ -118,10 +138,10 @@ class LocationPermissionService {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return false;
-      
+
       final permission = await Geolocator.checkPermission();
-      return permission == LocationPermission.whileInUse || 
-             permission == LocationPermission.always;
+      return permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
     } catch (e) {
       print('❌ Error checking location permission: $e');
       return false;
@@ -139,7 +159,8 @@ class LocationPermissionService {
   }
 
   /// Request background location permission (Android)
-  static Future<({bool granted, Failure? failure})> requestBackgroundLocationPermission() async {
+  static Future<({bool granted, Failure? failure})>
+  requestBackgroundLocationPermission() async {
     try {
       // First ensure we have foreground permission
       final foregroundResult = await requestLocationPermission();
@@ -183,13 +204,13 @@ class LocationPermissionService {
           isRetryable: true,
         ),
       );
-
     } catch (e) {
       return (
         granted: false,
         failure: ConvoyFailure(
           message: 'Background location permission error',
-          details: 'Failed to request background location permission: ${e.toString()}',
+          details:
+              'Failed to request background location permission: ${e.toString()}',
           timestamp: DateTime.now(),
           isRetryable: true,
         ),
@@ -204,7 +225,7 @@ class LocationPermissionService {
       if (!serviceEnabled) {
         return 'Location services are disabled';
       }
-      
+
       final permission = await Geolocator.checkPermission();
       switch (permission) {
         case LocationPermission.denied:
@@ -223,4 +244,3 @@ class LocationPermissionService {
     }
   }
 }
-

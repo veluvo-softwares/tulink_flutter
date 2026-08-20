@@ -139,7 +139,7 @@ class _JourneyHistoryItem extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: '${journey.name}, ${journey.destinationAddress}',
+      label: '${journey.name}, ${journey.destinationLabel}',
       child: JourneyInfoCard(
         margin: EdgeInsets.zero,
         child: InkWell(
@@ -180,7 +180,7 @@ class _JourneyHistoryItem extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        journey.destinationAddress,
+                        journey.destinationLabel,
                         style: TextStyle(color: colors.muted, fontSize: 14),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

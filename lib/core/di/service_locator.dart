@@ -48,6 +48,7 @@ import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
 import '../constants/storage_keys.dart';
 import '../network/dio_client.dart';
+import '../services/location_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/offline_storage_service.dart';
@@ -116,6 +117,10 @@ class ServiceLocator {
   late ConvoyProvider _convoyProvider;
   late LocationOutboxService _locationOutboxService;
 
+  /// Shared, bounded location access. Injected wherever a fix is needed so a
+  /// stalled GPS can never deadlock a caller (see [LocationService]).
+  final LocationService _locationService = const GeolocatorLocationService();
+
   // Push notifications (FCM)
   late PushNotificationService _pushNotificationService;
 
@@ -152,6 +157,9 @@ class ServiceLocator {
 
   // Convoy Feature Getters
   ConvoyProvider get convoyProvider => _convoyProvider;
+
+  /// Bounded device-location access shared by providers and map screens.
+  LocationService get locationService => _locationService;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -315,6 +323,7 @@ class ServiceLocator {
       publishMyPosition: _publishMyPosition,
       fetchLatestSnapshot: _fetchLatestSnapshot,
       repository: _convoyRepository,
+      locationService: _locationService,
     );
 
     // On sign-out / unrecoverable auth loss, tear down live convoy coordination

@@ -38,92 +38,92 @@ class MockJourneyRepository extends _i1.Mock implements _i2.JourneyRepository {
     required String? name,
     required double? latitude,
     required double? longitude,
+    String? destinationName,
     required String? destinationAddress,
     required int? lagThresholdMeters,
     DateTime? scheduledFor,
     bool? autoStart = false,
   }) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #createJourney,
-          [],
-          {
-            #name: name,
-            #latitude: latitude,
-            #longitude: longitude,
-            #destinationAddress: destinationAddress,
-            #lagThresholdMeters: lagThresholdMeters,
-            #scheduledFor: scheduledFor,
-            #autoStart: autoStart,
-          },
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#createJourney, [], {
+              #name: name,
+              #latitude: latitude,
+              #longitude: longitude,
+              #destinationName: destinationName,
+              #destinationAddress: destinationAddress,
+              #lagThresholdMeters: lagThresholdMeters,
+              #scheduledFor: scheduledFor,
+              #autoStart: autoStart,
+            }),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> getJourneyById(
-          String? journeyId) =>
+    String? journeyId,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #getJourneyById,
-          [journeyId],
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#getJourneyById, [journeyId]),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({List<_i4.Journey>? data, _i5.Failure? failure})>
-      getActiveJourneys() => (super.noSuchMethod(
-            Invocation.method(
-              #getActiveJourneys,
-              [],
-            ),
-            returnValue: _i3.Future<
-                ({
-                  List<_i4.Journey>? data,
-                  _i5.Failure? failure
-                })>.value((data: null, failure: null)),
-          ) as _i3.Future<({List<_i4.Journey>? data, _i5.Failure? failure})>);
+  getActiveJourneys() =>
+      (super.noSuchMethod(
+            Invocation.method(#getActiveJourneys, []),
+            returnValue:
+                _i3.Future<
+                  ({List<_i4.Journey>? data, _i5.Failure? failure})
+                >.value((data: null, failure: null)),
+          )
+          as _i3.Future<({List<_i4.Journey>? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<List<_i4.Journey>> getCachedActiveJourneys() =>
       (super.noSuchMethod(
-        Invocation.method(
-          #getCachedActiveJourneys,
-          [],
-        ),
-        returnValue: _i3.Future<List<_i4.Journey>>.value(<_i4.Journey>[]),
-      ) as _i3.Future<List<_i4.Journey>>);
+            Invocation.method(#getCachedActiveJourneys, []),
+            returnValue: _i3.Future<List<_i4.Journey>>.value(<_i4.Journey>[]),
+          )
+          as _i3.Future<List<_i4.Journey>>);
 
   @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> joinJourneyByCode(
-          String? inviteCode) =>
+    String? inviteCode,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #joinJourneyByCode,
-          [inviteCode],
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#joinJourneyByCode, [inviteCode]),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> startJourney(
-          String? journeyId) =>
+    String? journeyId,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #startJourney,
-          [journeyId],
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#startJourney, [journeyId]),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> updateJourney(
@@ -131,52 +131,50 @@ class MockJourneyRepository extends _i1.Mock implements _i2.JourneyRepository {
     Map<String, dynamic>? updateData,
   ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #updateJourney,
-          [
-            journeyId,
-            updateData,
-          ],
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#updateJourney, [journeyId, updateData]),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({_i4.Journey? data, _i5.Failure? failure})> endJourney(
-          String? journeyId) =>
+    String? journeyId,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #endJourney,
-          [journeyId],
-        ),
-        returnValue:
-            _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value(
-                (data: null, failure: null)),
-      ) as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
+            Invocation.method(#endJourney, [journeyId]),
+            returnValue:
+                _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>.value((
+                  data: null,
+                  failure: null,
+                )),
+          )
+          as _i3.Future<({_i4.Journey? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({bool? data, _i5.Failure? failure})> cancelJourney(
-          String? journeyId) =>
+    String? journeyId,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #cancelJourney,
-          [journeyId],
-        ),
-        returnValue: _i3.Future<({bool? data, _i5.Failure? failure})>.value(
-            (data: null, failure: null)),
-      ) as _i3.Future<({bool? data, _i5.Failure? failure})>);
+            Invocation.method(#cancelJourney, [journeyId]),
+            returnValue: _i3.Future<({bool? data, _i5.Failure? failure})>.value(
+              (data: null, failure: null),
+            ),
+          )
+          as _i3.Future<({bool? data, _i5.Failure? failure})>);
 
   @override
   _i3.Future<({bool? data, _i5.Failure? failure})> leaveJourney(
-          String? journeyId) =>
+    String? journeyId,
+  ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #leaveJourney,
-          [journeyId],
-        ),
-        returnValue: _i3.Future<({bool? data, _i5.Failure? failure})>.value(
-            (data: null, failure: null)),
-      ) as _i3.Future<({bool? data, _i5.Failure? failure})>);
+            Invocation.method(#leaveJourney, [journeyId]),
+            returnValue: _i3.Future<({bool? data, _i5.Failure? failure})>.value(
+              (data: null, failure: null),
+            ),
+          )
+          as _i3.Future<({bool? data, _i5.Failure? failure})>);
 }

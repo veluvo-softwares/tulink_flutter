@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
@@ -14,12 +16,8 @@ import '../../domain/entities/journey.dart';
 class CreateJourneyScreen extends StatefulWidget {
   final Journey? journey;
   final bool isEdit;
-  
-  const CreateJourneyScreen({
-    super.key,
-    this.journey,
-    this.isEdit = false,
-  });
+
+  const CreateJourneyScreen({super.key, this.journey, this.isEdit = false});
 
   static const String routeName = '/create-journey';
   static const String editRouteName = '/edit-journey';
@@ -32,10 +30,14 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   final _nameController = TextEditingController();
   final _searchController = TextEditingController();
   final _lagController = TextEditingController(text: '500');
-  
+
   double? _selectedLat;
   double? _selectedLng;
   String? _selectedAddress;
+
+  /// Place name for the chosen destination; null for legacy journeys whose
+  /// name was never recorded. See [Journey.destinationLabel].
+  String? _selectedName;
   bool _isSettingSelectedValue = false;
 
   /// Null = start-now journey; set = scheduled journey (local time here,
@@ -62,14 +64,15 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     _lagController.text = journey.lagThresholdMeters.toString();
     _scheduledFor = journey.scheduledFor?.toLocal();
     _autoStart = journey.autoStart;
-    
+
     // Initialize destination from journey without triggering search
     setState(() {
       _selectedLat = journey.destination.latitude;
       _selectedLng = journey.destination.longitude;
       _selectedAddress = journey.destinationAddress;
+      _selectedName = journey.destinationName;
       _isSettingSelectedValue = true;
-      _searchController.text = journey.destinationAddress;
+      _searchController.text = journey.destinationLabel;
       _isSettingSelectedValue = false;
     });
   }
@@ -84,31 +87,33 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
   }
 
   Future<void> _onCreateJourney() async {
-    if (_nameController.text.isEmpty || _selectedLat == null || _selectedLng == null) {
+    if (_nameController.text.isEmpty ||
+        _selectedLat == null ||
+        _selectedLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields and select a destination')),
+        const SnackBar(
+          content: Text('Please fill all fields and select a destination'),
+        ),
       );
       return;
     }
 
     final journeyProvider = context.read<JourneyProvider>();
     bool success;
-    
+
     if (widget.isEdit && widget.journey != null) {
       // Update existing journey
       final updateData = {
         'name': _nameController.text,
         'destinationAddress': _selectedAddress ?? '',
-        'destination': {
-          'latitude': _selectedLat!,
-          'longitude': _selectedLng!,
-        },
+        if (_selectedName != null) 'destinationName': _selectedName,
+        'destination': {'latitude': _selectedLat!, 'longitude': _selectedLng!},
         'lagThresholdMeters': int.tryParse(_lagController.text) ?? 500,
         if (_scheduledFor != null)
           'scheduledFor': _scheduledFor!.toUtc().toIso8601String(),
         if (_scheduledFor != null) 'autoStart': _autoStart,
       };
-      
+
       success = await journeyProvider.updateJourney(
         journeyId: widget.journey!.id,
         updateData: updateData,
@@ -119,6 +124,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
         name: _nameController.text,
         latitude: _selectedLat!,
         longitude: _selectedLng!,
+        destinationName: _selectedName,
         destinationAddress: _selectedAddress ?? '',
         lagThresholdMeters: int.tryParse(_lagController.text) ?? 500,
         scheduledFor: _scheduledFor,
@@ -139,16 +145,11 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
           ),
         );
       } else {
-        // Replace this screen with the preview rather than stacking on top of
-        // it. The journey now exists, so backing out of the preview must reach
-        // home — returning to a submitted create form would offer to create the
+        // The journey now exists and is already current, so return to the
+        // shell: it stages the new journey over the persistent map. Leaving
+        // the submitted create form on the stack would offer to create the
         // same journey twice.
-        unawaited(
-          Navigator.of(context).pushReplacementNamed(
-            JourneyPreviewScreen.routeName,
-            arguments: journeyProvider.currentJourney?.id,
-          ),
-        );
+        unawaited(NavigationHelper.toHomeAndClearStack(context));
       }
     } else {
       final message = journeyProvider.error;
@@ -183,7 +184,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
               hintText: "Enter journey name (e.g., Road Trip to NYC)",
             ),
             const SizedBox(height: 24),
-            
+
             _buildLabel("DESTINATION SEARCH"),
             const SizedBox(height: 8),
             _buildTextField(
@@ -198,6 +199,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                     _selectedLat = null;
                     _selectedLng = null;
                     _selectedAddress = null;
+                    _selectedName = null;
                   });
                 }
                 // Debounce the search (FIX-05): reset the timer on each keystroke;
@@ -215,7 +217,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
               },
               suffixIcon: const Icon(Icons.search, color: Colors.white54),
             ),
-            
+
             Consumer<MapProvider>(
               builder: (context, mapProvider, child) {
                 if (mapProvider.isSearching) {
@@ -246,7 +248,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                     ),
                   );
                 }
-                
+
                 if (mapProvider.searchError != null) {
                   return Container(
                     margin: const EdgeInsets.only(top: 4),
@@ -260,13 +262,17 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.search_off, color: colors.silver, size: 18),
+                            Icon(
+                              Icons.search_off,
+                              color: colors.silver,
+                              size: 18,
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 mapProvider.searchError!,
                                 style: TextStyle(
-                                  color: colors.silver, 
+                                  color: colors.silver,
                                   fontSize: 13,
                                   height: 1.4,
                                 ),
@@ -279,7 +285,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                     ),
                   );
                 }
-                
+
                 if (mapProvider.searchResults.isNotEmpty) {
                   return Container(
                     margin: const EdgeInsets.only(top: 4),
@@ -292,14 +298,16 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: mapProvider.searchResults.length,
-                      separatorBuilder: (_, __) => Divider(color: colors.brushedSteel, height: 1),
+                      separatorBuilder: (_, __) =>
+                          Divider(color: colors.brushedSteel, height: 1),
                       itemBuilder: (context, index) {
                         final result = mapProvider.searchResults[index];
                         // Advisory only — flag results implausibly far from the
                         // search bias point. Never blocks selection.
                         final biasLat = mapProvider.searchBiasLat;
                         final biasLng = mapProvider.searchBiasLng;
-                        final isFar = biasLat != null &&
+                        final isFar =
+                            biasLat != null &&
                             biasLng != null &&
                             _distanceKm(
                                   biasLat,
@@ -309,14 +317,24 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                                 ) >
                                 _kFarResultThresholdKm;
                         return ListTile(
-                          title: Text(result.displayName, style: const TextStyle(color: Colors.white)),
-                          subtitle: Text(result.address, style: TextStyle(color: colors.silver, fontSize: 12)),
+                          title: Text(
+                            result.displayName,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            result.address,
+                            style: TextStyle(
+                              color: colors.silver,
+                              fontSize: 12,
+                            ),
+                          ),
                           trailing: isFar ? _buildFarResultBadge(colors) : null,
                           onTap: () {
                             setState(() {
                               _selectedLat = result.lat;
                               _selectedLng = result.lng;
                               _selectedAddress = result.address;
+                              _selectedName = result.displayName;
                               _isSettingSelectedValue = true;
                               _searchController.text = result.displayName;
                               _isSettingSelectedValue = false;
@@ -328,11 +346,11 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                     ),
                   );
                 }
-                
+
                 return const SizedBox.shrink();
               },
             ),
-            
+
             if (_selectedLat != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -340,11 +358,17 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                 decoration: BoxDecoration(
                   color: colors.electricRed.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: colors.electricRed.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: colors.electricRed.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.location_on, color: colors.electricRed, size: 20),
+                    Icon(
+                      Icons.location_on,
+                      color: colors.electricRed,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -356,9 +380,9 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
                 ),
               ),
             ],
-            
+
             const SizedBox(height: 24),
-            
+
             _buildLabel("LAG THRESHOLD (METERS)"),
             const SizedBox(height: 8),
             _buildTextField(
@@ -374,7 +398,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
             _buildScheduleSection(colors),
 
             const SizedBox(height: 40),
-            
+
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -536,7 +560,7 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     Widget? suffixIcon,
   }) {
     final colors = Theme.of(context).tulinkColors;
-    
+
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
@@ -600,7 +624,8 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
     const earthRadiusKm = 6371.0;
     final dLat = (lat2 - lat1) * math.pi / 180.0;
     final dLng = (lng2 - lng1) * math.pi / 180.0;
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(lat1 * math.pi / 180.0) *
             math.cos(lat2 * math.pi / 180.0) *
             math.sin(dLng / 2) *

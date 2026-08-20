@@ -23,6 +23,40 @@ class MapProvider with ChangeNotifier {
   bool _isFetchingRoute = false;
   bool get isFetchingRoute => _isFetchingRoute;
 
+  /// Monotonic request token. Every route request captures the value it was
+  /// issued under; only the newest may mutate route state or clear the loading
+  /// flag. Without this a slow request for journey A could land after B and
+  /// overwrite B's route, or clear loading while B was still fetching.
+  int _routeRequestSeq = 0;
+
+  /// The token of the request whose result is currently authoritative.
+  int _latestRouteRequest = 0;
+
+  /// Identity of the newest in-flight request, so a stale result can be
+  /// rejected even if tokens are equal across a session change.
+  String? _latestRouteKey;
+
+  /// Request identity: user/session + journey + destination. A change in any of
+  /// them makes an in-flight response stale.
+  static String _routeKey({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+  }) =>
+      '$userId|$journeyId|${destLat.toStringAsFixed(6)}|'
+      '${destLng.toStringAsFixed(6)}';
+
+  /// Abandon any in-flight route request, e.g. on draft clear or logout.
+  void invalidateRouteRequests() {
+    _latestRouteRequest = ++_routeRequestSeq;
+    _latestRouteKey = null;
+    if (_isFetchingRoute) {
+      _isFetchingRoute = false;
+      notifyListeners();
+    }
+  }
+
   Future<RouteResultModel?> fetchRoute({
     required String userId,
     required String journeyId,
@@ -31,6 +65,19 @@ class MapProvider with ChangeNotifier {
     required double destLat,
     required double destLng,
   }) async {
+    final token = ++_routeRequestSeq;
+    final key = _routeKey(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    _latestRouteRequest = token;
+    _latestRouteKey = key;
+
+    /// True while this request is still the newest one issued.
+    bool isCurrent() => _latestRouteRequest == token && _latestRouteKey == key;
+
     _isFetchingRoute = true;
     notifyListeners();
 
@@ -55,16 +102,24 @@ class MapProvider with ChangeNotifier {
         destinationLng: destLng,
       );
       if (result != null) {
+        // A superseded request must not overwrite the newer destination's
+        // route, and must not become what the map draws.
+        if (!isCurrent()) return null;
         _currentRoute = result;
         _currentRouteJourneyId = journeyId;
         return result;
       }
+      if (!isCurrent()) return null;
       // A transient failure must not erase the route currently guiding this
       // same active journey.
       return _currentRouteJourneyId == journeyId ? _currentRoute : null;
     } finally {
-      _isFetchingRoute = false;
-      notifyListeners();
+      // Only the newest request owns the loading flag; an older one finishing
+      // must not signal "done" while the current request is still running.
+      if (isCurrent()) {
+        _isFetchingRoute = false;
+        notifyListeners();
+      }
     }
   }
 

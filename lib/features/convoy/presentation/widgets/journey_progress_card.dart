@@ -91,7 +91,7 @@ class JourneyProgressCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  journey.destinationAddress,
+                  journey.destinationLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -164,7 +164,7 @@ class JourneyProgressCard extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            journey.destinationAddress,
+            journey.destinationLabel,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,

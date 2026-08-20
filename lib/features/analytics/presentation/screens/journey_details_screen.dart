@@ -5,7 +5,7 @@ import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/navigation/navigation_helper.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
-import '../../../journeys/presentation/widgets/journey_preview_map.dart';
+import '../../../journeys/presentation/widgets/journey_destination_banner.dart';
 import '../../../journeys/presentation/providers/journey_provider.dart';
 import '../providers/analytics_provider.dart';
 
@@ -88,7 +88,6 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
 
             // Compact Map View
             Container(
-              height: 180,
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
@@ -96,7 +95,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: JourneyPreviewMap(journey: journey),
+                child: JourneyDestinationBanner(journey: journey),
               ),
             ),
 
@@ -188,7 +187,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          journey.destinationAddress,
+                          journey.destinationLabel,
                           style: TextStyle(
                             color: colors.ink,
                             fontSize: 14,

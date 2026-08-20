@@ -12,7 +12,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../maps/presentation/providers/map_provider.dart';
 import '../../domain/entities/journey.dart';
 import '../providers/journey_provider.dart';
-import '../widgets/journey_preview_map.dart';
+import '../widgets/journey_destination_banner.dart';
 import '../../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../../convoy/presentation/providers/convoy_provider.dart';
 import 'invite_participants_screen.dart';
@@ -137,11 +137,13 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         context.read<JourneyProvider>().fetchJourneyById(widget.journeyId).then(
           (_) async {
             if (!mounted) return;
-            // Leader just started — gate location before we begin publishing.
-            if (!await ensureLocationReady(context)) return;
-            if (!mounted) return;
+            // The leader has started. Reaching the live convoy must not be
+            // gated on this member's own location permission — membership and
+            // journey events are independent of publishing (Phase 1).
             context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-            Navigator.of(context).pushReplacementNamed('/mapview');
+            // Hand back to the shell: its persistent map becomes the live
+            // convoy, so there is no map screen to replace this one with.
+            NavigationHelper.toHomeAndClearStack(context);
           },
         );
       });
@@ -190,12 +192,13 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
   /// Resume/Join buttons for journeys that are already ACTIVE — these start GPS
   /// publishing immediately, so the location gate must pass first.
   Future<void> _gateThenEnterMap() async {
-    if (!await ensureLocationReady(context)) return;
-    if (!mounted) return;
+    // Resuming/joining an already-ACTIVE journey is an observe action, not an
+    // activation, so there is no location precondition. The convoy provider
+    // surfaces a location failure with retry while membership stays live.
     if (!await _confirmJourneySwitchIfNeeded()) return;
     if (!mounted) return;
     context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-    Navigator.of(context).pushReplacementNamed('/mapview');
+    NavigationHelper.toHomeAndClearStack(context);
   }
 
   Future<void> _startJourneyCountdown() async {
@@ -258,11 +261,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
         convoyProvider.startCoordination(widget.journeyId);
 
         if (mounted) {
-          // Navigate to convoy map screen (main map with convoy UI)
-          Navigator.of(context).pushReplacementNamed(
-            '/mapview', // Use main map screen which shows convoy UI when journey is active
-            arguments: widget.journeyId,
-          );
+          // Return to the shell, which shows the live convoy on the one map.
+          NavigationHelper.toHomeAndClearStack(context);
         }
       } else {
         // The backend enforces single-active-journey (BE-FIX-3). If it rejected
@@ -278,11 +278,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
           if (!mounted) return;
           if (switched) {
             context.read<ConvoyProvider>().startCoordination(widget.journeyId);
-            if (mounted) {
-              Navigator.of(
-                context,
-              ).pushReplacementNamed('/mapview', arguments: widget.journeyId);
-            }
+            if (mounted) NavigationHelper.toHomeAndClearStack(context);
             return;
           }
           // Cancelled, or the switch itself failed — reset the start UI quietly.
@@ -1036,9 +1032,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Stack(
-                          children: [JourneyPreviewMap(journey: journey)],
-                        ),
+                        child: JourneyDestinationBanner(journey: journey),
                       ),
                     ),
 
@@ -1192,7 +1186,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen>
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  journey.destinationAddress,
+                                  journey.destinationLabel,
                                   style: TextStyle(
                                     color: colors.white,
                                     fontSize: 14,

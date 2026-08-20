@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/core/utils/journey_stats_calculator.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
-import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/navigation_provider.dart';
@@ -15,6 +14,11 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   static const String routeName = '/profile';
+
+  /// Pop result asking the shell to select the Journeys overlay. Journey
+  /// history is part of the map-focused experience, so the profile hands the
+  /// user back to it instead of pushing a separate full-page history screen.
+  static const String showJourneysResult = 'show-journeys';
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -79,9 +83,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _SectionHeader(
                 title: 'Your travel',
                 actionLabel: 'View journeys',
-                onAction: () => Navigator.of(
-                  context,
-                ).pushNamed(JourneyHistoryScreen.routeName),
+                onAction: () =>
+                    Navigator.of(context).pop(ProfileScreen.showJourneysResult),
               ),
               const SizedBox(height: 10),
               _TravelSummaryCard(
@@ -90,9 +93,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       journeys,
                       userId,
                     ),
-                onTap: () => Navigator.of(
-                  context,
-                ).pushNamed(JourneyHistoryScreen.routeName),
+                onTap: () =>
+                    Navigator.of(context).pop(ProfileScreen.showJourneysResult),
               ),
               const SizedBox(height: 28),
               const _SectionHeader(title: 'Preferences'),

@@ -72,6 +72,7 @@ class JourneyProvider extends ChangeNotifier {
     required String name,
     required double latitude,
     required double longitude,
+    String? destinationName,
     required String destinationAddress,
     required int lagThresholdMeters,
     DateTime? scheduledFor,
@@ -84,6 +85,7 @@ class JourneyProvider extends ChangeNotifier {
       name: name,
       latitude: latitude,
       longitude: longitude,
+      destinationName: destinationName,
       destinationAddress: destinationAddress,
       lagThresholdMeters: lagThresholdMeters,
       scheduledFor: scheduledFor,
@@ -163,19 +165,39 @@ class JourneyProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchJourneyById(String journeyId) async {
+  /// Fetch a journey by id and return it.
+  ///
+  /// Returns the fetched journey, or null on failure. **Callers must use the
+  /// return value**, not [currentJourney], to decide what to do next: on
+  /// failure this deliberately leaves the previous selection intact, so reading
+  /// `currentJourney` afterwards can silently yield a *different* journey and
+  /// stage the wrong one.
+  ///
+  /// The returned journey is also validated to match [journeyId]; a mismatched
+  /// response is treated as a failure rather than adopted.
+  Future<Journey?> fetchJourneyById(String journeyId) async {
     _setLoading(true);
     _setError(null);
 
     final result = await getJourneyByIdUseCase(journeyId);
+    final fetched = result.data;
 
-    if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
-    } else {
-      _setError(result.failure?.message ?? 'Unknown error');
+    if (result.isSuccess && fetched != null && fetched.id == journeyId) {
+      _currentJourney = fetched;
+      _setLoading(false);
+      return fetched;
     }
 
+    if (result.isSuccess && fetched != null && fetched.id != journeyId) {
+      // A response for a different journey must never become the selection.
+      _setError('Received a different journey than requested');
+      _setLoading(false);
+      return null;
+    }
+
+    _setError(result.failure?.message ?? 'Unknown error');
     _setLoading(false);
+    return null;
   }
 
   Future<Journey?> joinJourneyByCode(String inviteCode) async {
@@ -277,6 +299,38 @@ class JourneyProvider extends ChangeNotifier {
   /// Set the current journey (used for continuing active journeys)
   void setCurrentJourney(Journey journey) {
     _currentJourney = journey;
+    notifyListeners();
+  }
+
+  /// Stop foregrounding the current journey without changing it server-side.
+  ///
+  /// Used when the user collapses journey chrome to look at the map: the
+  /// journey and their membership are untouched, it is simply no longer the
+  /// selection driving the map experience. A journey that is genuinely ACTIVE
+  /// is deliberately *not* cleared — dropping it would hide a running convoy.
+  /// Release a journey that is known to be finished.
+  ///
+  /// Unlike [clearCurrentJourneySelection] this *does* clear an entry whose
+  /// cached status still reads ACTIVE, because the caller has observed the
+  /// journey end. Without it a completed journey stays current and the map
+  /// re-derives a live convoy for a trip that is already over.
+  void releaseFinishedJourney(String journeyId) {
+    var changed = false;
+    if (_currentJourney?.id == journeyId) {
+      _currentJourney = null;
+      changed = true;
+    }
+    if (_activeJourneys.any((journey) => journey.id == journeyId)) {
+      _activeJourneys.removeWhere((journey) => journey.id == journeyId);
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  void clearCurrentJourneySelection() {
+    final journey = _currentJourney;
+    if (journey == null || journey.status == JourneyStatus.ACTIVE) return;
+    _currentJourney = null;
     notifyListeners();
   }
 

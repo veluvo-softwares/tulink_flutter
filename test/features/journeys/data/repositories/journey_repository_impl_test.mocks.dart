@@ -25,13 +25,8 @@ import 'package:tulink_flutter/features/journeys/data/models/journey_model.dart'
 // ignore_for_file: subtype_of_sealed_class
 
 class _FakeJourneyModel_0 extends _i1.SmartFake implements _i2.JourneyModel {
-  _FakeJourneyModel_0(
-    Object parent,
-    Invocation parentInvocation,
-  ) : super(
-          parent,
-          parentInvocation,
-        );
+  _FakeJourneyModel_0(Object parent, Invocation parentInvocation)
+    : super(parent, parentInvocation);
 }
 
 /// A class which mocks [JourneyRemoteDataSource].
@@ -48,100 +43,89 @@ class MockJourneyRemoteDataSource extends _i1.Mock
     required String? name,
     required double? latitude,
     required double? longitude,
+    String? destinationName,
     required String? destinationAddress,
     required int? lagThresholdMeters,
     DateTime? scheduledFor,
     bool? autoStart = false,
   }) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #createJourney,
-          [],
-          {
-            #name: name,
-            #latitude: latitude,
-            #longitude: longitude,
-            #destinationAddress: destinationAddress,
-            #lagThresholdMeters: lagThresholdMeters,
-            #scheduledFor: scheduledFor,
-            #autoStart: autoStart,
-          },
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #createJourney,
-            [],
-            {
+            Invocation.method(#createJourney, [], {
               #name: name,
               #latitude: latitude,
               #longitude: longitude,
+              #destinationName: destinationName,
               #destinationAddress: destinationAddress,
               #lagThresholdMeters: lagThresholdMeters,
               #scheduledFor: scheduledFor,
               #autoStart: autoStart,
-            },
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            }),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#createJourney, [], {
+                  #name: name,
+                  #latitude: latitude,
+                  #longitude: longitude,
+                  #destinationName: destinationName,
+                  #destinationAddress: destinationAddress,
+                  #lagThresholdMeters: lagThresholdMeters,
+                  #scheduledFor: scheduledFor,
+                  #autoStart: autoStart,
+                }),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
   _i4.Future<_i2.JourneyModel> getJourneyById(String? journeyId) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #getJourneyById,
-          [journeyId],
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #getJourneyById,
-            [journeyId],
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            Invocation.method(#getJourneyById, [journeyId]),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#getJourneyById, [journeyId]),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
-  _i4.Future<List<_i2.JourneyModel>> getActiveJourneys() => (super.noSuchMethod(
-        Invocation.method(
-          #getActiveJourneys,
-          [],
-        ),
-        returnValue:
-            _i4.Future<List<_i2.JourneyModel>>.value(<_i2.JourneyModel>[]),
-      ) as _i4.Future<List<_i2.JourneyModel>>);
+  _i4.Future<List<_i2.JourneyModel>> getActiveJourneys() =>
+      (super.noSuchMethod(
+            Invocation.method(#getActiveJourneys, []),
+            returnValue: _i4.Future<List<_i2.JourneyModel>>.value(
+              <_i2.JourneyModel>[],
+            ),
+          )
+          as _i4.Future<List<_i2.JourneyModel>>);
 
   @override
   _i4.Future<_i2.JourneyModel> joinJourneyByCode(String? inviteCode) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #joinJourneyByCode,
-          [inviteCode],
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #joinJourneyByCode,
-            [inviteCode],
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            Invocation.method(#joinJourneyByCode, [inviteCode]),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#joinJourneyByCode, [inviteCode]),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
   _i4.Future<_i2.JourneyModel> startJourney(String? journeyId) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #startJourney,
-          [journeyId],
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #startJourney,
-            [journeyId],
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            Invocation.method(#startJourney, [journeyId]),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#startJourney, [journeyId]),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
   _i4.Future<_i2.JourneyModel> updateJourney(
@@ -149,58 +133,44 @@ class MockJourneyRemoteDataSource extends _i1.Mock
     Map<String, dynamic>? updateData,
   ) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #updateJourney,
-          [
-            journeyid,
-            updateData,
-          ],
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #updateJourney,
-            [
-              journeyid,
-              updateData,
-            ],
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            Invocation.method(#updateJourney, [journeyid, updateData]),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#updateJourney, [journeyid, updateData]),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
   _i4.Future<_i2.JourneyModel> endJourney(String? journeyId) =>
       (super.noSuchMethod(
-        Invocation.method(
-          #endJourney,
-          [journeyId],
-        ),
-        returnValue: _i4.Future<_i2.JourneyModel>.value(_FakeJourneyModel_0(
-          this,
-          Invocation.method(
-            #endJourney,
-            [journeyId],
-          ),
-        )),
-      ) as _i4.Future<_i2.JourneyModel>);
+            Invocation.method(#endJourney, [journeyId]),
+            returnValue: _i4.Future<_i2.JourneyModel>.value(
+              _FakeJourneyModel_0(
+                this,
+                Invocation.method(#endJourney, [journeyId]),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.JourneyModel>);
 
   @override
-  _i4.Future<void> cancelJourney(String? journeyId) => (super.noSuchMethod(
-        Invocation.method(
-          #cancelJourney,
-          [journeyId],
-        ),
-        returnValue: _i4.Future<void>.value(),
-        returnValueForMissingStub: _i4.Future<void>.value(),
-      ) as _i4.Future<void>);
+  _i4.Future<void> cancelJourney(String? journeyId) =>
+      (super.noSuchMethod(
+            Invocation.method(#cancelJourney, [journeyId]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
 
   @override
-  _i4.Future<void> leaveJourney(String? journeyId) => (super.noSuchMethod(
-        Invocation.method(
-          #leaveJourney,
-          [journeyId],
-        ),
-        returnValue: _i4.Future<void>.value(),
-        returnValueForMissingStub: _i4.Future<void>.value(),
-      ) as _i4.Future<void>);
+  _i4.Future<void> leaveJourney(String? journeyId) =>
+      (super.noSuchMethod(
+            Invocation.method(#leaveJourney, [journeyId]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
 }
