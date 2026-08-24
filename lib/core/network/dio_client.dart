@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../auth/token_manager.dart';
 import '../config/app_config.dart';
 import '../errors/failure.dart';
+import 'api_routes.dart';
 import 'request_log_filter.dart';
 
 /// A singleton Dio client with centralized configuration
@@ -94,6 +96,23 @@ class DioClient {
           return;
         }
 
+        // A 401 from an endpoint that *establishes* a session is the server's
+        // verdict on the credentials, not an expired session. There is nothing
+        // to refresh, so this must pass straight through to the caller with the
+        // server's own message ("Login failed. Please check your credentials").
+        //
+        // Without this exemption, signing in with a wrong password went: 401 →
+        // refresh a session that does not exist → replay the login with a bogus
+        // Authorization header → second 401 → clear tokens and fire onAuthLost.
+        // The real message was replaced by a token error, and any non-TokenFailure
+        // thrown while refreshing escaped this callback without ever calling
+        // `handler`, so the request future never completed and the Sign in button
+        // span forever.
+        if (_isSessionEstablishingRoute(error.requestOptions.path)) {
+          handler.next(error);
+          return;
+        }
+
         // Loop guard: if this request was already retried after a refresh and
         // STILL 401s, the session is genuinely dead — clear and log out.
         final alreadyRetried =
@@ -154,9 +173,58 @@ class DioClient {
             ),
           );
           return;
+        } catch (e) {
+          // Anything the refresh throws that is not a TokenFailure — a
+          // DioException from the refresh call, a storage error, a bug.
+          //
+          // This catch-all exists because an exception escaping an async
+          // interceptor callback leaves `handler` uncalled, and Dio then never
+          // completes the request's future: the caller waits forever with no
+          // error to show. Failing the one request is always better than
+          // hanging it.
+          handler.reject(
+            DioException(
+              requestOptions: error.requestOptions,
+              response: error.response,
+              type: DioExceptionType.badResponse,
+              error: AuthFailure.tokenInvalid,
+            ),
+          );
+          return;
         }
       },
     );
+  }
+
+  /// Routes that *establish* a session rather than consuming one.
+  ///
+  /// A 401 from any of these means "these credentials are wrong", never "your
+  /// token expired". Refreshing in response to one is meaningless at best —
+  /// and for [ApiRoutes.refreshToken] it would be a refresh triggered by a
+  /// failed refresh.
+  ///
+  /// Matched on the path suffix so a configured base URL with a path prefix
+  /// still resolves.
+  /// Test seam for [_isSessionEstablishingRoute] — the exemption list is the
+  /// whole fix, so it is asserted directly rather than inferred.
+  @visibleForTesting
+  static bool debugIsSessionEstablishingRoute(String path) =>
+      _isSessionEstablishingRoute(path);
+
+  /// Test seam exposing the configured auth interceptor.
+  @visibleForTesting
+  Interceptor debugAuthInterceptorForTest() => _createAuthInterceptor();
+
+  static bool _isSessionEstablishingRoute(String path) {
+    const routes = <String>[
+      ApiRoutes.signIn,
+      ApiRoutes.signUp,
+      ApiRoutes.socialSignIn,
+      ApiRoutes.refreshToken,
+      ApiRoutes.forgotPassword,
+      ApiRoutes.resetPassword,
+    ];
+    return routes.any((route) => path == route || path.endsWith(route));
   }
 
   /// Creates a retry interceptor for failed requests

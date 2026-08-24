@@ -117,10 +117,10 @@ class _AuthScreenState extends State<AuthScreen> {
                             child: const Text('Forgot password?'),
                           ),
                         ),
-                        if (auth.hasError) ...[
-                          AuthErrorBanner(message: auth.errorMessage),
-                          const SizedBox(height: 14),
-                        ],
+                        // No inline error banner here: `AuthProvider.signIn`
+                        // already raises a `CarToastService.showError` for the
+                        // same failure, and showing both said the same thing
+                        // twice in two places.
                         ElevatedButton(
                           onPressed: auth.isLoading ? null : _handleSignIn,
                           child: auth.isLoading
