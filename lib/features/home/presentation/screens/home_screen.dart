@@ -28,6 +28,7 @@ import 'package:tulink_flutter/features/home/presentation/widgets/pending_journe
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/maps/domain/entities/place_search_result.dart';
 import 'package:tulink_flutter/features/home/presentation/state/map_experience_state.dart';
+import 'package:tulink_flutter/features/home/presentation/state/journey_adoption_sequence.dart';
 import 'package:tulink_flutter/features/home/presentation/state/live_artifact_coordinator.dart';
 import 'package:tulink_flutter/features/home/presentation/state/roster_refresh_coalescer.dart';
 import 'package:tulink_flutter/features/home/presentation/state/staged_invite_dispatcher.dart';
@@ -1242,25 +1243,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _isLiveChromeCollapsed = false;
     });
 
-    // Draw the destination regardless of membership — the waiting overlay is
-    // still useful and honest when the room is unreachable.
-    await _showJourneyDestinationOnMap(journey);
-    if (!mounted) return;
+    await sequenceJourneyAdoption(
+      isLive: isLive,
+      enterLive: () {
+        if (!mounted) return;
+        _liveJourneyId = journey.id;
+        // Do not await permission, GPS, or native map staging before exposing
+        // the live experience. ConvoyProvider installs room listeners first;
+        // LiveJourneyExperience owns restoration of live map geometry.
+        unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
+        _enterLiveJourney();
+      },
+      stagePending: () async {
+        // The waiting overlay benefits from seeing the destination even when
+        // room membership is unavailable, so pending adoption still stages it
+        // before exposing listener-only controls.
+        await _showJourneyDestinationOnMap(journey);
+        if (!mounted) return;
 
-    if (isLive) {
-      _liveJourneyId = journey.id;
-      // Do not await the permission/location half of coordination before
-      // exposing the live experience. ConvoyProvider installs room listeners
-      // first and reports location readiness independently.
-      unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
-      _enterLiveJourney();
-      return;
-    }
-
-    // Join listener-only so membership exists even when the staging chrome is
-    // dismissed. [PendingJourneyStaging] joins too — the call is idempotent —
-    // and it is the one that owns the *visible* retry/failure state.
-    unawaited(_joinPendingRoomFor(journey.id));
+        // Join listener-only so membership exists even when the staging chrome
+        // is dismissed. PendingJourneyStaging also joins idempotently and owns
+        // the visible retry/failure state.
+        unawaited(_joinPendingRoomFor(journey.id));
+      },
+    );
   }
 
   /// Join the convoy room for a staged (not yet live) journey, listener-only.

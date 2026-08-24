@@ -519,8 +519,14 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   }
 
   @override
-  Stream<ConvoyConnectionState> get connectionStateStream =>
-      _webSocketDataSource.connectionStateStream;
+  Stream<ConvoyConnectionState> get connectionStateStream async* {
+    // The app-scoped user channel often connects before a journey-scoped
+    // ConvoyProvider subscribes. The underlying controller is broadcast-only,
+    // so its earlier `connected` event is otherwise lost and the provider can
+    // remain falsely disconnected until a later transport transition.
+    yield _webSocketDataSource.connectionState;
+    yield* _webSocketDataSource.connectionStateStream;
+  }
 
   @override
   Stream<JourneyEndedEvent> get journeyEndedStream =>

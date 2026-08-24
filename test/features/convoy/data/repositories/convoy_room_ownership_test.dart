@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tulink_flutter/features/convoy/data/repositories/convoy_repository_impl.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
 
 import '_convoy_test_doubles.dart';
 
@@ -160,6 +161,19 @@ void main() {
       before,
       reason: 'a redundant join must not churn a healthy room',
     );
+  });
+
+  test('connection state replays an already-connected transport', () async {
+    // The user channel can connect before a journey-scoped provider subscribes.
+    // A broadcast-only stream drops that earlier `connected` event and leaves
+    // the live UI stuck in CONNECTING/NOT CONNECTED despite a healthy socket.
+    ws.connected = true;
+
+    final state = await repository.connectionStateStream.first.timeout(
+      const Duration(milliseconds: 100),
+    );
+
+    expect(state, ConvoyConnectionState.connected);
   });
 
   test('going live in B releases the listener room A first', () async {

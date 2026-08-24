@@ -55,9 +55,13 @@ MapExperienceState resolveMapExperienceState({
 }) {
   if (isEnding) return MapExperienceState.ending;
 
-  // A completed journey awaiting its summary outranks everything below: the
-  // user must see the result before the map returns to exploring.
-  if (completedJourney != null) return MapExperienceState.completed;
+  // A completed journey awaiting its summary outranks the same journey (or an
+  // empty selection), but never a newer selected journey. A late completion
+  // callback from A must not cover an already-active B with A's summary.
+  if (completedJourney != null &&
+      (currentJourney == null || currentJourney.id == completedJourney.id)) {
+    return MapExperienceState.completed;
+  }
 
   if (isStarting) return MapExperienceState.starting;
 

@@ -28,6 +28,7 @@ import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/journey_ended_event.dart';
 import '../../convoy/domain/entities/member_position.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
+import '../../home/presentation/state/journey_ended_event_scope.dart';
 import 'widgets/turn_instruction_card.dart';
 import 'providers/navigation_provider.dart';
 import '../domain/entities/route_progress.dart';
@@ -1841,6 +1842,22 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     final convoyProvider = context.read<ConvoyProvider>();
     final event = convoyProvider.lastJourneyEndedEvent;
     if (event == null) return;
+
+    final selectedJourneyId = context
+        .read<JourneyProvider>()
+        .currentJourney
+        ?.id;
+    if (!isJourneyEndedEventCurrent(
+      eventJourneyId: event.journeyId,
+      selectedJourneyId: selectedJourneyId,
+      activeLayerJourneyId: _activeJourneyId,
+    )) {
+      // The event belongs to a journey that previously owned this provider.
+      // Drop it so it cannot keep re-triggering, but never let it tear down the
+      // journey currently selected by the host.
+      convoyProvider.consumeJourneyEndedEvent();
+      return;
+    }
 
     // Consume up-front so a rebuild triggered by the async fetch below
     // doesn't re-enter this handler.
