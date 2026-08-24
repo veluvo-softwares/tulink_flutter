@@ -6,8 +6,8 @@ import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 /// The single Home map is driven by this derived value. It replaces a set of
 /// independent booleans whose combinations could disagree with the providers.
 void main() {
-  Journey journey(JourneyStatus status) => Journey(
-    id: 'j1',
+  Journey journey(JourneyStatus status, {String id = 'j1'}) => Journey(
+    id: id,
     name: 'Trip to Karen Shopping Centre',
     leaderId: 'leader-1',
     status: status,
@@ -128,6 +128,16 @@ void main() {
           completedJourney: journey(JourneyStatus.COMPLETED),
         ),
         MapExperienceState.completed,
+      );
+    });
+
+    test('a stale summary from A cannot cover active journey B', () {
+      expect(
+        resolve(
+          currentJourney: journey(JourneyStatus.ACTIVE, id: 'B'),
+          completedJourney: journey(JourneyStatus.COMPLETED, id: 'A'),
+        ),
+        MapExperienceState.liveConvoy,
       );
     });
 
