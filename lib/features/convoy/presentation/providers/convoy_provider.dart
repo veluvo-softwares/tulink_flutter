@@ -144,6 +144,15 @@ class ConvoyProvider extends ChangeNotifier {
   int _participantAcceptedTick = 0;
   int get participantAcceptedTick => _participantAcceptedTick;
 
+  /// The journey the most recent `participant-accepted` event belonged to.
+  ///
+  /// Published alongside the tick so a listener can confirm the burst it is
+  /// reacting to is for the journey it is staging, instead of inferring it
+  /// from whatever happens to be selected when the refresh finally runs.
+  String? _lastParticipantAcceptedJourneyId;
+  String? get lastParticipantAcceptedJourneyId =>
+      _lastParticipantAcceptedJourneyId;
+
   /// Increments every time the backend pushes a `journey-invite` to this user
   /// over the WebSocket user channel. The home screen watches this to refresh
   /// the invite list and show a banner without a reload. [lastJourneyInvite]
@@ -323,7 +332,7 @@ class ConvoyProvider extends ChangeNotifier {
     // release A first, or A's subscriptions keep delivering into B's session.
     final generation = ++_roomGeneration;
     if (_currentJourneyId != null && _currentJourneyId != journeyId) {
-      await stopCoordination();
+      await _releaseRoomState();
       if (generation != _roomGeneration) return;
     }
 
@@ -339,7 +348,7 @@ class ConvoyProvider extends ChangeNotifier {
       //    permission dialog can stay open indefinitely, so awaiting it here
       //    delayed the snapshot by exactly as long as the user hesitated.
       if (!_isSubscribed) {
-        _startConvoyStream(journeyId);
+        _startConvoyStream(journeyId, generation);
       }
       _isSubscribed = true;
       notifyListeners();
@@ -355,7 +364,9 @@ class ConvoyProvider extends ChangeNotifier {
 
         // The journey may have been switched or stopped while the dialog was
         // open; a late grant must not start publishing for the wrong room.
-        if (_currentJourneyId != journeyId) return;
+        if (_currentJourneyId != journeyId || generation != _roomGeneration) {
+          return;
+        }
 
         // Location problems are reported on their own channel so the UI can say
         // "we can't see your location" without implying the convoy is
@@ -432,12 +443,16 @@ class ConvoyProvider extends ChangeNotifier {
   /// Join a journey room to receive real-time events without starting GPS.
   /// Used by members waiting on the home screen for the leader to start.
   Future<bool> joinJourneyRoom(String journeyId) async {
-    if (_currentJourneyId == journeyId && _isSubscribed) return true;
-
     // A user is in at most one convoy room. Claim ownership of the handoff with
-    // a generation token *before* any await, so a slower earlier join cannot
-    // finish afterwards and leave its own id and subscriptions in place.
+    // a generation token *before anything else* — including the already-joined
+    // shortcut. Claiming it after that check let two joins that both started
+    // while `_currentJourneyId`/`_isSubscribed` were still unset run
+    // concurrently all the way into the repository.
     final generation = ++_roomGeneration;
+
+    // Already ours and confirmed. Still claims the generation above, so a
+    // concurrent join for another journey is correctly ordered against it.
+    if (_currentJourneyId == journeyId && _isSubscribed) return true;
 
     // Tear the previous room down completely — subscriptions included — before
     // joining the new one. Overwriting `_currentJourneyId` while room A's
@@ -445,7 +460,7 @@ class ConvoyProvider extends ChangeNotifier {
     // participant subscriptions were still live meant A's events arrived and
     // were attributed to B.
     if (_currentJourneyId != null || _isSubscribed) {
-      await stopCoordination();
+      await _releaseRoomState();
       if (generation != _roomGeneration) return false;
     }
 
@@ -453,9 +468,8 @@ class ConvoyProvider extends ChangeNotifier {
       _clearError();
 
       // Do not mark listener mode ready until the server confirms room
-      // membership. Previously _startConvoyStream kicked off its async socket
-      // setup in the background and this method returned immediately, so a
-      // leader could start before the follower was actually in the room.
+      // membership. The repository serialises the handoff and only resolves
+      // once the server's ack names *this* journey.
       await _repository.joinJourneyRoom(journeyId);
 
       // A newer join took over while the server was answering: that room owns
@@ -467,7 +481,7 @@ class ConvoyProvider extends ChangeNotifier {
 
       // Only now is the room safely ours.
       _currentJourneyId = journeyId;
-      _startConvoyStream(journeyId);
+      _startConvoyStream(journeyId, generation);
 
       _isSubscribed = true;
       notifyListeners();
@@ -476,6 +490,10 @@ class ConvoyProvider extends ChangeNotifier {
     } catch (e) {
       print('❌ ConvoyProvider: failed to join room: $e');
       if (generation == _roomGeneration) {
+        // A failed join must leave a deterministic recoverable state, never a
+        // mixed A/B one: nothing of this attempt survives, and nothing of the
+        // previous room does either.
+        await _cancelRoomSubscriptions();
         _currentJourneyId = null;
         _isSubscribed = false;
         _setError('Live updates are reconnecting');
@@ -499,34 +517,9 @@ class ConvoyProvider extends ChangeNotifier {
     _publishTimer?.cancel();
     _publishTimer = null;
 
-    // Stop the coalesced snapshot-notify timer
-    _snapshotNotifyTimer?.cancel();
-    _snapshotNotifyTimer = null;
-
-    // Stop convoy streaming
-    await _convoySubscription?.cancel();
-    _convoySubscription = null;
-
-    // Stop connection state monitoring
-    await _connectionSubscription?.cancel();
-    _connectionSubscription = null;
-
-    // Stop journey-ended monitoring
-    await _journeyEndedSubscription?.cancel();
-    _journeyEndedSubscription = null;
-
-    // Stop participant-arrived monitoring
-    await _participantArrivedSubscription?.cancel();
-    _participantArrivedSubscription = null;
-
-    // Stop journey-started monitoring
-    await _journeyStartedSubscription?.cancel();
-    _journeyStartedSubscription = null;
-    _pendingJourneyStartedId = null;
-
-    // Stop participant-accepted monitoring
-    await _participantAcceptedSubscription?.cancel();
-    _participantAcceptedSubscription = null;
+    // Stop every journey-scoped subscription in one place, so a room handoff
+    // and a full stop can never disagree about what was cancelled.
+    await _cancelRoomSubscriptions();
 
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -838,11 +831,55 @@ class ConvoyProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Start streaming convoy positions and connection state
-  void _startConvoyStream(String journeyId) {
+  /// Cancel every journey-scoped subscription without touching room identity.
+  ///
+  /// Separated from [stopCoordination] so a superseded join can clean up its
+  /// own streams without also tearing down the room that replaced it.
+  Future<void> _cancelRoomSubscriptions() async {
+    await _convoySubscription?.cancel();
+    _convoySubscription = null;
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    await _journeyEndedSubscription?.cancel();
+    _journeyEndedSubscription = null;
+    await _participantArrivedSubscription?.cancel();
+    _participantArrivedSubscription = null;
+    await _journeyStartedSubscription?.cancel();
+    _journeyStartedSubscription = null;
+    await _participantAcceptedSubscription?.cancel();
+    _participantAcceptedSubscription = null;
+    _snapshotNotifyTimer?.cancel();
+    _snapshotNotifyTimer = null;
+    _pendingJourneyStartedId = null;
+  }
+
+  /// Release the room currently held, ahead of claiming a different one.
+  ///
+  /// Identical to [stopCoordination] except that it is used *inside* a handoff,
+  /// where the caller has already claimed the newer generation.
+  Future<void> _releaseRoomState() => stopCoordination();
+
+  /// Start streaming convoy positions and connection state.
+  ///
+  /// [generation] is the room-ownership token this subscription set belongs
+  /// to. Every callback re-checks it, so a stream installed by a superseded
+  /// attempt can never deliver into the room that replaced it — checking only
+  /// `_currentJourneyId` was not enough, because a re-entry into the *same*
+  /// journey produces the same id with a different owner.
+  void _startConvoyStream(String journeyId, int generation) {
+    // A previous attempt's streams must go before this one's are installed;
+    // overwriting the fields leaked the old subscriptions, which kept
+    // delivering into the new session.
+    unawaited(_cancelRoomSubscriptions());
+
+    /// True while this subscription set still owns the room.
+    bool owns() =>
+        generation == _roomGeneration && _currentJourneyId == journeyId;
+
     // Listen to convoy position updates
     _convoySubscription = _streamConvoyPositions(journeyId).listen(
       (result) {
+        if (!owns()) return;
         if (result.snapshot != null) {
           _snapshot = result.snapshot;
           _clearError();
@@ -868,6 +905,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Listen to WebSocket connection state changes
     _connectionSubscription = _repository.connectionStateStream.listen(
       (connectionState) {
+        if (!owns()) return;
         // An automatic reconnect is a new attempt too, so consumers restart
         // their bounded window rather than inheriting the previous timeout.
         if (connectionState == ConvoyConnectionState.reconnecting &&
@@ -889,8 +927,10 @@ class ConvoyProvider extends ChangeNotifier {
     // don't keep hammering the now-invalid room.
     _journeyEndedSubscription = _repository.journeyEndedStream.listen(
       (event) async {
-        // Ignore stale events from a previous journey.
-        if (event.journeyId != _currentJourneyId) return;
+        // Identity is the event's own; ownership is this subscription's.
+        // A late end for A must not tear down B, and an end delivered to a
+        // superseded subscription must not act at all.
+        if (!owns() || event.journeyId != journeyId) return;
 
         print(
           '🏁 ConvoyProvider: journey-ended received for ${event.journeyId}',
@@ -910,6 +950,7 @@ class ConvoyProvider extends ChangeNotifier {
     // journey-ended subscription above handles the navigation/teardown.
     _participantArrivedSubscription = _repository.participantArrivedStream.listen(
       (event) async {
+        if (!owns()) return;
         _arrivedCount = event.arrivedCount;
         _totalMemberCount = event.totalCount;
         _lastArrivalEvent = event;
@@ -929,12 +970,14 @@ class ConvoyProvider extends ChangeNotifier {
     );
 
     _journeyStartedSubscription = _repository.journeyStartedStream.listen(
-      (journeyId) {
-        if (journeyId == _currentJourneyId) {
-          print('🚀 ConvoyProvider: journey-started for $journeyId');
-          _pendingJourneyStartedId = journeyId;
-          notifyListeners();
-        }
+      (eventJourneyId) {
+        // The event carries its own identity (parsed from the payload by the
+        // data source). It is accepted only for the room this subscription set
+        // owns — a start broadcast for A must never activate B.
+        if (!owns() || eventJourneyId != journeyId) return;
+        print('🚀 ConvoyProvider: journey-started for $eventJourneyId');
+        _pendingJourneyStartedId = eventJourneyId;
+        notifyListeners();
       },
       onError: (Object error) {
         print('❌ journey-started stream error: $error');
@@ -943,12 +986,16 @@ class ConvoyProvider extends ChangeNotifier {
 
     _participantAcceptedSubscription = _repository.participantAcceptedStream
         .listen(
-          (journeyId) {
-            if (journeyId == _currentJourneyId) {
-              print('🤝 ConvoyProvider: participant-accepted for $journeyId');
-              _participantAcceptedTick++;
-              notifyListeners();
-            }
+          (eventJourneyId) {
+            // Journey-scoped from the payload — see the data source. A late
+            // acceptance for A must not refresh B's roster.
+            if (!owns() || eventJourneyId != journeyId) return;
+            print(
+              '🤝 ConvoyProvider: participant-accepted for $eventJourneyId',
+            );
+            _lastParticipantAcceptedJourneyId = eventJourneyId;
+            _participantAcceptedTick++;
+            notifyListeners();
           },
           onError: (Object error) {
             print('❌ participant-accepted stream error: $error');

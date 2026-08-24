@@ -14,6 +14,7 @@ class CompletedJourneyOverlay extends StatelessWidget {
     required this.journey,
     required this.onDismiss,
     this.onViewDetails,
+    this.isDismissing = false,
   });
 
   final Journey journey;
@@ -23,6 +24,14 @@ class CompletedJourneyOverlay extends StatelessWidget {
 
   /// Open the full record. Optional — the summary stands on its own.
   final VoidCallback? onViewDetails;
+
+  /// True while Done is clearing the finished journey off the shared map.
+  ///
+  /// The summary deliberately stays up for the whole cleanup: returning to
+  /// "exploring" before the route, destination, peers and puck are actually
+  /// gone showed a map that still had the finished journey drawn on it, and
+  /// let the next journey start drawing into a surface being erased.
+  final bool isDismissing;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +44,7 @@ class CompletedJourneyOverlay extends StatelessWidget {
         // they can no longer interact with.
         Positioned.fill(
           child: GestureDetector(
-            onTap: onDismiss,
+            onTap: isDismissing ? null : onDismiss,
             child: ColoredBox(color: Colors.black.withValues(alpha: 0.45)),
           ),
         ),
@@ -122,8 +131,16 @@ class CompletedJourneyOverlay extends StatelessWidget {
                         ],
                         Expanded(
                           child: FilledButton(
-                            onPressed: onDismiss,
-                            child: const Text('Done'),
+                            onPressed: isDismissing ? null : onDismiss,
+                            child: isDismissing
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Done'),
                           ),
                         ),
                       ],

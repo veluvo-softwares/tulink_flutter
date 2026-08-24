@@ -43,7 +43,14 @@ abstract class LiveMapArtifacts {
   /// Remove every live artifact. Must be idempotent: it runs on completion, on
   /// journey switch, and defensively on teardown, and a missing layer is not an
   /// error.
-  Future<void> clearAll();
+  ///
+  /// [isStillValid] is consulted **between removal batches**, not just once at
+  /// the start. Removals are sequential platform-channel calls, so a cleanup
+  /// for journey A can still be part-way through when journey B starts drawing
+  /// onto the same surface; without a re-check, A's remaining removals delete
+  /// B's route, destination, peers and puck. A cleanup that stops early is
+  /// reported by returning false from [clearAll].
+  Future<bool> clearAll({bool Function()? isStillValid});
 }
 
 /// Mapbox-backed implementation.
@@ -60,8 +67,16 @@ class MapboxLiveMapArtifacts implements LiveMapArtifacts {
   final PointAnnotationManager? _annotations;
 
   @override
-  Future<void> clearAll() async {
+  Future<bool> clearAll({bool Function()? isStillValid}) async {
+    bool stillOurs() => isStillValid?.call() ?? true;
+
+    if (!stillOurs()) return false;
+
     for (final layerId in LiveMapArtifactIds.layers) {
+      // Re-checked before every removal, not once up front: each of these is a
+      // round trip to the platform channel, and ownership can change between
+      // any two of them.
+      if (!stillOurs()) return false;
       try {
         await _map.style.removeStyleLayer(layerId);
       } catch (_) {
@@ -69,16 +84,19 @@ class MapboxLiveMapArtifacts implements LiveMapArtifacts {
       }
     }
     for (final sourceId in LiveMapArtifactIds.sources) {
+      if (!stillOurs()) return false;
       try {
         await _map.style.removeStyleSource(sourceId);
       } catch (_) {
         // Not present — nothing to remove.
       }
     }
+    if (!stillOurs()) return false;
     try {
       await _annotations?.deleteAll();
     } catch (_) {
       // Manager already torn down with its surface.
     }
+    return stillOurs();
   }
 }

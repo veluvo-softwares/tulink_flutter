@@ -100,9 +100,10 @@ void main() {
     });
 
     test('a request queued behind another is dropped after a rebuild', () async {
-      // A cleanup already touching the style is harmless — those calls just
-      // fail against a dead surface. What must not happen is a *queued* request
-      // starting against a surface that was rebuilt while it waited.
+      // A *queued* request must never start against a surface that was rebuilt
+      // while it waited, and the in-flight one must abandon itself as soon as
+      // the rebuild is visible rather than running its remaining removals into
+      // a style that no longer exists.
       final gate = Completer<void>();
       artifacts.gate = gate.future;
       final cleaner = build();
@@ -111,12 +112,16 @@ void main() {
       final queued = cleaner.clear(journeyId: 'j1', force: true);
       generation++; // resume rebuilt the native surface
       gate.complete();
-      await Future.wait([first, queued]);
+      final results = await Future.wait([first, queued]);
 
+      expect(results, [
+        false,
+        false,
+      ], reason: 'neither pass may report the new surface as cleaned');
       expect(
         artifacts.clearCount,
-        1,
-        reason: 'the queued pass must not run against the new surface',
+        0,
+        reason: 'no pass may complete against the new surface',
       );
     });
 
@@ -128,13 +133,42 @@ void main() {
       final pending = cleaner.clear(journeyId: 'j1');
       generation++;
       gate.complete();
-      await pending;
+      expect(await pending, isFalse);
 
-      // It ran against the old surface, so the new surface's copy of these
-      // layers is still there and must remain removable.
+      // The new surface's copy of these layers is still there, so the journey
+      // must remain removable without needing `force`.
       artifacts.gate = null;
-      await cleaner.clear(journeyId: 'j1');
-      expect(artifacts.clearCount, 2);
+      expect(await cleaner.clear(journeyId: 'j1'), isTrue);
+      expect(artifacts.clearCount, 1);
+    });
+
+    test('a delayed cleanup for A stops the moment B takes the map', () async {
+      // The shipped race: Done launched A's cleanup without awaiting it, so
+      // B could start drawing while A was still deleting. The removals are
+      // sequential platform calls, so ownership must be re-checked between
+      // them — checking once up front let the rest of A's pass delete B's
+      // route, destination, peers and puck.
+      final gate = Completer<void>();
+      artifacts.gate = gate.future;
+      final cleaner = build();
+
+      final pending = cleaner.clear(journeyId: 'j1');
+      gate.complete();
+      // B takes the map while A's batches are still running.
+      await Future<void>.delayed(Duration.zero);
+      selectedJourney = 'j2';
+
+      expect(await pending, isFalse);
+      expect(
+        artifacts.removed.length,
+        lessThan(_RecordingArtifacts.batches.length),
+        reason: "A's cleanup must stop, not finish deleting B's geometry",
+      );
+      expect(
+        artifacts.clearCount,
+        0,
+        reason: 'an abandoned pass is not a completed one',
+      );
     });
 
     test('allowed when nothing else is selected', () async {
@@ -183,12 +217,35 @@ class _RecordingArtifacts implements LiveMapArtifacts {
   int concurrentPeak = 0;
   Future<void>? gate;
 
+  /// Removals actually performed, in order. Modelled as discrete batches so a
+  /// test can assert that ownership is re-checked *between* them.
+  final List<String> removed = [];
+
+  /// The batches a real cleanup walks: every layer, then every source, then
+  /// the annotation manager.
+  static const List<String> batches = [
+    ...LiveMapArtifactIds.layers,
+    ...LiveMapArtifactIds.sources,
+    'annotations',
+  ];
+
   @override
-  Future<void> clearAll() async {
+  Future<bool> clearAll({bool Function()? isStillValid}) async {
     _active++;
     concurrentPeak = _active > concurrentPeak ? _active : concurrentPeak;
     if (gate != null) await gate;
-    clearCount++;
-    _active--;
+    try {
+      for (final id in batches) {
+        // Mirrors MapboxLiveMapArtifacts: ownership is consulted before every
+        // removal, not once at the start.
+        if (!(isStillValid?.call() ?? true)) return false;
+        removed.add(id);
+        await Future<void>.delayed(Duration.zero);
+      }
+      clearCount++;
+      return isStillValid?.call() ?? true;
+    } finally {
+      _active--;
+    }
   }
 }

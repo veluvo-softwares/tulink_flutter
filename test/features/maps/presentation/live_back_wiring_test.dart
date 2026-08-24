@@ -4,20 +4,23 @@ import 'package:tulink_flutter/core/theme/app_theme.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/presentation/widgets/convoy_status_bar.dart';
 
-/// Back during a live journey must collapse the chrome, not tear the journey
-/// down.
+/// What the visible status-bar Back control does.
 ///
-/// This drives the actual `ConvoyStatusBar` back control and asserts which
-/// callback fires. The previous guard only searched Home's source for
-/// `onBack: _collapseLiveChrome`, which was true while the live layer below it
-/// still passed `widget.onExit` to the status bar — the wiring was broken in
-/// production and every test passed.
+/// Scope note: this file asserts only that the control exists and invokes the
+/// callback it was given. It deliberately no longer contains a "negative
+/// control" that wires the callback the other way and asserts that the other
+/// callback fires — that proved nothing about production, because the test
+/// itself chose the wiring.
+///
+/// The two things it cannot see are covered where they are actually decidable:
+///
+/// * *which* callback the live layer hands down — `single_map_invariant_test`,
+///   a genuine cross-layer invariant no widget test can observe;
+/// * what the **platform** Back gesture does at the Home/live boundary —
+///   `live_journey_back_boundary_test`, which drives a real `PopScope` in a
+///   real `Navigator`. That is where the shipped defect lived.
 void main() {
-  Widget wrap({
-    required VoidCallback onBack,
-    required VoidCallback onExit,
-    bool wireBackToExit = false,
-  }) => MaterialApp(
+  Widget wrap({required VoidCallback onBack}) => MaterialApp(
     theme: AppTheme.tulinkTheme,
     home: Scaffold(
       body: ConvoyStatusBar(
@@ -25,51 +28,19 @@ void main() {
         connectionState: ConvoyConnectionState.connected,
         journeyId: 'j1',
         connectionAttemptId: 1,
-        // The parameter under test: whichever callback the live layer supplies
-        // is the one Back invokes.
-        onBack: wireBackToExit ? onExit : onBack,
+        onBack: onBack,
       ),
     ),
   );
 
-  testWidgets('the back control invokes the collapse callback', (tester) async {
-    var collapsed = 0;
-    var exited = 0;
-    await tester.pumpWidget(
-      wrap(onBack: () => collapsed++, onExit: () => exited++),
-    );
+  testWidgets('the back control invokes its callback', (tester) async {
+    var pressed = 0;
+    await tester.pumpWidget(wrap(onBack: () => pressed++));
 
     await tester.tap(find.byIcon(Icons.arrow_back));
     await tester.pump();
 
-    expect(collapsed, 1);
-    expect(
-      exited,
-      0,
-      reason: 'Back must never reach the journey teardown path',
-    );
-  });
-
-  testWidgets('the test detects a regression to the exit callback', (
-    tester,
-  ) async {
-    // Negative control: this is exactly the production bug that shipped. If the
-    // live layer is ever rewired to onExit again, the assertion above fails.
-    var collapsed = 0;
-    var exited = 0;
-    await tester.pumpWidget(
-      wrap(
-        onBack: () => collapsed++,
-        onExit: () => exited++,
-        wireBackToExit: true,
-      ),
-    );
-
-    await tester.tap(find.byIcon(Icons.arrow_back));
-    await tester.pump();
-
-    expect(exited, 1, reason: 'proves the tap reaches whatever is wired');
-    expect(collapsed, 0);
+    expect(pressed, 1);
   });
 
   testWidgets('no back control is shown when none is supplied', (tester) async {

@@ -103,36 +103,40 @@ void main() {
   });
 
   group('no flow navigates to a journey page', () {
-    test('nothing pushes JourneyPreviewScreen', () {
-      // A staged or live journey is an overlay on the persistent map, not a
-      // page. A push here would leave the map behind and reintroduce the
-      // second-surface problem from the other direction.
-      final pushes = matches(
-        RegExp(r'''push[A-Za-z]*Named\(\s*
-?\s*[^)]*JourneyPreviewScreen'''),
+    test('the retired journey preview page is gone entirely', () {
+      // It consumed `journey-started` before its fetch succeeded and started
+      // coordination without checking the fetched identity or status, so a
+      // transient GET failure lost the event permanently and a slow response
+      // could coordinate the wrong journey. It was the last routable path with
+      // that behaviour. Deleting it removes the class of bug instead of
+      // maintaining the staging rules in a second place.
+      expect(
+        File(
+          'lib/features/journeys/presentation/pages/'
+          'journey_preview_screen.dart',
+        ).existsSync(),
+        isFalse,
       );
-      expect(pushes, isEmpty, reason: 'found pushes at: $pushes');
+      expect(matches(RegExp('JourneyPreviewScreen')), isEmpty);
     });
 
-    test(
-      'the preview screen survives only as a routable compatibility entry',
-      () {
-        // It may still be reachable by name for old links; it must not be a
-        // normal lifecycle destination, which the push assertion above enforces.
-        final references = matches(RegExp('JourneyPreviewScreen'));
-        for (final reference in references) {
-          expect(
-            reference.startsWith('lib/core/navigation/app_router.dart') ||
-                reference.startsWith(
-                  'lib/features/journeys/presentation/pages/'
-                  'journey_preview_screen.dart',
-                ),
-            isTrue,
-            reason: 'unexpected production reference at $reference',
-          );
-        }
-      },
-    );
+    test('the legacy preview route still resolves, via the redirect', () {
+      // Old deep links and notification payloads must not land on the
+      // undefined-route screen.
+      final router = File(
+        'lib/core/navigation/app_router.dart',
+      ).readAsStringSync();
+      expect(
+        router.contains('MapRouteRedirectScreen.legacyJourneyPreviewRouteName'),
+        isTrue,
+        reason: '/journey-preview must still be routable',
+      );
+
+      final redirect = File(
+        'lib/features/maps/presentation/map_route_redirect_screen.dart',
+      ).readAsStringSync();
+      expect(redirect.contains("'/journey-preview'"), isTrue);
+    });
   });
 
   group('cross-layer wiring no widget test can observe', () {
@@ -158,6 +162,66 @@ void main() {
       );
     });
 
+    test('Home delegates the behaviours that are tested elsewhere', () {
+      // These four collaborators exist so the rules they own can be driven
+      // behaviourally. If Home stops using one, its tests keep passing while
+      // production regresses — which is precisely the failure mode this whole
+      // corrective pass exists to remove. So the delegation itself is pinned.
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+
+      const delegations = {
+        // 1.1 pending-room recovery + the Reconnect control
+        'PendingJourneyStaging(':
+            'pending_journey_staging_test.dart drives the real Reconnect',
+        // 1.9 platform Back at the Home/live boundary
+        'LiveJourneyBackBoundary(':
+            'live_journey_back_boundary_test.dart drives the real PopScope',
+        // 1.6 trailing-edge roster coalescing
+        '_rosterRefresh.record(':
+            'roster_refresh_coalescer_test.dart owns the burst rules',
+        // 1.7 invite claim taken before the picker opens
+        '_inviteDispatcher.dispatch<':
+            'staged_invite_dispatcher_test.dart owns the duplicate-tap rule',
+        // 1.8 Done awaits cleanup before reporting exploring
+        '_artifactCoordinator.clear(':
+            'live_artifact_coordinator_test.dart owns the Done transition',
+      };
+
+      for (final entry in delegations.entries) {
+        expect(
+          home.contains(entry.key),
+          isTrue,
+          reason: 'Home must call ${entry.key} — ${entry.value}',
+        );
+      }
+    });
+
+    test('Done awaits cleanup, and adoption waits for it to settle', () {
+      // The shipped defect was a fire-and-forget cleanup: Done dismissed the
+      // summary immediately, so "exploring" was reported over a map that still
+      // had the finished route on it, and journey B drew into the middle of
+      // journey A's removals.
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+
+      expect(
+        home.contains('final cleaned = await _clearLiveArtifacts();'),
+        isTrue,
+        reason: 'Done must await the surface actually becoming clean',
+      );
+      // The other teardown path (ended/left) has no summary to hold, so it does
+      // not await — instead, adoption of the *next* journey blocks on the same
+      // coordinator, which closes the same race from the other side.
+      expect(
+        home.contains('await _artifactCoordinator.settle();'),
+        isTrue,
+        reason: 'B must not be drawn while A is still being removed',
+      );
+    });
+
     test('surface recreation has exactly one owner', () {
       // Two owners produced two generation bumps and two restore passes for a
       // single resume.
@@ -177,6 +241,63 @@ void main() {
     });
   });
 
+  group('cleanup owns every live drawing', () {
+    // A layer or source the live convoy adds but the inventory does not name
+    // survives Done and reappears on the next journey. Only the source tree can
+    // decide this: a widget test can assert that what *is* in the inventory is
+    // removed, but not that the inventory is complete.
+    test('every id the live layer adds is in the removal inventory', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+      final inventory = File(
+        'lib/features/maps/presentation/controllers/live_map_artifacts.dart',
+      ).readAsStringSync();
+
+      // Every id the live layer declares for a style object, plus every
+      // literal handed straight to a layer/source constructor.
+      final declared = RegExp(
+        "const\\s+(?:String\\s+)?\\w*(?:[Ss]ource|[Ll]ayer|[Ll]ine|[Bb]g|[Rr]ing|[Dd]ot)Id"
+        "\\s*=\\s*'([^']+)'",
+      ).allMatches(live).map((m) => m.group(1)!).toSet();
+
+      final inline = RegExp(
+        "\\bid:\\s*'([^']+)'",
+      ).allMatches(live).map((m) => m.group(1)!).toSet();
+
+      final all = {...declared, ...inline};
+      expect(
+        all,
+        isNotEmpty,
+        reason: 'the scan must actually find the live layer ids',
+      );
+
+      final missing = all.where((id) => !inventory.contains("'$id'")).toList()
+        ..sort();
+
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'these live drawings would survive Done and reappear on the next '
+            'journey: $missing',
+      );
+    });
+
+    test('sources are listed after the layers that reference them', () {
+      // Mapbox refuses to remove a source while a layer still references it,
+      // so the ordering in the inventory is load-bearing.
+      final inventory = File(
+        'lib/features/maps/presentation/controllers/live_map_artifacts.dart',
+      ).readAsStringSync();
+
+      expect(
+        inventory.indexOf('static const List<String> layers'),
+        lessThan(inventory.indexOf('static const List<String> sources')),
+      );
+    });
+  });
+
   group('join and observe are not gated on location', () {
     test('only leader activation retains a location precondition', () {
       // Phase 1's invariant: membership, journey events and reconnect must
@@ -188,7 +309,6 @@ void main() {
 
       const allowedActivationSites = [
         'lib/features/home/presentation/screens/home_screen.dart',
-        'lib/features/journeys/presentation/pages/journey_preview_screen.dart',
       ];
 
       for (final hit in gated) {
@@ -202,8 +322,10 @@ void main() {
       }
       expect(
         gated,
-        hasLength(3),
-        reason: 'exactly the three leader-activation gates remain: $gated',
+        hasLength(2),
+        reason:
+            'exactly the two leader-activation gates remain — starting a new '
+            'draft, and starting a staged journey: $gated',
       );
     });
   });

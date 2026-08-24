@@ -79,6 +79,70 @@ void main() {
     });
   });
 
+  group('restoration runs exactly once per surface', () {
+    // Every layer redraws its geometry off a generation bump. Two owners each
+    // believing they had to rebuild produced two bumps and two full restore
+    // passes for a single resume — which is the defect this claim removes.
+    test('no restoration is claimed before a surface exists', () {
+      expect(controller.claimRestoration(), isFalse);
+      expect(controller.isRestored, isFalse);
+    });
+
+    test('the first claim after attach wins, later ones do not', () {
+      controller.attach(_FakeMapboxMap());
+
+      expect(controller.claimRestoration(), isTrue);
+      expect(controller.isRestored, isTrue);
+      expect(
+        controller.claimRestoration(),
+        isFalse,
+        reason: 'a repeat notification must not redraw every layer again',
+      );
+      expect(controller.claimRestoration(), isFalse);
+    });
+
+    test('a rebuilt surface is restorable exactly once again', () {
+      controller
+        ..attach(_FakeMapboxMap())
+        ..recreate();
+
+      // No surface yet on the new generation.
+      expect(controller.claimRestoration(), isFalse);
+      expect(controller.isRestored, isFalse);
+
+      controller.attach(_FakeMapboxMap());
+      expect(controller.claimRestoration(), isTrue);
+      expect(controller.claimRestoration(), isFalse);
+    });
+
+    test('one resume yields one generation bump and one restoration', () {
+      controller.attach(_FakeMapboxMap());
+      controller.claimRestoration();
+      final before = controller.generation;
+
+      // The single owner rebuilds the surface on resume.
+      controller
+        ..recreate()
+        ..attach(_FakeMapboxMap());
+
+      expect(controller.generation, before + 1);
+
+      var restores = 0;
+      for (var i = 0; i < 5; i++) {
+        if (controller.claimRestoration()) restores++;
+      }
+      expect(restores, 1);
+    });
+
+    test('a disposed controller never claims a restoration', () {
+      final disposable = PersistentMapController()
+        ..attach(_FakeMapboxMap())
+        ..dispose();
+
+      expect(disposable.claimRestoration(), isFalse);
+    });
+  });
+
   group('user pan reporting', () {
     test('a reported pan increments the tick', () {
       expect(controller.userPanTick, 0);

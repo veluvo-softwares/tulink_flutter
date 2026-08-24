@@ -8,7 +8,6 @@ import 'package:tulink_flutter/features/auth/presentation/screens/verify_email_s
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/maps/presentation/map_route_redirect_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/create_journey_screen.dart';
-import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/pages/invite_participants_screen.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/analytics/presentation/screens/journey_history_screen.dart';
@@ -75,18 +74,13 @@ class AppRouter {
           settings,
         );
 
-      case JourneyPreviewScreen.routeName:
-        final journeyId = settings.arguments as String?;
-        if (journeyId == null) {
-          return _createRoute(
-            UndefinedRouteScreen(
-              undefinedRouteName: 'Journey Preview - Missing ID',
-            ),
-            settings,
-          );
-        }
+      // Retired page. A journey that has not started is staging chrome over
+      // the persistent map, not a screen you navigate to, so this name lands on
+      // the same redirect as `/mapview`: it makes the named journey current and
+      // returns to the shell, which stages it.
+      case MapRouteRedirectScreen.legacyJourneyPreviewRouteName:
         return _createRoute(
-          JourneyPreviewScreen(journeyId: journeyId),
+          MapRouteRedirectScreen(arguments: settings.arguments),
           settings,
         );
 

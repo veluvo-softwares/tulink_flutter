@@ -596,18 +596,33 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       return;
     }
 
+    // The surface this draw belongs to. Every route decision below is stamped
+    // with it, so work that resolved against a surface which has since been
+    // rebuilt cannot paint the new one.
+    final generation = _mapGeneration;
+
     // Cached route first — see [resolveRouteSource]. A cached route already
     // ends at this destination and needs no origin, so it must be chosen
     // before any GPS work.
+    //
+    // Read through [MapProvider.routeFor], never `currentRoute`: the held
+    // route must belong to *this* user, journey, destination and surface
+    // generation before it may be adopted as this journey's geometry.
     final source = await resolveRouteSource(
-      cachedRoute: mapProvider.currentRoute,
+      cachedRoute: mapProvider.routeFor(
+        userId: userId,
+        journeyId: journey.id,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+        surfaceGeneration: generation,
+      ),
       destinationLat: journey.destination.latitude,
       destinationLng: journey.destination.longitude,
       locationService: _locationService,
       knownLat: knownLat,
       knownLng: knownLng,
     );
-    if (!mounted || _mapboxMap == null) return;
+    if (!mounted || _mapboxMap == null || generation != _mapGeneration) return;
 
     final RouteResultModel? route;
     switch (source) {
@@ -625,6 +640,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           originLng: originLng,
           destLat: journey.destination.latitude,
           destLng: journey.destination.longitude,
+          surfaceGeneration: generation,
         );
       case AwaitingLocationRouteSource():
         // No cached route and no origin. Keep the destination visible and
@@ -636,6 +652,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     if (route == null || !mounted || _mapboxMap == null) return;
+    // The surface was rebuilt while the route was being resolved: these layer
+    // ids belong to a style that no longer exists, and whichever layer owns the
+    // new surface redraws its own geometry.
+    if (generation != _mapGeneration) return;
 
     // Draw the actual road-following route
     const sourceId = 'actual-route-source';
@@ -738,7 +758,12 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     await _drawActualRoute(journey, knownLat: knownLat, knownLng: knownLng);
 
-    final newRoute = context.read<MapProvider>().currentRoute;
+    final newRoute = context.read<MapProvider>().routeFor(
+      userId: context.read<AuthProvider>().user?.id ?? '',
+      journeyId: journey.id,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+    );
     print('🧭 reroute fetched: ${newRoute?.coordinates.length ?? 0} coords');
     if (newRoute != null && mounted) {
       context.read<NavigationProvider>().loadRoute(newRoute);

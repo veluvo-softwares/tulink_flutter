@@ -43,6 +43,36 @@ class JourneyProvider extends ChangeNotifier {
   Journey? _currentJourney;
   Journey? get currentJourney => _currentJourney;
 
+  /// Monotonic token for journey fetches. A response may only be installed as
+  /// the shared selection while it is still the newest request — a slow fetch
+  /// for A landing after the user selected B used to overwrite B.
+  int _fetchSeq = 0;
+  int _latestFetch = 0;
+
+  /// Incremented on every change of [currentJourney], whatever caused it.
+  ///
+  /// Callers that await across a selection change read this before and after
+  /// and abandon the transition if it moved. It is the one token that covers
+  /// *all* the ways selection changes — fetch, explicit set, release, end —
+  /// which per-call-site flags never did.
+  int _selectionGeneration = 0;
+  int get selectionGeneration => _selectionGeneration;
+
+  /// Adopt [journey] as the selection and invalidate every pending fetch.
+  ///
+  /// An explicit selection outranks anything still in flight: without this a
+  /// fetch issued before the switch lands afterwards and silently reinstates
+  /// the journey the user just moved away from.
+  void _select(Journey? journey) {
+    _latestFetch = ++_fetchSeq;
+    // Only a change of *identity* is a selection change. Re-installing a fresh
+    // entity for the same journey (a roster refresh, a status update) must not
+    // invalidate transitions that are legitimately in flight for it.
+    final changedIdentity = _currentJourney?.id != journey?.id;
+    _currentJourney = journey;
+    if (changedIdentity) _selectionGeneration++;
+  }
+
   List<Journey> _activeJourneys = [];
   List<Journey> get activeJourneys => _activeJourneys;
 
@@ -93,7 +123,7 @@ class JourneyProvider extends ChangeNotifier {
     );
 
     if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
+      _select(result.data);
       _setLoading(false);
       return true;
     } else {
@@ -128,12 +158,12 @@ class JourneyProvider extends ChangeNotifier {
           (j) => j.id == _currentJourney!.id,
         );
         if (!stillActive) {
-          _currentJourney = null;
+          _select(null);
         }
       }
 
       if (_currentJourney == null && _activeJourneys.isNotEmpty) {
-        _currentJourney = _activeJourneys.first;
+        _select(_activeJourneys.first);
       }
     } else {
       _setError(result.failure?.message ?? 'Unknown error');
@@ -157,7 +187,7 @@ class JourneyProvider extends ChangeNotifier {
       if (cached.isEmpty) return;
 
       _activeJourneys = cached;
-      _currentJourney ??= cached.first;
+      if (_currentJourney == null) _select(cached.first);
       notifyListeners();
     } catch (e) {
       // Cache trouble must never block the live fetch.
@@ -176,16 +206,34 @@ class JourneyProvider extends ChangeNotifier {
   /// The returned journey is also validated to match [journeyId]; a mismatched
   /// response is treated as a failure rather than adopted.
   Future<Journey?> fetchJourneyById(String journeyId) async {
+    // Claim the newest-request slot before the await. Only the newest fetch
+    // may install itself as the shared selection; an older one that finishes
+    // afterwards still returns its entity to *its own* caller, which is what
+    // lets a roster refresh for A report honestly without touching B.
+    final token = ++_fetchSeq;
+    _latestFetch = token;
+
     _setLoading(true);
     _setError(null);
 
     final result = await getJourneyByIdUseCase(journeyId);
     final fetched = result.data;
+    final isCurrent = _latestFetch == token;
 
     if (result.isSuccess && fetched != null && fetched.id == journeyId) {
-      _currentJourney = fetched;
-      _setLoading(false);
+      if (isCurrent) {
+        final changedIdentity = _currentJourney?.id != fetched.id;
+        _currentJourney = fetched;
+        if (changedIdentity) _selectionGeneration++;
+        _setLoading(false);
+      }
       return fetched;
+    }
+
+    if (!isCurrent) {
+      // Superseded: report the failure to this caller without disturbing the
+      // newer request's loading/error state.
+      return null;
     }
 
     if (result.isSuccess && fetched != null && fetched.id != journeyId) {
@@ -207,7 +255,7 @@ class JourneyProvider extends ChangeNotifier {
     final result = await joinJourneyByCodeUseCase(inviteCode);
     if (result.isSuccess && result.data != null) {
       final journey = result.data!;
-      _currentJourney = journey;
+      _select(journey);
       _activeJourneys
         ..removeWhere((item) => item.id == journey.id)
         ..insert(0, journey);
@@ -228,7 +276,7 @@ class JourneyProvider extends ChangeNotifier {
     final result = await startJourneyUseCase(journeyId);
 
     if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
+      _select(result.data);
       _setLoading(false);
       return true;
     } else {
@@ -262,7 +310,7 @@ class JourneyProvider extends ChangeNotifier {
     );
 
     if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
+      _select(result.data);
       _activeJourneys.removeWhere((j) => j.id == fromJourneyId);
       _setLoading(false);
       return true;
@@ -286,7 +334,7 @@ class JourneyProvider extends ChangeNotifier {
     );
 
     if (result.isSuccess && result.data != null) {
-      _currentJourney = result.data;
+      _select(result.data);
       _setLoading(false);
       return true;
     } else {
@@ -296,9 +344,11 @@ class JourneyProvider extends ChangeNotifier {
     }
   }
 
-  /// Set the current journey (used for continuing active journeys)
+  /// Set the current journey (used for continuing active journeys).
+  ///
+  /// An explicit selection wins over anything still in flight.
   void setCurrentJourney(Journey journey) {
-    _currentJourney = journey;
+    _select(journey);
     notifyListeners();
   }
 
@@ -317,7 +367,7 @@ class JourneyProvider extends ChangeNotifier {
   void releaseFinishedJourney(String journeyId) {
     var changed = false;
     if (_currentJourney?.id == journeyId) {
-      _currentJourney = null;
+      _select(null);
       changed = true;
     }
     if (_activeJourneys.any((journey) => journey.id == journeyId)) {
@@ -330,7 +380,7 @@ class JourneyProvider extends ChangeNotifier {
   void clearCurrentJourneySelection() {
     final journey = _currentJourney;
     if (journey == null || journey.status == JourneyStatus.ACTIVE) return;
-    _currentJourney = null;
+    _select(null);
     notifyListeners();
   }
 
@@ -349,7 +399,7 @@ class JourneyProvider extends ChangeNotifier {
       _lastCompletedJourney = result.data;
 
       // Clear immediately — before notifyListeners — so no rebuild sees ACTIVE.
-      _currentJourney = null;
+      _select(null);
       _activeJourneys.removeWhere((j) => j.id == journeyId);
 
       _setLoading(false);
@@ -379,7 +429,7 @@ class JourneyProvider extends ChangeNotifier {
     final result = await action();
     if (result.isSuccess) {
       if (_currentJourney?.id == journeyId) {
-        _currentJourney = null;
+        _select(null);
       }
       _activeJourneys.removeWhere((journey) => journey.id == journeyId);
       _setLoading(false);
@@ -401,7 +451,7 @@ class JourneyProvider extends ChangeNotifier {
   /// Explicitly clear the current journey (e.g. after app restart when server
   /// confirms no active journeys remain).
   void clearCurrentJourney() {
-    _currentJourney = null;
+    _select(null);
     notifyListeners();
   }
 }

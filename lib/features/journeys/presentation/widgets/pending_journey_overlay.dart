@@ -37,7 +37,20 @@ class PendingJourneyOverlay extends StatelessWidget {
     this.hasRoomFailure = false,
     this.onReconnectRoom,
     this.isReconnectingRoom = false,
+    this.roomFailureMessage,
   });
+
+  /// Minimum tap target for the recovery control, per the platform guidance
+  /// both stores enforce. The Reconnect action is the only way out of a failed
+  /// room join, so it must not be a cramped text button.
+  static const double kRecoveryControlMinSize = 44;
+
+  /// Stable handle for the listener-only reconnect control.
+  ///
+  /// The control changes its child between a label and a spinner, so anything
+  /// that needs to address it — a test, an accessibility sweep — must not rely
+  /// on the visible text.
+  static const Key reconnectRoomKey = Key('pending-journey-reconnect-room');
 
   final Journey journey;
   final bool isLeader;
@@ -73,8 +86,17 @@ class PendingJourneyOverlay extends StatelessWidget {
   /// Rejoin the live-update room. Listener-only — never requests GPS.
   final VoidCallback? onReconnectRoom;
 
-  /// True while a room rejoin is in flight.
+  /// True while a room rejoin is in flight *or* an automatic retry is
+  /// scheduled. It must never be true when nothing is actually retrying —
+  /// showing "Reconnecting…" over a dead state is what made the previous
+  /// exhausted-retry copy dishonest.
   final bool isReconnectingRoom;
+
+  /// Overrides the default connection-failure copy.
+  ///
+  /// Supplied when the failure is more specific than "not in the room" — e.g.
+  /// the leader has started but this device could not load the journey.
+  final String? roomFailureMessage;
 
   List<Participant> get _participants =>
       (journey.participants ?? const <Participant>[])
@@ -385,15 +407,43 @@ class PendingJourneyOverlay extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            "Not receiving live updates — you may miss the start.",
+            roomFailureMessage ??
+                'Not receiving live updates — you may miss the start.',
             style: TextStyle(color: colors.white, fontSize: 12),
           ),
         ),
-        if (onReconnectRoom != null)
-          TextButton(
-            onPressed: isReconnectingRoom ? null : onReconnectRoom,
-            child: Text(isReconnectingRoom ? 'Reconnecting…' : 'Reconnect'),
+        if (onReconnectRoom != null) ...[
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: kRecoveryControlMinSize,
+              minWidth: kRecoveryControlMinSize,
+            ),
+            child: Semantics(
+              button: true,
+              enabled: !isReconnectingRoom,
+              label: 'Reconnect to live updates',
+              child: TextButton(
+                key: reconnectRoomKey,
+                onPressed: isReconnectingRoom ? null : onReconnectRoom,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(
+                    kRecoveryControlMinSize,
+                    kRecoveryControlMinSize,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.padded,
+                ),
+                child: isReconnectingRoom
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Reconnect'),
+              ),
+            ),
           ),
+        ],
       ],
     ),
   );

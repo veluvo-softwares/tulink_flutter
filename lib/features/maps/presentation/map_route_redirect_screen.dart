@@ -7,7 +7,8 @@ import '../../../core/navigation/navigation_helper.dart';
 import '../../journeys/domain/entities/journey.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
 
-/// Compatibility entry point for the retired `/mapview` route.
+/// Compatibility entry point for the retired `/mapview` and `/journey-preview`
+/// routes.
 ///
 /// The map is no longer a destination you navigate to — there is one persistent
 /// map hosted by the Home shell, and a journey becomes live *on it*. This route
@@ -22,6 +23,16 @@ class MapRouteRedirectScreen extends StatefulWidget {
   const MapRouteRedirectScreen({super.key, this.arguments});
 
   static const String routeName = '/mapview';
+
+  /// The retired journey-preview page's route name.
+  ///
+  /// That screen consumed `journey-started` *before* its fetch succeeded and
+  /// ignored the fetched identity and status before starting coordination, so
+  /// a transient GET failure lost the event permanently and a slow response
+  /// could coordinate the wrong journey. It was the last routable path with
+  /// that behaviour; retiring it to this redirect removes the class of bug
+  /// rather than duplicating the staging rules in a second place.
+  static const String legacyJourneyPreviewRouteName = '/journey-preview';
 
   /// The legacy route argument, in whatever shape the old call sites passed.
   final Object? arguments;

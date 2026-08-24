@@ -19,6 +19,13 @@ class PersistentMapController extends ChangeNotifier {
   int _userPanTick = 0;
   bool _disposed = false;
 
+  /// The generation whose restoration pass has already been claimed.
+  ///
+  /// Null until a surface has been restored at least once. Held here rather
+  /// than in the shell so "restore exactly once per surface" is a property of
+  /// the surface itself, and cannot be got wrong twice in two places.
+  int? _restoredGeneration;
+
   /// The live Mapbox handle, or null while no surface is attached.
   MapboxMap? get map => _map;
 
@@ -50,6 +57,23 @@ class PersistentMapController extends ChangeNotifier {
     _generation++;
     notifyListeners();
   }
+
+  /// Claim the restoration pass for the current surface.
+  ///
+  /// Returns true at most once per generation, and only while a surface is
+  /// actually attached. Every layer restores its geometry off the resulting
+  /// bump, so a second claim for the same generation would redraw everything a
+  /// second time — which is what a resume looked like when two owners both
+  /// thought they had to rebuild.
+  bool claimRestoration() {
+    if (_disposed || _map == null) return false;
+    if (_restoredGeneration == _generation) return false;
+    _restoredGeneration = _generation;
+    return true;
+  }
+
+  /// True once the current surface has been restored.
+  bool get isRestored => _map != null && _restoredGeneration == _generation;
 
   /// Report a user-initiated pan. Called from the map widget's scroll listener,
   /// which fires only for direct manipulation.

@@ -9,7 +9,6 @@ import 'package:tulink_flutter/features/invites/domain/entities/journey_invitati
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
-import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 
 class InvitationsScreen extends StatefulWidget {

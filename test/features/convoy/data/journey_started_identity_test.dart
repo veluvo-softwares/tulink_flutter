@@ -98,4 +98,44 @@ void main() {
     expect(fromRoomA, 'journey-a');
     expect(fromRoomA, isNot('journey-b'));
   });
+
+  participantAcceptedIdentityTests();
+}
+
+/// `participant-accepted` must carry its own journey identity.
+///
+/// The client used to attribute the event to mutable `_currentJourneyId`, so a
+/// late acceptance for journey A refreshed journey B's roster. The backend now
+/// stamps `journeyId` in `LocationGateway.broadcastParticipantAccepted`; an
+/// event without it is dropped rather than guessed.
+void participantAcceptedIdentityTests() {
+  group('participant-accepted identity is read from the payload too', () {
+    String? parse(Object? data) =>
+        ConvoyWebSocketDataSourceImpl.debugJourneyIdFromParticipantAcceptedPayload(
+          data,
+        );
+
+    test('reads the journey id the gateway stamps', () {
+      expect(
+        parse({'userId': 'u1', 'displayName': 'Amina', 'journeyId': 'j-42'}),
+        'j-42',
+      );
+    });
+
+    test('drops a payload with no journey id', () {
+      expect(
+        parse({'userId': 'u1', 'displayName': 'Amina'}),
+        isNull,
+        reason: 'a pre-contract server must not have its events misattributed',
+      );
+    });
+
+    test('drops empty, blank and non-string ids', () {
+      expect(parse({'journeyId': ''}), isNull);
+      expect(parse({'journeyId': '   '}), isNull);
+      expect(parse({'journeyId': 42}), isNull);
+      expect(parse('j-42'), isNull);
+      expect(parse(null), isNull);
+    });
+  });
 }

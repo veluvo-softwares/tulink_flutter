@@ -7,7 +7,6 @@ import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
-import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../maps/presentation/providers/map_provider.dart';
 import '../providers/journey_provider.dart';

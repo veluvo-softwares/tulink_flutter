@@ -38,13 +38,21 @@ class LiveArtifactCleaner {
   /// True while a cleanup is running. Exposed for callers that gate UI on it.
   bool get isCleaning => _inFlight != null;
 
+  /// The cleanup currently running, or null. Awaiting it is how a caller makes
+  /// the Done transition atomic from the user's point of view.
+  Future<void>? get inFlight => _inFlight;
+
   /// Remove the live drawings belonging to [journeyId].
   ///
   /// [journeyId] is the journey whose artifacts these are — *not* necessarily
   /// the journey now selected. Passing it explicitly is what lets a late
   /// request be rejected instead of erasing a newer journey's route.
-  Future<void> clear({required String journeyId, bool force = false}) async {
-    if (!force && _cleaned.contains(journeyId)) return;
+  ///
+  /// Returns true when the surface is known to be clean for [journeyId]. False
+  /// means the cleanup was rejected or abandoned part-way — the caller must
+  /// treat the surface as still dirty rather than reporting it as exploring.
+  Future<bool> clear({required String journeyId, bool force = false}) async {
+    if (!force && _cleaned.contains(journeyId)) return true;
 
     final generation = _currentGeneration();
     final previous = _inFlight;
@@ -55,7 +63,7 @@ class LiveArtifactCleaner {
     });
   }
 
-  Future<void> _clearInternal(
+  Future<bool> _clearInternal(
     String journeyId,
     int generation,
     Future<void>? previous,
@@ -65,24 +73,34 @@ class LiveArtifactCleaner {
       await previous.catchError((Object _) {});
     }
 
-    // The surface was rebuilt while we waited: its style has none of these
-    // artifacts, and the layer that owns the new surface will redraw its own.
-    if (_currentGeneration() != generation) return;
+    /// Ownership, re-evaluated on demand.
+    ///
+    /// Checking it once before a batch of sequential platform-channel removals
+    /// is not enough: journey B can take the surface between any two removals,
+    /// and the rest of A's cleanup then deletes B's geometry.
+    bool stillOurs() {
+      // The surface was rebuilt: its style has none of these artifacts, and
+      // whichever layer owns the new surface redraws its own.
+      if (_currentGeneration() != generation) return false;
+      // Another journey has taken over. Erasing now would wipe *its* geometry.
+      final selected = _currentJourneyId();
+      return selected == null || selected == journeyId;
+    }
 
-    // Another journey has taken over. Erasing now would wipe *its* geometry.
-    final selected = _currentJourneyId();
-    if (selected != null && selected != journeyId) return;
+    if (!stillOurs()) return false;
 
     final artifacts = _artifacts();
-    if (artifacts == null) return;
+    if (artifacts == null) return false;
 
-    await artifacts.clearAll();
+    final completed = await artifacts.clearAll(isStillValid: stillOurs);
 
-    // The surface may have been rebuilt while the removals were in flight. The
-    // work went to a style that is gone, so it does not count as cleaned —
-    // otherwise the new surface's copy of these layers would never be removed.
-    if (_currentGeneration() != generation) return;
+    // Abandoned part-way, or the surface was rebuilt while the removals were
+    // in flight: the work went to a style that is gone or to geometry that is
+    // no longer ours, so it does not count as cleaned — otherwise these layers
+    // would never be removed from the surface that still has them.
+    if (!completed || !stillOurs()) return false;
     _cleaned.add(journeyId);
+    return true;
   }
 
   /// Allow [journeyId] to be cleaned again — used when a journey is restarted

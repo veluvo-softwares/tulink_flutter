@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../datasources/convoy_remote_data_source.dart';
 import '../datasources/convoy_websocket_data_source.dart';
+import '../datasources/location_publish_ack.dart';
 import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
@@ -11,6 +12,20 @@ import '../../../../core/errors/failure.dart';
 import '../../../../core/auth/token_manager.dart';
 import '../../../../core/services/connectivity_service.dart';
 import '../services/location_outbox_service.dart';
+
+/// Raised when a room join/leave/handoff is superseded before it completes.
+///
+/// Not a user-facing failure: it means a newer attempt owns the socket, so the
+/// superseded one must unwind without touching shared room state.
+class StaleRoomAttempt implements Exception {
+  const StaleRoomAttempt(this.attempted, this.current);
+
+  final int attempted;
+  final int current;
+
+  @override
+  String toString() => 'StaleRoomAttempt(attempt $attempted, current $current)';
+}
 
 /// Implementation of convoy repository
 /// Coordinates between WebSocket (real-time) and REST API (publishing/fallback)
@@ -59,6 +74,61 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   bool _isWebSocketConnected = false;
   String? _currentJourneyId;
   String? _joinedJourneyId;
+
+  /// Serialises room ownership: join, leave and handoff.
+  ///
+  /// At most one of them may touch socket room state at a time. Previously
+  /// `joinJourneyRoom` wrote `_currentJourneyId` *before* awaiting the
+  /// connection and the server ack, so two joins started before either had
+  /// completed both entered here and interleaved — leaving a mixed A/B state
+  /// whose outcome depended on which ack arrived last.
+  Future<void>? _roomOperation;
+
+  /// Monotonic token identifying the newest room attempt.
+  ///
+  /// Claimed *before* the attempt queues, so a newer B invalidates A even while
+  /// A is still waiting for its turn or for the server.
+  int _roomEpoch = 0;
+
+  /// Run [body] as the sole owner of room state for [epoch].
+  ///
+  /// Waits for any previous room operation to finish, then re-checks the epoch:
+  /// an attempt superseded while queued never runs at all.
+  Future<T> _asRoomOwner<T>(int epoch, Future<T> Function() body) async {
+    final previous = _roomOperation;
+    final gate = Completer<void>();
+    _roomOperation = gate.future;
+    try {
+      if (previous != null) await previous.catchError((Object _) {});
+      if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
+      return await body();
+    } finally {
+      gate.complete();
+      if (identical(_roomOperation, gate.future)) _roomOperation = null;
+    }
+  }
+
+  /// Tear down whatever room the socket currently holds.
+  ///
+  /// Called from inside [_asRoomOwner] so it can never interleave with a join.
+  Future<void> _releaseCurrentRoom() async {
+    final held = _joinedJourneyId ?? _currentJourneyId;
+    if (held != null) {
+      try {
+        await _webSocketDataSource.leaveJourney(held);
+      } catch (e) {
+        print('⚠️ Failed to leave room $held: $e');
+      }
+    }
+    _stopRestFallbackPolling();
+    await _webSocketSubscription?.cancel();
+    _webSocketSubscription = null;
+    _isWebSocketConnected = false;
+    _currentJourneyId = null;
+    _joinedJourneyId = null;
+    _terminalFailureDetected = false;
+  }
+
   // When true, the socket is kept alive across convoy stop so the user keeps
   // receiving user-scoped events (journey invites) on the home screen.
   bool _userChannelActive = false;
@@ -70,37 +140,64 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Stream<({ConvoySnapshot? snapshot, Failure? failure})> streamConvoyPositions(
     String journeyId,
   ) {
-    _currentJourneyId = journeyId;
-
     // Listener mode may already have connected and joined this room while the
     // user waited for the leader to start. Upgrade it to full coordination
     // without emitting a duplicate join and duplicating server broadcasts.
     if (_joinedJourneyId == journeyId && _webSocketDataSource.isConnected) {
+      _currentJourneyId = journeyId;
       unawaited(_fetchInitialSnapshot(journeyId));
     } else {
-      unawaited(_startCoordination(journeyId));
+      // Claim the newest-attempt slot synchronously, before any await, so a
+      // second call for a different journey immediately invalidates this one.
+      final epoch = ++_roomEpoch;
+      unawaited(_startCoordination(journeyId, epoch));
     }
 
     return _snapshotController.stream;
   }
 
   /// Start convoy coordination with WebSocket + REST fallback
-  Future<void> _startCoordination(String journeyId) async {
+  Future<void> _startCoordination(String journeyId, int epoch) async {
     try {
-      // Verify we have valid authentication before starting
-      await _tokenManager.getOrRefreshAuthToken();
+      await _asRoomOwner(epoch, () async {
+        // Verify we have valid authentication before starting
+        await _tokenManager.getOrRefreshAuthToken();
+        if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
 
-      // First: Get immediate snapshot via REST (cold start)
-      _fetchInitialSnapshot(journeyId);
+        // Release any room this socket still holds before claiming a new one.
+        await _releaseCurrentRoom();
+        if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
 
-      // Second: Connect WebSocket for real-time updates
-      await _connectWebSocket();
+        // First: Get immediate snapshot via REST (cold start)
+        unawaited(_fetchInitialSnapshot(journeyId));
 
-      // Third: Join journey room for live updates
-      await _webSocketDataSource.joinJourney(journeyId);
-      _joinedJourneyId = journeyId;
+        // Second: Connect WebSocket for real-time updates
+        await _connectWebSocket();
+        if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
+
+        // Third: Join journey room for live updates. The data source only
+        // completes this once the server's ack names *this* journey.
+        await _webSocketDataSource.joinJourney(journeyId);
+        if (epoch != _roomEpoch) {
+          // A newer attempt owns the socket now; hand the room straight back
+          // rather than publishing ourselves as joined.
+          await _webSocketDataSource.leaveJourney(journeyId);
+          throw StaleRoomAttempt(epoch, _roomEpoch);
+        }
+
+        // Only now is the room ours to advertise.
+        _currentJourneyId = journeyId;
+        _joinedJourneyId = journeyId;
+      });
+    } on StaleRoomAttempt catch (e) {
+      print('↩️ Discarding superseded coordination start for $journeyId ($e)');
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
+      // A failed attempt must leave a deterministic state, not a mixed one.
+      if (epoch == _roomEpoch) {
+        _currentJourneyId = null;
+        _joinedJourneyId = null;
+      }
       final failure = e is Failure
           ? e
           : ConvoyFailure(
@@ -111,8 +208,12 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
             );
       _snapshotController.add((snapshot: null, failure: failure));
 
-      // Fall back to REST polling
-      _startRestFallbackPolling(journeyId);
+      // Fall back to REST polling, but only while this attempt is still the
+      // one that matters.
+      if (epoch == _roomEpoch) {
+        _currentJourneyId = journeyId;
+        _startRestFallbackPolling(journeyId);
+      }
     }
   }
 
@@ -305,34 +406,82 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       // trail backfill have completed.
       await _recoveryInFlight;
 
-      // Try WebSocket first if connected, otherwise use REST API
+      // Try WebSocket first if connected, otherwise use REST API.
       if (_isWebSocketConnected) {
+        LocationPublishAck? ack;
         try {
-          await _webSocketDataSource.publishLocationUpdate(queued);
-          await _outboxService.acknowledge(userId, journeyId, [
-            queued.clientPointId!,
-          ]);
-          return (success: true, failure: null);
+          ack = await _webSocketDataSource.publishLocationUpdate(queued);
         } catch (e) {
           print('❌ WebSocket publish failed, falling back to REST: $e');
-          // Fall through to REST API
+        }
+
+        if (ack != null) {
+          // Terminal rejection: retrying cannot succeed, so surface it as a
+          // typed failure instead of looping. The point is dropped from the
+          // outbox — a payload the server will never accept would otherwise
+          // block every later point behind it forever.
+          if (ack.outcome == LocationAckOutcome.terminal) {
+            await _outboxService.acknowledge(userId, journeyId, [
+              queued.clientPointId!,
+            ]);
+            print('🛑 Location rejected terminally (${ack.reason})');
+            return (success: false, failure: _terminalAckFailure(ack));
+          }
+
+          // The server holds the point (or deliberately suppressed it).
+          if (ack.isDelivered) {
+            await _outboxService.acknowledge(userId, journeyId, [
+              queued.clientPointId!,
+            ]);
+            return (success: true, failure: null);
+          }
+
+          // Retryable rejection, timeout, or an ack we could not correlate.
+          // The point stays queued and we fall through to REST — this is the
+          // case that used to be reported as success and silently lost.
+          print(
+            '↩️ WebSocket publish not accepted (${ack.reason}) — using REST',
+          );
         }
       }
 
-      // Publish via REST API as fallback or primary method
+      // Publish via REST API as fallback or primary method.
       final delivered = await _remoteDataSource.publishLocation(queued);
       if (delivered) {
         await _outboxService.acknowledge(userId, journeyId, [
           queued.clientPointId!,
         ]);
+        return (success: true, failure: null);
       }
-      // A throttled point remains safely queued for backfill.
-      return (success: true, failure: null);
+
+      // Neither transport took it. The point is safely queued for backfill, so
+      // this is a degraded state rather than a lost point — but it must be
+      // reported as degraded, not as a success.
+      print('📦 Position retained in offline outbox — live delivery deferred');
+      return (success: true, failure: ConvoyFailure.publishLocationFailed);
     } catch (e) {
       print(
         '📦 Live delivery unavailable; position retained in offline outbox: $e',
       );
       return (success: true, failure: null);
+    }
+  }
+
+  /// Map a terminal ack reason onto the typed failure the provider already
+  /// treats as "stop publishing", so a rejected payload cannot retry forever.
+  Failure _terminalAckFailure(LocationPublishAck ack) {
+    switch (ack.reason) {
+      case 'NOT_PARTICIPANT':
+      case 'UNAUTHORIZED':
+        return ConvoyFailure.notJourneyMember;
+      case 'JOURNEY_NOT_ACTIVE':
+        return ConvoyFailure.journeyNotActive;
+      default:
+        return ConvoyFailure(
+          message: 'Location update rejected',
+          details: 'The server rejected this update (${ack.reason})',
+          timestamp: DateTime.now(),
+        );
     }
   }
 
@@ -383,10 +532,37 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
 
   @override
   Future<void> joinJourneyRoom(String journeyId) async {
-    _currentJourneyId = journeyId;
-    await _connectWebSocket();
-    await _webSocketDataSource.joinJourney(journeyId);
-    _joinedJourneyId = journeyId;
+    // Already ours and confirmed — nothing to hand over.
+    if (_joinedJourneyId == journeyId && _webSocketDataSource.isConnected) {
+      _currentJourneyId = journeyId;
+      return;
+    }
+
+    // Claim the newest-attempt slot synchronously. Everything after this point
+    // is re-validated against it, so a concurrent join for B invalidates A even
+    // if A started first and is still waiting on the server.
+    final epoch = ++_roomEpoch;
+
+    await _asRoomOwner(epoch, () async {
+      // Leave any stale server room first. Overwriting `_currentJourneyId`
+      // while room A was still joined meant A's broadcasts kept arriving and
+      // were attributed to B.
+      await _releaseCurrentRoom();
+      if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
+
+      await _connectWebSocket();
+      if (epoch != _roomEpoch) throw StaleRoomAttempt(epoch, _roomEpoch);
+
+      // Completes only on an ack naming this journey.
+      await _webSocketDataSource.joinJourney(journeyId);
+      if (epoch != _roomEpoch) {
+        await _webSocketDataSource.leaveJourney(journeyId);
+        throw StaleRoomAttempt(epoch, _roomEpoch);
+      }
+
+      _currentJourneyId = journeyId;
+      _joinedJourneyId = journeyId;
+    });
   }
 
   @override
@@ -491,37 +667,28 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   Future<void> stopCoordination() async {
     print('🛑 Stopping convoy coordination...');
 
-    // Leave journey room if active
-    if (_currentJourneyId != null) {
-      try {
-        await _webSocketDataSource.leaveJourney(_currentJourneyId!);
-        print('✅ Left journey room: $_currentJourneyId');
-      } catch (e) {
-        print('⚠️ Failed to leave journey: $e');
-      }
+    // A stop is itself a room operation: it invalidates any join still waiting
+    // for its ack, and it queues behind whatever is running so it can never
+    // interleave with a half-finished handoff.
+    final epoch = ++_roomEpoch;
+    try {
+      await _asRoomOwner(epoch, () async {
+        await _releaseCurrentRoom();
+
+        // Disconnect WebSocket — unless the user channel wants it kept alive
+        // so the user keeps receiving journey invites on the home screen.
+        if (_userChannelActive) {
+          print('🔌 Keeping socket alive for user channel (invite delivery)');
+        } else {
+          await _webSocketDataSource.disconnect();
+          print('✅ WebSocket disconnected');
+        }
+      });
+    } on StaleRoomAttempt {
+      // A newer join already took over; it owns teardown of what we would have
+      // torn down, so there is nothing left for this stop to do.
+      print('↩️ stopCoordination superseded by a newer room attempt');
     }
-
-    // Stop REST fallback polling
-    _stopRestFallbackPolling();
-
-    // Cancel WebSocket subscription
-    await _webSocketSubscription?.cancel();
-    _webSocketSubscription = null;
-
-    // Disconnect WebSocket — unless the user channel wants it kept alive so the
-    // user keeps receiving journey invites on the home screen.
-    if (_userChannelActive) {
-      print('🔌 Keeping socket alive for user channel (invite delivery)');
-    } else {
-      await _webSocketDataSource.disconnect();
-      print('✅ WebSocket disconnected');
-    }
-
-    // Reset state
-    _isWebSocketConnected = false;
-    _currentJourneyId = null;
-    _joinedJourneyId = null;
-    _terminalFailureDetected = false;
 
     print('✅ Convoy coordination stopped completely');
   }

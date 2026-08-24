@@ -23,10 +23,14 @@ import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_lifecycle.dart';
 import 'package:tulink_flutter/features/journeys/presentation/widgets/completed_journey_overlay.dart';
-import 'package:tulink_flutter/features/journeys/presentation/widgets/pending_journey_overlay.dart';
+import 'package:tulink_flutter/features/home/presentation/widgets/live_journey_back_boundary.dart';
+import 'package:tulink_flutter/features/home/presentation/widgets/pending_journey_staging.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/maps/domain/entities/place_search_result.dart';
 import 'package:tulink_flutter/features/home/presentation/state/map_experience_state.dart';
+import 'package:tulink_flutter/features/home/presentation/state/live_artifact_coordinator.dart';
+import 'package:tulink_flutter/features/home/presentation/state/roster_refresh_coalescer.dart';
+import 'package:tulink_flutter/features/home/presentation/state/staged_invite_dispatcher.dart';
 import 'package:tulink_flutter/features/maps/presentation/controllers/live_artifact_cleaner.dart';
 import 'package:tulink_flutter/features/maps/presentation/controllers/live_map_artifacts.dart';
 import 'package:tulink_flutter/features/maps/presentation/controllers/persistent_map_controller.dart';
@@ -72,10 +76,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// a map of its own.
   final PersistentMapController _mapController = PersistentMapController();
 
-  /// Generation of the surface this shell has drawn onto, so a rebuilt surface
-  /// is restored exactly once.
-  int? _attachedGeneration;
-
   CircleAnnotationManager? _destinationAnnotations;
 
   /// Journey whose completion summary is showing over the map. Held here (not
@@ -106,8 +106,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// acceptances collapses into a single roster refresh.
   int _lastParticipantAcceptedTick = 0;
 
-  /// Guards against overlapping roster refreshes for the same journey.
-  bool _isRefreshingRoster = false;
+  /// True while the shared surface is being cleared of a finished journey's
+  /// drawings. Mirrors [LiveArtifactCoordinator.isCleaning] for the build.
+  bool _isCleaningArtifacts = false;
   bool _wasBackgrounded = false;
 
   /// True when the user pressed Back during a live journey. The journey keeps
@@ -129,16 +130,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// or move the camera after a newer destination has been chosen.
   int _destinationDrawSeq = 0;
 
+  /// The user/session the map's geometry belongs to. A change (logout, account
+  /// switch) invalidates every route held or in flight — a route is scoped to
+  /// the session that requested it.
+  String? _routeSessionUserId;
+  bool _sawUserSession = false;
+
   /// Journey already staged onto the map, so adoption runs once per journey.
   String? _stagedJourneyId;
 
-  /// Listener-room membership state for the staged journey, tracked apart from
-  /// [_stagedJourneyId] so a failed join stays retryable.
-  bool _roomJoinInFlight = false;
-  bool _roomJoinFailed = false;
+  /// The journey whose `journey-started` transition exhausted its retries.
+  ///
+  /// Held so the staging chrome can offer a real Reconnect instead of a toast
+  /// that claims "Retrying…" while nothing is scheduled. The event itself
+  /// stays unconsumed, so the retry has something to act on.
+  String? _journeyStartFailedId;
 
-  /// Bounded automatic retries before the user is given an explicit control.
-  static const int _roomJoinMaxRetries = 2;
+  /// Selection generation the in-flight `journey-started` transition was
+  /// issued under. Re-read immediately before the event is consumed, so
+  /// switching to another journey mid-transition abandons it.
+  int? _journeyStartSelectionGeneration;
 
   /// Live drawings currently on the shared surface, and the id of the journey
   /// they belong to. Held here because they outlive [LiveJourneyExperience]:
@@ -151,6 +162,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     currentGeneration: () => _mapController.generation,
     currentJourneyId: () => _liveArtifactJourneyId,
   );
+
+  /// Owns the completion → cleaning → exploring transition, so Done is atomic
+  /// and journey B cannot draw into the middle of journey A's removals.
+  late final LiveArtifactCoordinator _artifactCoordinator =
+      LiveArtifactCoordinator(cleaner: _artifactCleaner);
+
+  /// Trailing-edge coalescing for `participant-accepted` bursts.
+  late final RosterRefreshCoalescer _rosterRefresh = RosterRefreshCoalescer(
+    refresh: (journeyId) async {
+      final refreshed = await context.read<JourneyProvider>().fetchJourneyById(
+        journeyId,
+      );
+      if (!mounted) return null;
+      if (refreshed != null && refreshed.id == journeyId) setState(() {});
+      return refreshed?.id;
+    },
+  );
+
+  /// Journey-scoped claim on the invite flow, taken before the picker opens.
+  final StagedInviteDispatcher _inviteDispatcher = StagedInviteDispatcher();
   String? _previewedJourneyId;
 
   /// The live Mapbox handle, or null while no surface is attached.
@@ -217,8 +248,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Some devices resume with a black native surface while Flutter keeps
     // rendering. The shell owns the surface, so it is the one that rebuilds it;
     // every layer restores its own geometry off the resulting generation bump.
-    _attachedGeneration = null;
     _destinationAnnotations = null;
+    // `recreate()` bumps the generation, which is what re-arms the surface's
+    // one-restoration-per-generation claim.
     _mapController.recreate();
   }
 
@@ -226,6 +258,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final convoy = context.watch<ConvoyProvider>();
+
+    // Session identity is checked before anything else reads route state, so a
+    // logout or account switch cannot leave the previous user's route drawn or
+    // let their in-flight response land on the new session's map.
+    final userId = context.watch<AuthProvider>().user?.id;
+    if (!_sawUserSession || userId != _routeSessionUserId) {
+      _sawUserSession = true;
+      _routeSessionUserId = userId;
+      // Deferred: dropping a route notifies listeners, which is not allowed
+      // while this frame is still building.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<MapProvider>().onUserChanged(userId);
+      });
+    }
 
     if (convoy.journeyInviteTick != _lastJourneyInviteTick) {
       _lastJourneyInviteTick = convoy.journeyInviteTick;
@@ -260,15 +306,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (convoy.participantAcceptedTick != _lastParticipantAcceptedTick) {
       _lastParticipantAcceptedTick = convoy.participantAcceptedTick;
       final stagedId = _stagedJourneyId;
-      if (stagedId != null) {
+      // The event is journey-scoped (the data source parses `journeyId` from
+      // the payload). An acceptance for a journey we are not staging must not
+      // trigger a refresh of the one we are.
+      final acceptedFor = convoy.lastParticipantAcceptedJourneyId;
+      if (stagedId != null &&
+          (acceptedFor == null || acceptedFor == stagedId)) {
+        final tick = convoy.participantAcceptedTick;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_refreshStagedRoster(stagedId));
+          if (!mounted) return;
+          unawaited(
+            _rosterRefresh.record(
+              tick: tick,
+              journeyId: stagedId,
+              isStillStaged: () => mounted && _stagedJourneyId == stagedId,
+            ),
+          );
         });
       }
     }
 
     final startedJourneyId = convoy.pendingJourneyStartedId;
-    if (startedJourneyId != null && !_isEnteringLiveJourney) {
+    if (startedJourneyId != null &&
+        !_isEnteringLiveJourney &&
+        // A transition that already exhausted its retries is not retried
+        // automatically. It waits for the explicit Reconnect, which is the
+        // only honest way to present it — an unbounded automatic re-entry
+        // driven by provider notifications is neither visible nor bounded.
+        _journeyStartFailedId != startedJourneyId) {
       _isEnteringLiveJourney = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_handleJourneyStarted(startedJourneyId));
@@ -299,43 +364,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     final journeys = context.read<JourneyProvider>();
+    // Capture the selection this transition belongs to *before* the await.
+    // Every other identity check below is meaningless if the user moved to a
+    // different journey while the fetch was in flight.
+    final selectionAtIssue = journeys.selectionGeneration;
+    _journeyStartSelectionGeneration = selectionAtIssue;
+
     final journey = await journeys.fetchJourneyById(journeyId);
     if (!mounted) {
       _isEnteringLiveJourney = false;
       return;
     }
 
-    // Validate identity and status from the *returned* entity. Reading
-    // `currentJourney` here would accept a stale selection from a previous
-    // journey when this fetch failed.
+    // Revalidate the whole identity immediately before consuming the event:
+    // the returned entity, its status, the journey still selected, the room
+    // this device actually owns, and the transition generation. Validating the
+    // entity alone let a switch to B activate on A's late response.
+    final convoy = context.read<ConvoyProvider>();
     final isUsable =
         journey != null &&
         journey.id == journeyId &&
         journey.status == JourneyStatus.ACTIVE;
+    final stillOurs =
+        journeys.selectionGeneration == selectionAtIssue &&
+        _journeyStartSelectionGeneration == selectionAtIssue &&
+        (journeys.currentJourney?.id == journeyId) &&
+        (convoy.currentJourneyId == null ||
+            convoy.currentJourneyId == journeyId) &&
+        convoy.pendingJourneyStartedId == journeyId;
+
+    if (!stillOurs) {
+      // Superseded. The event is left unconsumed for whoever owns it now, and
+      // nothing about this transition is applied.
+      _isEnteringLiveJourney = false;
+      return;
+    }
 
     if (!isUsable) {
       // Retain the event and retry with a bounded backoff. The event stays
-      // unconsumed so a manual reconnect can still pick it up.
+      // unconsumed so the explicit Reconnect can still pick it up.
       if (attempt < _journeyStartedMaxRetries) {
         final delay = Duration(milliseconds: 400 * (1 << attempt));
         await Future<void>.delayed(delay);
-        if (!mounted) {
+        if (!mounted || journeys.selectionGeneration != selectionAtIssue) {
           _isEnteringLiveJourney = false;
           return;
         }
         return _handleJourneyStarted(journeyId, attempt: attempt + 1);
       }
-      if (mounted) {
-        context.showWarningToast(
-          'The journey started but could not be loaded. Retrying…',
-        );
-      }
+      // Retries exhausted. Publish a truthful, actionable state — the staging
+      // chrome renders it with a real Reconnect control — instead of a toast
+      // promising a retry that is not scheduled.
+      setState(() => _journeyStartFailedId = journeyId);
+      context.showWarningToast(
+        'The journey started but could not be loaded. '
+        'Tap Reconnect to try again.',
+      );
       _isEnteringLiveJourney = false;
       return;
     }
 
-    // Safe to consume: we have the right journey and it really is active.
-    context.read<ConvoyProvider>().consumeJourneyStartedEvent();
+    // Safe to consume: right journey, really active, still ours.
+    _journeyStartFailedId = null;
+    convoy.consumeJourneyStartedEvent();
     _liveJourneyId = journeyId;
 
     // Deliberately NOT gated on location. The leader has started; this member
@@ -360,8 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final journeyId = context.read<JourneyProvider>().currentJourney?.id;
     if (journeyId != null) {
       _liveArtifactJourneyId = journeyId;
-      // Re-entering a journey we previously cleaned means fresh drawings.
-      _artifactCleaner.forget(journeyId);
+      _artifactCoordinator.adopt(journeyId);
     }
     setState(() => _completedJourney = null);
     if (widget.selectedTab != 0) widget.onTabSelected?.call(0);
@@ -371,12 +461,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ///
   /// Called on explicit dismissal — never on a mere state transition, which is
   /// what keeps the driven route visible behind the completion summary.
-  Future<void> _clearLiveArtifacts() async {
-    final journeyId = _liveArtifactJourneyId;
-    if (journeyId == null) return;
-    await _artifactCleaner.clear(journeyId: journeyId);
-    if (!mounted) return;
-    if (_liveArtifactJourneyId == journeyId) _liveArtifactJourneyId = null;
+  Future<bool> _clearLiveArtifacts() async {
+    final cleaned = await _artifactCoordinator.clear(
+      onStateChanged: () {
+        if (!mounted) return;
+        setState(() => _isCleaningArtifacts = _artifactCoordinator.isCleaning);
+      },
+    );
+    if (cleaned) _liveArtifactJourneyId = _artifactCoordinator.journeyId;
+    return cleaned;
   }
 
   /// The live layer finished — the journey is genuinely over (ended or left).
@@ -448,17 +541,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   /// Dismiss the completion summary and return the map to exploring.
-  void _dismissCompletedJourney() {
+  ///
+  /// The transition is atomic from the user's point of view: the summary stays
+  /// up in an explicit cleaning state until the surface is genuinely clear.
+  /// Dismissing first and cleaning in the background let journey B start
+  /// drawing while A's removals were still running on the same surface, and
+  /// showed an "exploring" map that still had A's route on it.
+  Future<void> _dismissCompletedJourney() async {
+    if (!mounted || _isCleaningArtifacts) return;
+
+    // Awaited, not fired and forgotten. The summary stays up in an explicit
+    // cleaning state for the whole removal, so exploring is only ever reported
+    // for a surface that really is clear.
+    final cleaned = await _clearLiveArtifacts();
     if (!mounted) return;
+
+    if (!cleaned) {
+      // Do not pretend the map is clean. The summary stays, so Done can be
+      // pressed again against a surface that is still dirty.
+      context.showErrorToast(
+        'Could not clear the finished journey from the map. Try again.',
+      );
+      return;
+    }
+
     setState(() => _completedJourney = null);
-    // Done is the explicit dismissal: only now do the live route, destination,
-    // peer markers and pucks come off the shared map. Doing it any earlier
-    // would erase the route from under the summary.
-    unawaited(
-      _clearLiveArtifacts().then((_) {
-        if (mounted) _clearDraft();
-      }),
-    );
+    _clearDraft();
   }
 
   @override
@@ -562,9 +670,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Restore the shell's own layers whenever a new surface attaches.
   void _onMapSurfaceChanged() {
     if (!mounted) return;
-    final map = _mapController.map;
-    if (map == null || _attachedGeneration == _mapController.generation) return;
-    _attachedGeneration = _mapController.generation;
+    // Publish the surface generation before anything reads it. Route work is
+    // stamped with the generation it was issued under, so a rebuild has to
+    // invalidate the outstanding requests before the new surface is drawn on —
+    // otherwise a response resolved against the old style repaints the new one.
+    context.read<MapProvider>().onSurfaceGenerationChanged(
+      _mapController.generation,
+    );
+    // The surface itself owns "restore exactly once per generation", so a
+    // second notification for the same surface cannot trigger a second full
+    // redraw of every layer.
+    if (!_mapController.claimRestoration()) return;
+    final map = _mapController.map!;
     _destinationAnnotations = null;
     unawaited(
       _restoreShellLayers(map, _mapController.generation).catchError((
@@ -670,6 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final route = await context.read<MapProvider>().fetchRoute(
       userId: userId,
       journeyId: 'draft-${place.placeId}',
+      surfaceGeneration: generation,
       // A denied or cold GPS fix should not prevent a route preview. Nairobi
       // is already Tulink's initial map centre and is replaced by live origin
       // whenever location is available.
@@ -886,6 +1004,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _invitePeopleToStagedJourney(Journey journey) async {
     if (_isStagingBusy) return;
 
+    final journeys = context.read<JourneyProvider>();
+    final selectionAtIssue = journeys.selectionGeneration;
+    final userAtIssue = context.read<AuthProvider>().user?.id;
+
     // Exclude the leader and anyone already on the journey, so the picker
     // cannot produce a duplicate invitation.
     final existing = <String>{
@@ -895,57 +1017,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .map((p) => p.userId),
     };
 
-    final selected = await showModalBottomSheet<List<_SelectedCompanion>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) =>
-          _CompanionPickerSheet(initial: const [], excludedUserIds: existing),
-    );
-    if (selected == null || selected.isEmpty || !mounted) return;
-
-    // Dedupe defensively; the picker is keyed by id but callers can change.
-    final targets = <String, _SelectedCompanion>{
-      for (final person in selected)
-        if (!existing.contains(person.id)) person.id: person,
-    }.values.toList();
-    if (targets.isEmpty) return;
-
-    setState(() => _isStagingBusy = true);
     final invites = context.read<InviteProvider>();
-    var sent = 0;
-    final failed = <String>[];
-    try {
-      for (final person in targets) {
-        final ok = await invites.sendInvite(
+
+    // The dispatcher claims the flow for this journey *before* the picker
+    // opens, which is the whole fix: the previous guard was checked before the
+    // picker and claimed only after it returned, so a second tap inside that
+    // window opened a second picker and both continuations sent.
+    final result = await _inviteDispatcher.dispatch<_SelectedCompanion>(
+      journeyId: journey.id,
+      isStillCurrent: () =>
+          _inviteContextIsCurrent(journey, selectionAtIssue, userAtIssue),
+      nameOf: (person) => person.name,
+      pickTargets: () async {
+        final selected = await showModalBottomSheet<List<_SelectedCompanion>>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          builder: (_) => _CompanionPickerSheet(
+            initial: const [],
+            excludedUserIds: existing,
+          ),
+        );
+        if (selected == null || !mounted) return null;
+        // Dedupe defensively; the picker is keyed by id but callers can change.
+        return <String, _SelectedCompanion>{
+          for (final person in selected)
+            if (!existing.contains(person.id)) person.id: person,
+        }.values.toList();
+      },
+      sendInvite: (person) async {
+        if (mounted && !_isStagingBusy) {
+          setState(() => _isStagingBusy = true);
+        }
+        return invites.sendInvite(
           journeyId: journey.id,
           invitedUserId: person.id,
         );
-        if (ok) {
-          sent++;
-        } else {
-          // Report per-user failures without discarding successful sends.
-          failed.add(person.name);
-        }
-      }
-    } finally {
-      if (mounted) setState(() => _isStagingBusy = false);
-    }
+      },
+    );
+
+    if (mounted && _isStagingBusy) setState(() => _isStagingBusy = false);
     if (!mounted) return;
 
-    if (sent > 0) {
-      context.showSuccessToast('$sent invitation${sent == 1 ? '' : 's'} sent');
+    // Partial success is reported whatever happened to the rest.
+    if (result.sent > 0) {
+      context.showSuccessToast(
+        '${result.sent} invitation${result.sent == 1 ? '' : 's'} sent',
+      );
     }
-    if (failed.isNotEmpty) {
-      context.showErrorToast('Could not invite ${failed.join(', ')}');
+    if (result.failed.isNotEmpty) {
+      context.showErrorToast('Could not invite ${result.failed.join(', ')}');
+    }
+    if (!result.hasAnything) return;
+
+    if (!_inviteContextIsCurrent(journey, selectionAtIssue, userAtIssue)) {
+      return;
     }
 
     // Refresh this exact journey's roster, rejecting a stale response.
-    final refreshed = await context.read<JourneyProvider>().fetchJourneyById(
-      journey.id,
-    );
+    final refreshed = await journeys.fetchJourneyById(journey.id);
     if (!mounted || refreshed == null || refreshed.id != journey.id) return;
+    if (!_inviteContextIsCurrent(journey, selectionAtIssue, userAtIssue)) {
+      return;
+    }
     setState(() {});
+  }
+
+  /// True while the invite flow still belongs to the journey and session it was
+  /// started for.
+  bool _inviteContextIsCurrent(
+    Journey journey,
+    int selectionAtIssue,
+    String? userAtIssue,
+  ) {
+    if (!mounted) return false;
+    final journeys = context.read<JourneyProvider>();
+    return journeys.selectionGeneration == selectionAtIssue &&
+        journeys.currentJourney?.id == journey.id &&
+        context.read<AuthProvider>().user?.id == userAtIssue;
   }
 
   Future<void> _chooseCompanions() async {
@@ -1079,6 +1228,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ///each caller re-implementing setup.
   Future<void> _adoptCurrentJourney(Journey journey) async {
     if (_stagedJourneyId == journey.id) return;
+
+    // A finished journey's drawings are still being removed from this surface.
+    // Drawing B now would race those removals and lose. Wait for the cleanup
+    // to settle, then re-check that B is still what we are adopting.
+    if (_artifactCoordinator.isCleaning || _artifactCleaner.inFlight != null) {
+      await _artifactCoordinator.settle();
+      if (!mounted || _stagedJourneyId == journey.id) return;
+    }
     // Geometry staging is tracked separately from room membership. They used to
     // share this one flag, so a failed room join permanently blocked any retry:
     // the journey was "staged", so adoption never ran again.
@@ -1095,85 +1252,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _showJourneyDestinationOnMap(journey);
     if (!mounted) return;
 
-    await _joinPendingRoom(journey.id);
+    // Join listener-only so membership exists even when the staging chrome is
+    // dismissed. [PendingJourneyStaging] joins too — the call is idempotent —
+    // and it is the one that owns the *visible* retry/failure state.
+    unawaited(_joinPendingRoomFor(journey.id));
   }
 
   /// Join the convoy room for a staged (not yet live) journey, listener-only.
   ///
   /// Deliberately does **not** request GPS or begin publishing: nothing is
   /// moving yet, and a member who has denied location must still receive
-  /// `journey-started`. Membership state is tracked apart from geometry so a
-  /// failure is recoverable.
-  Future<void> _joinPendingRoom(String journeyId, {int attempt = 0}) async {
-    if (!mounted) return;
-    setState(() {
-      _roomJoinInFlight = true;
-      if (attempt == 0) _roomJoinFailed = false;
-    });
+  /// `journey-started`.
+  ///
+  /// Bounded retry, the visible "reconnecting" state, and the explicit
+  /// Reconnect control all live in [PendingJourneyStaging], so there is exactly
+  /// one state machine and the three can never disagree.
+  Future<bool> _joinPendingRoomFor(String journeyId) {
+    return context.read<ConvoyProvider>().joinJourneyRoom(journeyId);
+  }
 
-    final listening = await context.read<ConvoyProvider>().joinJourneyRoom(
-      journeyId,
-    );
-    if (!mounted) return;
-
-    // A newer journey took over while we were joining.
-    if (_stagedJourneyId != journeyId) {
-      setState(() => _roomJoinInFlight = false);
-      return;
-    }
-
-    if (listening) {
-      setState(() {
-        _roomJoinInFlight = false;
-        _roomJoinFailed = false;
-      });
-      return;
-    }
-
-    // Bounded automatic retry, then hand the user an explicit control rather
-    // than claiming "reconnecting" with nothing actually retrying.
-    if (attempt < _roomJoinMaxRetries) {
-      await Future<void>.delayed(Duration(milliseconds: 600 * (1 << attempt)));
-      if (!mounted || _stagedJourneyId != journeyId) return;
-      return _joinPendingRoom(journeyId, attempt: attempt + 1);
-    }
-
-    setState(() {
-      _roomJoinInFlight = false;
-      _roomJoinFailed = true;
-    });
+  /// Re-attempt a `journey-started` transition that exhausted its retries.
+  ///
+  /// Clearing the failed marker is what re-arms the reactive dispatch in
+  /// [didChangeDependencies]; the event itself was never consumed.
+  void _retryJourneyStarted() {
+    if (!mounted || _journeyStartFailedId == null) return;
+    setState(() => _journeyStartFailedId = null);
   }
 
   /// Re-read the staged journey so an acceptance shows up in the roster.
   ///
   /// Scoped to [journeyId] and validated against the response, so a refresh
   /// triggered while switching journeys cannot install the wrong roster.
-  Future<void> _refreshStagedRoster(String journeyId) async {
-    if (_isRefreshingRoster || !mounted) return;
-    _isRefreshingRoster = true;
-    try {
-      final refreshed = await context.read<JourneyProvider>().fetchJourneyById(
-        journeyId,
-      );
-      if (!mounted) return;
-      // Stale response, or the user moved on to another journey.
-      if (refreshed == null ||
-          refreshed.id != journeyId ||
-          _stagedJourneyId != journeyId) {
-        return;
-      }
-      setState(() {});
-    } finally {
-      _isRefreshingRoster = false;
-    }
-  }
-
-  /// User-triggered room reconnect for a staged journey. Listener-only.
-  Future<void> _retryPendingRoom() async {
-    final journeyId = _stagedJourneyId;
-    if (journeyId == null || _roomJoinInFlight) return;
-    await _joinPendingRoom(journeyId);
-  }
 
   /// Draw a journey's destination on the shared map without creating a draft.
   Future<void> _showJourneyDestinationOnMap(Journey journey) async {
@@ -1541,20 +1651,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
     };
 
-    // Intercept the platform back gesture at the Home/live boundary. While a
-    // journey owns the screen, Back collapses its chrome instead of popping the
-    // shell — popping would leave a running convoy with no way back to it.
-    final interceptsBack =
-        (experience.isJourneyRunning ||
-            experience == MapExperienceState.ending) &&
-        !_isLiveChromeCollapsed;
+    // Intercept the platform back gesture at the Home/live boundary for the
+    // whole life of the journey. The intercept used to be released once the
+    // chrome was collapsed, so a second Back popped the shell and stranded a
+    // running convoy behind a screen the user could no longer reach.
+    final hasActiveJourney =
+        experience.isJourneyRunning || experience == MapExperienceState.ending;
 
-    return PopScope(
-      canPop: !interceptsBack,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        _collapseLiveChrome();
-      },
+    return LiveJourneyBackBoundary(
+      hasActiveJourney: hasActiveJourney,
+      isChromeCollapsed: _isLiveChromeCollapsed,
+      onCollapseChrome: _collapseLiveChrome,
+      onRestoreChrome: _restoreLiveChrome,
       child: Scaffold(
         body: Stack(
           children: [
@@ -1595,7 +1703,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             if (experience == MapExperienceState.waitingForLeader &&
                 activeJourney != null)
               Positioned.fill(
-                child: PendingJourneyOverlay(
+                child: PendingJourneyStaging(
+                  // Keyed by journey so switching staged journeys rebuilds the
+                  // room state machine instead of carrying A's state into B.
+                  key: ValueKey('staging-${activeJourney.id}'),
                   journey: activeJourney,
                   isLeader: false,
                   leaderName: _leaderNameFor(activeJourney),
@@ -1605,6 +1716,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       context.read<ConvoyProvider>().retryLocationPublishing(),
                   onDismiss: _browseFromStaging,
                   onLeaveJourney: () => _leaveStagedJourney(activeJourney),
+                  joinRoom: _joinPendingRoomFor,
+                  hasStartFailure:
+                      _journeyStartFailedId != null &&
+                      _journeyStartFailedId == activeJourney.id,
+                  onRetryStart: _retryJourneyStarted,
                 ),
               ),
 
@@ -1615,7 +1731,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 activeJourney.status == JourneyStatus.PENDING &&
                 isCurrentUserLeader)
               Positioned.fill(
-                child: PendingJourneyOverlay(
+                child: PendingJourneyStaging(
+                  key: ValueKey('staging-${activeJourney.id}'),
                   journey: activeJourney,
                   isLeader: true,
                   isBusy: _isStagingBusy,
@@ -1628,6 +1745,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onShareCode: () => _shareInviteCode(activeJourney),
                   onInvitePeople: () =>
                       _invitePeopleToStagedJourney(activeJourney),
+                  joinRoom: _joinPendingRoomFor,
+                  hasStartFailure:
+                      _journeyStartFailedId != null &&
+                      _journeyStartFailedId == activeJourney.id,
+                  onRetryStart: _retryJourneyStarted,
                 ),
               ),
 
@@ -1666,6 +1788,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Positioned.fill(
                 child: CompletedJourneyOverlay(
                   journey: _completedJourney!,
+                  isDismissing: _isCleaningArtifacts,
                   onDismiss: _dismissCompletedJourney,
                   onViewDetails: () =>
                       JourneyNavigation.open(context, _completedJourney!),
