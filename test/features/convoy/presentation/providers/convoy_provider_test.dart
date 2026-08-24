@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
@@ -8,6 +10,8 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/stream_convoy_pos
 import 'package:tulink_flutter/features/convoy/domain/usecases/publish_my_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/domain/repositories/convoy_repository.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
 
 @GenerateMocks([
@@ -295,6 +299,158 @@ void main() {
           verifyNever(mockStreamConvoyPositions(journeyId));
         },
       );
+
+      test(
+        'same-room no-op keeps the installed event listeners live',
+        () async {
+          final started = StreamController<String>.broadcast();
+          addTearDown(started.close);
+          stubEventStreams();
+          when(
+            mockRepository.journeyStartedStream,
+          ).thenAnswer((_) => started.stream);
+          when(
+            mockRepository.joinJourneyRoom(journeyId),
+          ).thenAnswer((_) async {});
+
+          expect(await convoyProvider.joinJourneyRoom(journeyId), isTrue);
+          expect(await convoyProvider.joinJourneyRoom(journeyId), isTrue);
+
+          started.add(journeyId);
+          await Future<void>.delayed(Duration.zero);
+
+          expect(convoyProvider.pendingJourneyStartedId, journeyId);
+          verify(mockRepository.joinJourneyRoom(journeyId)).called(1);
+          verify(mockStreamConvoyPositions(journeyId)).called(1);
+        },
+      );
+
+      test(
+        'room B is installed only after captured room A cancellation settles',
+        () async {
+          final cancelGate = Completer<void>();
+          final streamedJourneys = <String>[];
+          final snapshotsA =
+              StreamController<
+                ({ConvoySnapshot? snapshot, Failure? failure})
+              >.broadcast(onCancel: () => cancelGate.future);
+          final snapshotsB =
+              StreamController<
+                ({ConvoySnapshot? snapshot, Failure? failure})
+              >.broadcast();
+          final started = StreamController<String>.broadcast();
+          final ended = StreamController<JourneyEndedEvent>.broadcast();
+          final arrived = StreamController<ParticipantArrivedEvent>.broadcast();
+          addTearDown(() async {
+            if (!cancelGate.isCompleted) cancelGate.complete();
+            await snapshotsA.close();
+            await snapshotsB.close();
+            await started.close();
+            await ended.close();
+            await arrived.close();
+          });
+
+          when(
+            mockRepository.connectionStateStream,
+          ).thenAnswer((_) => const Stream<ConvoyConnectionState>.empty());
+          when(
+            mockRepository.journeyEndedStream,
+          ).thenAnswer((_) => ended.stream);
+          when(
+            mockRepository.participantArrivedStream,
+          ).thenAnswer((_) => arrived.stream);
+          when(
+            mockRepository.journeyStartedStream,
+          ).thenAnswer((_) => started.stream);
+          when(
+            mockRepository.participantAcceptedStream,
+          ).thenAnswer((_) => const Stream<String>.empty());
+          when(mockRepository.joinJourneyRoom(any)).thenAnswer((_) async {});
+          when(mockRepository.stopCoordination()).thenAnswer((_) async {});
+          when(mockStreamConvoyPositions(any)).thenAnswer((invocation) {
+            final id = invocation.positionalArguments.single as String;
+            streamedJourneys.add(id);
+            return id == 'A'
+                ? _GatedCancelStream(snapshotsA.stream, cancelGate)
+                : snapshotsB.stream;
+          });
+
+          expect(await convoyProvider.joinJourneyRoom('A'), isTrue);
+          final switching = convoyProvider.joinJourneyRoom('B');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(streamedJourneys, ['A']);
+          cancelGate.complete();
+          expect(await switching, isTrue);
+          expect(streamedJourneys, ['A', 'B']);
+
+          started.add('A');
+          arrived.add(
+            ParticipantArrivedEvent(
+              userId: 'stale-A',
+              arrivedCount: 1,
+              totalCount: 2,
+              allArrived: false,
+              timestamp: DateTime.utc(2026),
+            ),
+          );
+          ended.add(const JourneyEndedEvent(journeyId: 'A'));
+          await Future<void>.delayed(Duration.zero);
+          expect(convoyProvider.currentJourneyId, 'B');
+          expect(convoyProvider.pendingJourneyStartedId, isNull);
+          expect(convoyProvider.lastJourneyEndedEvent, isNull);
+
+          started.add('B');
+          arrived.add(
+            ParticipantArrivedEvent(
+              userId: 'member-B',
+              arrivedCount: 1,
+              totalCount: 3,
+              allArrived: false,
+              timestamp: DateTime.utc(2026),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          expect(convoyProvider.pendingJourneyStartedId, 'B');
+          expect(convoyProvider.arrivedCount, 1);
+          expect(convoyProvider.totalMemberCount, 3);
+        },
+      );
+
+      test(
+        'duplicate journey-ended events reconcile the owned room once',
+        () async {
+          final ended = StreamController<JourneyEndedEvent>.broadcast(
+            sync: true,
+          );
+          addTearDown(ended.close);
+          stubEventStreams();
+          when(
+            mockRepository.journeyEndedStream,
+          ).thenAnswer((_) => ended.stream);
+          when(
+            mockRepository.joinJourneyRoom(journeyId),
+          ).thenAnswer((_) async {});
+          when(mockRepository.stopCoordination()).thenAnswer((_) async {});
+          await convoyProvider.joinJourneyRoom(journeyId);
+
+          ended
+            ..add(
+              const JourneyEndedEvent(journeyId: journeyId, reason: 'first'),
+            )
+            ..add(
+              const JourneyEndedEvent(
+                journeyId: journeyId,
+                reason: 'duplicate',
+              ),
+            );
+          await Future<void>.delayed(Duration.zero);
+
+          expect(convoyProvider.lastJourneyEndedEvent?.reason, 'first');
+          expect(convoyProvider.currentJourneyId, isNull);
+          verify(mockRepository.stopCoordination()).called(1);
+        },
+      );
     });
 
     group('Member count consistency', () {
@@ -353,6 +509,64 @@ void main() {
       });
     });
   });
+}
+
+class _GatedCancelStream<T> extends Stream<T> {
+  const _GatedCancelStream(this._delegate, this._cancelGate);
+
+  final Stream<T> _delegate;
+  final Completer<void> _cancelGate;
+
+  @override
+  StreamSubscription<T> listen(
+    void Function(T event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => _GatedCancelSubscription<T>(
+    _delegate.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    ),
+    _cancelGate,
+  );
+}
+
+class _GatedCancelSubscription<T> implements StreamSubscription<T> {
+  const _GatedCancelSubscription(this._delegate, this._cancelGate);
+
+  final StreamSubscription<T> _delegate;
+  final Completer<void> _cancelGate;
+
+  @override
+  Future<void> cancel() async {
+    await _delegate.cancel();
+    await _cancelGate.future;
+  }
+
+  @override
+  void onData(void Function(T data)? handleData) =>
+      _delegate.onData(handleData);
+
+  @override
+  void onError(Function? handleError) => _delegate.onError(handleError);
+
+  @override
+  void onDone(void Function()? handleDone) => _delegate.onDone(handleDone);
+
+  @override
+  void pause([Future<void>? resumeSignal]) => _delegate.pause(resumeSignal);
+
+  @override
+  void resume() => _delegate.resume();
+
+  @override
+  bool get isPaused => _delegate.isPaused;
+
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => _delegate.asFuture(futureValue);
 }
 
 // Test helper method is now available directly on ConvoyProvider as setSnapshotForTesting()

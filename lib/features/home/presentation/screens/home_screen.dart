@@ -427,15 +427,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Safe to consume: right journey, really active, still ours.
     _journeyStartFailedId = null;
     convoy.consumeJourneyStartedEvent();
-    _liveJourneyId = journeyId;
-
-    // Deliberately NOT gated on location. The leader has started; this member
-    // must reach the live convoy and keep receiving journey events regardless
-    // of their own permission state. ConvoyProvider joins the room first and
-    // reports a location failure separately, which the live layer surfaces
-    // with a retry — see Phase 1's resilience invariant.
-    unawaited(context.read<ConvoyProvider>().startCoordination(journeyId));
-    _enterLiveJourney();
+    await _adoptCurrentJourney(journey);
     _isEnteringLiveJourney = false;
   }
 
@@ -653,9 +645,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case JourneyStatus.PAUSED:
         // Join/observe — not gated on location. A paused convoy is still one
         // the user belongs to, so it opens on the live map too.
-        unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
-        _enterLiveJourney();
-        await _showJourneyDestinationOnMap(journey);
+        await _adoptCurrentJourney(journey);
       case JourneyStatus.PENDING:
         await _enterPendingJourney(journey);
       case JourneyStatus.COMPLETED:
@@ -1167,9 +1157,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Coordination failures surface on ConvoyProvider's own state, which the
-    // map screen's status bar renders — so this unawaited call is observable.
-    unawaited(context.read<ConvoyProvider>().startCoordination(journeyId));
     if (failedInvites > 0) {
       context.showInfoToast(
         '$failedInvites invitation${failedInvites == 1 ? '' : 's'} '
@@ -1179,7 +1166,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // The previewed route is already drawn on this map; the live layer adopts
     // it rather than pushing a second map that refetches the same geometry.
     // The draft is retired when the journey finishes, in [_onLiveJourneyExit].
-    _enterLiveJourney();
+    final activeJourney = journeys.currentJourney;
+    if (activeJourney != null && activeJourney.id == journeyId) {
+      await _adoptCurrentJourney(activeJourney);
+    }
   }
 
   /// Clear the composed draft once [journeyId] is no longer live.
@@ -1208,8 +1198,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // able to see the convoy and reconnect even with permission denied.
     // ConvoyProvider records the location failure independently.
     context.read<JourneyProvider>().setCurrentJourney(journey);
-    unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
-    _enterLiveJourney();
+    await _adoptCurrentJourney(journey);
   }
 
   /// Show a not-yet-started journey as staging chrome over the persistent map.
@@ -1227,7 +1216,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// `JourneyProvider.currentJourney` the single source of truth instead of
   ///each caller re-implementing setup.
   Future<void> _adoptCurrentJourney(Journey journey) async {
-    if (_stagedJourneyId == journey.id) return;
+    final isLive =
+        journey.status == JourneyStatus.ACTIVE ||
+        journey.status == JourneyStatus.PAUSED;
+    if (_stagedJourneyId == journey.id &&
+        (!isLive || _liveJourneyId == journey.id)) {
+      return;
+    }
 
     // A finished journey's drawings are still being removed from this surface.
     // Drawing B now would race those removals and lose. Wait for the cleanup
@@ -1251,6 +1246,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // still useful and honest when the room is unreachable.
     await _showJourneyDestinationOnMap(journey);
     if (!mounted) return;
+
+    if (isLive) {
+      _liveJourneyId = journey.id;
+      // Do not await the permission/location half of coordination before
+      // exposing the live experience. ConvoyProvider installs room listeners
+      // first and reports location readiness independently.
+      unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
+      _enterLiveJourney();
+      return;
+    }
 
     // Join listener-only so membership exists even when the staging chrome is
     // dismissed. [PendingJourneyStaging] joins too — the call is idempotent —
@@ -1312,11 +1317,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (joinedJourney.status == JourneyStatus.ACTIVE) {
       // Joining an already-active convoy — not gated on location.
       context.read<JourneyProvider>().setCurrentJourney(joinedJourney);
-      unawaited(
-        context.read<ConvoyProvider>().startCoordination(joinedJourney.id),
-      );
-      _enterLiveJourney();
-      await _showJourneyDestinationOnMap(joinedJourney);
+      await _adoptCurrentJourney(joinedJourney);
       return;
     }
 
@@ -1355,11 +1356,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Accepting an invite to a convoy that is already moving. Joining is not
       // an activation, so location is not a precondition — the member must be
       // able to observe and reconnect even with permission denied.
-      unawaited(
-        context.read<ConvoyProvider>().startCoordination(invitation.journeyId),
-      );
-      _enterLiveJourney();
-      await _showJourneyDestinationOnMap(journey);
+      context.read<JourneyProvider>().setCurrentJourney(journey);
+      await _adoptCurrentJourney(journey);
       return;
     }
 
@@ -1443,8 +1441,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
         return;
       }
-      unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
-      _enterLiveJourney();
+      final activeJourney = journeys.currentJourney;
+      await _adoptCurrentJourney(
+        activeJourney != null && activeJourney.id == journey.id
+            ? activeJourney
+            : journey,
+      );
     } finally {
       if (mounted) setState(() => _isStagingBusy = false);
     }

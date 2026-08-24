@@ -492,6 +492,40 @@ void main() {
       verify(streamConvoyPositions(journeyId)).called(1);
     });
   });
+
+  group('terminal publish reconciliation', () {
+    test('JOURNEY_NOT_ACTIVE stops and publishes one terminal event', () async {
+      location
+        ..hangs = false
+        ..nextPosition = position();
+      when(
+        publishMyPosition(
+          journeyId: anyNamed('journeyId'),
+          latitude: anyNamed('latitude'),
+          longitude: anyNamed('longitude'),
+          timestamp: anyNamed('timestamp'),
+          accuracy: anyNamed('accuracy'),
+          altitude: anyNamed('altitude'),
+          heading: anyNamed('heading'),
+          speed: anyNamed('speed'),
+          batteryLevel: anyNamed('batteryLevel'),
+          isMoving: anyNamed('isMoving'),
+        ),
+      ).thenAnswer(
+        (_) async => (success: false, failure: ConvoyFailure.journeyNotActive),
+      );
+      when(repository.stopCoordination()).thenAnswer((_) async {});
+      final provider = buildProvider();
+
+      await provider.startCoordination(journeyId);
+
+      expect(provider.currentJourneyId, isNull);
+      expect(provider.isPublishing, isFalse);
+      expect(provider.lastJourneyEndedEvent?.journeyId, journeyId);
+      expect(provider.lastJourneyEndedEvent?.reason, 'terminal-reconciliation');
+      verify(repository.stopCoordination()).called(1);
+    });
+  });
 }
 
 /// Test double for [LocationService].

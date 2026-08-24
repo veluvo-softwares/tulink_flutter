@@ -1806,6 +1806,36 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
   }
 
+  /// A disconnected client may learn that the journey ended from a typed
+  /// publish rejection rather than the socket broadcast. That response has no
+  /// finished-journey payload, but it is authoritative. Preserve the selected
+  /// journey's summary fields and mark that same identity completed instead of
+  /// discarding the summary or treating a generic network error as terminal.
+  Journey? _completedSelectedJourney(JourneyEndedEvent event) {
+    if (event.reason != 'terminal-reconciliation') return null;
+    final selected = context.read<JourneyProvider>().currentJourney;
+    if (selected == null || selected.id != event.journeyId) return null;
+    return Journey(
+      id: selected.id,
+      inviteCode: selected.inviteCode,
+      name: selected.name,
+      leaderId: selected.leaderId,
+      status: JourneyStatus.COMPLETED,
+      destination: selected.destination,
+      destinationName: selected.destinationName,
+      destinationAddress: selected.destinationAddress,
+      lagThresholdMeters: selected.lagThresholdMeters,
+      createdAt: selected.createdAt,
+      updatedAt: selected.updatedAt,
+      startTime: selected.startTime,
+      participants: selected.participants,
+      startedAt: selected.startedAt,
+      completedAt: event.endedAt ?? DateTime.now(),
+      scheduledFor: selected.scheduledFor,
+      autoStart: selected.autoStart,
+    );
+  }
+
   void _handleJourneyEndedEvent() {
     if (!mounted || _isJourneyExitInProgress) return;
     final convoyProvider = context.read<ConvoyProvider>();
@@ -1828,6 +1858,13 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     final fromEvent = _journeyFromEndedEvent(event);
     if (fromEvent != null && fromEvent.id == journeyId) {
       widget.onCompleted?.call(fromEvent);
+      _setExitInProgress(false);
+      return;
+    }
+
+    final reconciled = _completedSelectedJourney(event);
+    if (reconciled != null) {
+      widget.onCompleted?.call(reconciled);
       _setExitInProgress(false);
       return;
     }

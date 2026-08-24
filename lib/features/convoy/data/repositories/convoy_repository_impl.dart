@@ -458,12 +458,24 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
       // this is a degraded state rather than a lost point — but it must be
       // reported as degraded, not as a success.
       print('📦 Position retained in offline outbox — live delivery deferred');
-      return (success: true, failure: ConvoyFailure.publishLocationFailed);
+      return (success: false, failure: ConvoyFailure.publishLocationFailed);
     } catch (e) {
       print(
         '📦 Live delivery unavailable; position retained in offline outbox: $e',
       );
-      return (success: true, failure: null);
+      if (e is ConvoyFailure &&
+          (e == ConvoyFailure.journeyNotActive ||
+              e == ConvoyFailure.notJourneyMember ||
+              e == ConvoyFailure.stopPolling)) {
+        await _outboxService.acknowledge(userId, journeyId, [
+          queued.clientPointId!,
+        ]);
+        return (success: false, failure: e);
+      }
+      return (
+        success: false,
+        failure: e is Failure ? e : ConvoyFailure.publishLocationFailed,
+      );
     }
   }
 

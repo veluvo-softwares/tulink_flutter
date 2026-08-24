@@ -134,10 +134,13 @@ class FakeConvoyWebSocketDataSource implements ConvoyWebSocketDataSource {
 class FakeConvoyRemoteDataSource implements ConvoyRemoteDataSource {
   final List<LocationUpdateDto> published = [];
   bool deliver = true;
+  Object? publishError;
 
   @override
   Future<bool> publishLocation(LocationUpdateDto locationUpdate) async {
     published.add(locationUpdate);
+    final error = publishError;
+    if (error != null) throw error;
     return deliver;
   }
 
