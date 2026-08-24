@@ -746,10 +746,6 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
         }
       }
 
-      // Server will close the socket immediately after — treat that close as
-      // intentional so we don't kick off the reconnect loop.
-      _intentionalDisconnect = true;
-
       // Clear convoy state and notify listeners
       _members.clear();
       _emitConvoySnapshot();

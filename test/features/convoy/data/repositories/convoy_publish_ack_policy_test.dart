@@ -134,6 +134,7 @@ void main() {
       isNotNull,
       reason: 'degraded delivery must be reported, not dressed up as success',
     );
+    expect(result.success, isFalse);
   });
 
   test('a timed-out ack is not a delivery', () async {
@@ -195,6 +196,20 @@ void main() {
 
     final result = await publish();
     expect(result.failure, ConvoyFailure.journeyNotActive);
+  });
+
+  test('terminal REST failure is preserved while the socket is down', () async {
+    rest.publishError = ConvoyFailure.journeyNotActive;
+
+    final result = await publish();
+
+    expect(result.success, isFalse);
+    expect(result.failure, ConvoyFailure.journeyNotActive);
+    expect(
+      outbox.acknowledged,
+      hasLength(1),
+      reason: 'a terminal point must not keep growing the offline outbox',
+    );
   });
 
   test('a thrown WebSocket publish still falls back to REST', () async {

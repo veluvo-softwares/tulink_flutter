@@ -3,10 +3,8 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show visibleForTesting;
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
@@ -101,14 +99,10 @@ class ConvoyProvider extends ChangeNotifier {
   Timer? _snapshotNotifyTimer;
   static const Duration _snapshotNotifyInterval = Duration(milliseconds: 300);
 
-  // Convoy stream subscriptions
-  StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>?
-  _convoySubscription;
-  StreamSubscription<ConvoyConnectionState>? _connectionSubscription;
-  StreamSubscription<JourneyEndedEvent>? _journeyEndedSubscription;
-  StreamSubscription<ParticipantArrivedEvent>? _participantArrivedSubscription;
-  StreamSubscription<String>? _journeyStartedSubscription;
-  StreamSubscription<String>? _participantAcceptedSubscription;
+  // Journey-scoped listeners are owned as one immutable bundle. Teardown
+  // detaches the whole bundle before awaiting cancellation, so a late cancel
+  // from room A can never read, null, or cancel room B's replacement fields.
+  _RoomSubscriptions? _roomSubscriptions;
 
   /// User-scoped invite subscription. Lives for the whole session (set up by
   /// [startUserChannel]); deliberately NOT torn down by [stopCoordination],
@@ -348,7 +342,8 @@ class ConvoyProvider extends ChangeNotifier {
       //    permission dialog can stay open indefinitely, so awaiting it here
       //    delayed the snapshot by exactly as long as the user hesitated.
       if (!_isSubscribed) {
-        _startConvoyStream(journeyId, generation);
+        await _startConvoyStream(journeyId, generation);
+        if (generation != _roomGeneration) return;
       }
       _isSubscribed = true;
       notifyListeners();
@@ -443,16 +438,16 @@ class ConvoyProvider extends ChangeNotifier {
   /// Join a journey room to receive real-time events without starting GPS.
   /// Used by members waiting on the home screen for the leader to start.
   Future<bool> joinJourneyRoom(String journeyId) async {
+    // A confirmed same-room owner is a true no-op. Invalidating its generation
+    // here would leave every installed callback alive but permanently muted.
+    if (_currentJourneyId == journeyId && _isSubscribed) return true;
+
     // A user is in at most one convoy room. Claim ownership of the handoff with
     // a generation token *before anything else* — including the already-joined
     // shortcut. Claiming it after that check let two joins that both started
     // while `_currentJourneyId`/`_isSubscribed` were still unset run
     // concurrently all the way into the repository.
     final generation = ++_roomGeneration;
-
-    // Already ours and confirmed. Still claims the generation above, so a
-    // concurrent join for another journey is correctly ordered against it.
-    if (_currentJourneyId == journeyId && _isSubscribed) return true;
 
     // Tear the previous room down completely — subscriptions included — before
     // joining the new one. Overwriting `_currentJourneyId` while room A's
@@ -481,7 +476,8 @@ class ConvoyProvider extends ChangeNotifier {
 
       // Only now is the room safely ours.
       _currentJourneyId = journeyId;
-      _startConvoyStream(journeyId, generation);
+      final installed = await _startConvoyStream(journeyId, generation);
+      if (!installed) return false;
 
       _isSubscribed = true;
       notifyListeners();
@@ -505,8 +501,13 @@ class ConvoyProvider extends ChangeNotifier {
 
   /// Stop convoy coordination
   /// Cancels GPS publishing and real-time streaming
-  Future<void> stopCoordination() async {
+  Future<void> stopCoordination({bool invalidateRoomOwner = true}) async {
     print('🛑 ConvoyProvider: Stopping coordination...');
+
+    // Explicit stops supersede any start/cancel/install work already awaiting
+    // an async boundary. A handoff has already claimed its newer generation,
+    // so its internal release opts out below and preserves that owner.
+    if (invalidateRoomOwner) ++_roomGeneration;
 
     // Stop location publishing
     await _locationSubscription?.cancel();
@@ -746,12 +747,13 @@ class ConvoyProvider extends ChangeNotifier {
       }
 
       // We got a structured failure — decide whether to bail or keep trying.
-      await _handlePublishFailure(result.failure);
+      await _handlePublishFailure(journeyId, result.failure);
     } catch (e) {
       // Unexpected (shouldn't happen — repository normalizes errors), but
       // count it so a sustained crash loop still trips the circuit breaker.
       print('⚠️ Location publish error: $e');
       await _handlePublishFailure(
+        journeyId,
         e is Failure
             ? e
             : ConvoyFailure(
@@ -766,14 +768,20 @@ class ConvoyProvider extends ChangeNotifier {
   }
 
   /// Decide whether a publish failure is terminal (stop) or transient (retry).
-  Future<void> _handlePublishFailure(Failure? failure) async {
+  Future<void> _handlePublishFailure(String journeyId, Failure? failure) async {
     if (failure == null) return;
 
-    if (_isSilentTerminalFailure(failure)) {
-      print(
-        '🤫 Silent terminal failure — stopping coordination without UI surface',
-      );
+    if (_isJourneyTerminalFailure(failure)) {
+      print('🏁 Terminal journey state confirmed — reconciling completion');
+      if (_lastJourneyEndedEvent?.journeyId != journeyId) {
+        _lastJourneyEndedEvent = JourneyEndedEvent(
+          journeyId: journeyId,
+          reason: 'terminal-reconciliation',
+          endedAt: DateTime.now(),
+        );
+      }
       await stopCoordination();
+      notifyListeners();
       return;
     }
 
@@ -811,6 +819,12 @@ class ConvoyProvider extends ChangeNotifier {
     return failure is ConvoyFailure && failure == ConvoyFailure.stopPolling;
   }
 
+  bool _isJourneyTerminalFailure(Failure failure) {
+    return failure is ConvoyFailure &&
+        (failure == ConvoyFailure.journeyNotActive ||
+            _isSilentTerminalFailure(failure));
+  }
+
   /// Whether a failure means the journey/auth is gone for good and we should
   /// stop the publish loop entirely (vs. a transient network blip).
   bool _isTerminalPublishFailure(Failure failure) {
@@ -836,28 +850,20 @@ class ConvoyProvider extends ChangeNotifier {
   /// Separated from [stopCoordination] so a superseded join can clean up its
   /// own streams without also tearing down the room that replaced it.
   Future<void> _cancelRoomSubscriptions() async {
-    await _convoySubscription?.cancel();
-    _convoySubscription = null;
-    await _connectionSubscription?.cancel();
-    _connectionSubscription = null;
-    await _journeyEndedSubscription?.cancel();
-    _journeyEndedSubscription = null;
-    await _participantArrivedSubscription?.cancel();
-    _participantArrivedSubscription = null;
-    await _journeyStartedSubscription?.cancel();
-    _journeyStartedSubscription = null;
-    await _participantAcceptedSubscription?.cancel();
-    _participantAcceptedSubscription = null;
+    final subscriptions = _roomSubscriptions;
+    _roomSubscriptions = null;
     _snapshotNotifyTimer?.cancel();
     _snapshotNotifyTimer = null;
     _pendingJourneyStartedId = null;
+    await subscriptions?.cancel();
   }
 
   /// Release the room currently held, ahead of claiming a different one.
   ///
   /// Identical to [stopCoordination] except that it is used *inside* a handoff,
   /// where the caller has already claimed the newer generation.
-  Future<void> _releaseRoomState() => stopCoordination();
+  Future<void> _releaseRoomState() =>
+      stopCoordination(invalidateRoomOwner: false);
 
   /// Start streaming convoy positions and connection state.
   ///
@@ -866,18 +872,19 @@ class ConvoyProvider extends ChangeNotifier {
   /// attempt can never deliver into the room that replaced it — checking only
   /// `_currentJourneyId` was not enough, because a re-entry into the *same*
   /// journey produces the same id with a different owner.
-  void _startConvoyStream(String journeyId, int generation) {
-    // A previous attempt's streams must go before this one's are installed;
-    // overwriting the fields leaked the old subscriptions, which kept
-    // delivering into the new session.
-    unawaited(_cancelRoomSubscriptions());
+  Future<bool> _startConvoyStream(String journeyId, int generation) async {
+    await _cancelRoomSubscriptions();
 
     /// True while this subscription set still owns the room.
     bool owns() =>
         generation == _roomGeneration && _currentJourneyId == journeyId;
 
+    if (!owns()) return false;
+
+    var terminalHandled = false;
+
     // Listen to convoy position updates
-    _convoySubscription = _streamConvoyPositions(journeyId).listen(
+    final convoySubscription = _streamConvoyPositions(journeyId).listen(
       (result) {
         if (!owns()) return;
         if (result.snapshot != null) {
@@ -903,7 +910,7 @@ class ConvoyProvider extends ChangeNotifier {
     );
 
     // Listen to WebSocket connection state changes
-    _connectionSubscription = _repository.connectionStateStream.listen(
+    final connectionSubscription = _repository.connectionStateStream.listen(
       (connectionState) {
         if (!owns()) return;
         // An automatic reconnect is a new attempt too, so consumers restart
@@ -925,12 +932,13 @@ class ConvoyProvider extends ChangeNotifier {
     // Listen for server-driven journey-ended events. When the backend ends
     // a journey it emits this; we must stop coordinating that journey so we
     // don't keep hammering the now-invalid room.
-    _journeyEndedSubscription = _repository.journeyEndedStream.listen(
+    final journeyEndedSubscription = _repository.journeyEndedStream.listen(
       (event) async {
         // Identity is the event's own; ownership is this subscription's.
         // A late end for A must not tear down B, and an end delivered to a
         // superseded subscription must not act at all.
-        if (!owns() || event.journeyId != journeyId) return;
+        if (!owns() || event.journeyId != journeyId || terminalHandled) return;
+        terminalHandled = true;
 
         print(
           '🏁 ConvoyProvider: journey-ended received for ${event.journeyId}',
@@ -948,28 +956,29 @@ class ConvoyProvider extends ChangeNotifier {
     // Per-participant arrival updates. On allArrived we stop publishing GPS
     // immediately — the backend auto-completes the journey and the
     // journey-ended subscription above handles the navigation/teardown.
-    _participantArrivedSubscription = _repository.participantArrivedStream.listen(
-      (event) async {
-        if (!owns()) return;
-        _arrivedCount = event.arrivedCount;
-        _totalMemberCount = event.totalCount;
-        _lastArrivalEvent = event;
+    final participantArrivedSubscription = _repository.participantArrivedStream
+        .listen(
+          (event) async {
+            if (!owns()) return;
+            _arrivedCount = event.arrivedCount;
+            _totalMemberCount = event.totalCount;
+            _lastArrivalEvent = event;
 
-        if (event.allArrived) {
-          print(
-            '🏁 ConvoyProvider: all participants arrived — stopping publishing',
-          );
-          await _stopLocationPublishing();
-        }
+            if (event.allArrived) {
+              print(
+                '🏁 ConvoyProvider: all participants arrived — stopping publishing',
+              );
+              await _stopLocationPublishing();
+            }
 
-        notifyListeners();
-      },
-      onError: (Object error) {
-        print('❌ participant-arrived stream error: $error');
-      },
-    );
+            notifyListeners();
+          },
+          onError: (Object error) {
+            print('❌ participant-arrived stream error: $error');
+          },
+        );
 
-    _journeyStartedSubscription = _repository.journeyStartedStream.listen(
+    final journeyStartedSubscription = _repository.journeyStartedStream.listen(
       (eventJourneyId) {
         // The event carries its own identity (parsed from the payload by the
         // data source). It is accepted only for the room this subscription set
@@ -984,7 +993,8 @@ class ConvoyProvider extends ChangeNotifier {
       },
     );
 
-    _participantAcceptedSubscription = _repository.participantAcceptedStream
+    final participantAcceptedSubscription = _repository
+        .participantAcceptedStream
         .listen(
           (eventJourneyId) {
             // Journey-scoped from the payload — see the data source. A late
@@ -1001,6 +1011,16 @@ class ConvoyProvider extends ChangeNotifier {
             print('❌ participant-accepted stream error: $error');
           },
         );
+
+    _roomSubscriptions = _RoomSubscriptions(
+      convoy: convoySubscription,
+      connection: connectionSubscription,
+      journeyEnded: journeyEndedSubscription,
+      participantArrived: participantArrivedSubscription,
+      journeyStarted: journeyStartedSubscription,
+      participantAccepted: participantAcceptedSubscription,
+    );
+    return true;
   }
 
   /// Schedule a coalesced `notifyListeners()` for snapshot updates. If a
@@ -1106,4 +1126,32 @@ class ConvoyProvider extends ChangeNotifier {
     stopCoordination();
     super.dispose();
   }
+}
+
+class _RoomSubscriptions {
+  const _RoomSubscriptions({
+    required this.convoy,
+    required this.connection,
+    required this.journeyEnded,
+    required this.participantArrived,
+    required this.journeyStarted,
+    required this.participantAccepted,
+  });
+
+  final StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>
+  convoy;
+  final StreamSubscription<ConvoyConnectionState> connection;
+  final StreamSubscription<JourneyEndedEvent> journeyEnded;
+  final StreamSubscription<ParticipantArrivedEvent> participantArrived;
+  final StreamSubscription<String> journeyStarted;
+  final StreamSubscription<String> participantAccepted;
+
+  Future<void> cancel() => Future.wait<void>([
+    convoy.cancel(),
+    connection.cancel(),
+    journeyEnded.cancel(),
+    participantArrived.cancel(),
+    journeyStarted.cancel(),
+    participantAccepted.cancel(),
+  ]);
 }
