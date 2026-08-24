@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../journeys/domain/entities/journey.dart';
@@ -73,9 +72,9 @@ class JourneyProgressCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(
-          color: colors.carbonBlack,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+          border: Border.all(color: colors.divider),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.3),
@@ -88,24 +87,24 @@ class JourneyProgressCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              Icon(Icons.location_on, color: colors.electricRed, size: 16),
+              Icon(Icons.location_on, color: colors.sunsetOrange, size: 16),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  journey.destinationAddress,
+                  journey.destinationLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: colors.white,
+                    color: colors.ink,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               _buildProgressBadge(colors),
               const SizedBox(width: 8),
-              Icon(Icons.keyboard_arrow_up, color: colors.silver, size: 22),
+              Icon(Icons.keyboard_arrow_up, color: colors.muted, size: 22),
             ],
           ),
         ),
@@ -118,9 +117,9 @@ class JourneyProgressCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.brushedSteel.withOpacity(0.3)),
+        border: Border.all(color: colors.divider),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -165,11 +164,11 @@ class JourneyProgressCard extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            journey.destinationAddress,
-            style: GoogleFonts.inter(
+            journey.destinationLabel,
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: colors.white,
+              color: colors.ink,
             ),
           ),
         ),
@@ -179,7 +178,7 @@ class JourneyProgressCard extends StatelessWidget {
             padding: const EdgeInsets.only(left: 8),
             child: Icon(
               Icons.keyboard_arrow_down,
-              color: colors.silver,
+              color: colors.muted,
               size: 24,
             ),
           ),
@@ -208,26 +207,26 @@ class JourneyProgressCard extends StatelessWidget {
         : (restored?.durationRemainingSeconds ?? 0) / 60;
 
     final isStale = restored?.isStaleAt(DateTime.now()) ?? false;
-    final figureColor = isStale ? colors.silver : colors.white;
+    final figureColor = isStale ? colors.muted : colors.ink;
 
     return Row(
       children: [
-        Icon(Icons.location_on, color: colors.electricRed, size: 16),
+        Icon(Icons.location_on, color: colors.sunsetOrange, size: 16),
         const SizedBox(width: 4),
         Text(
           hasFigures ? '${distance.toStringAsFixed(1)} km' : '-- km',
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             color: figureColor,
           ),
         ),
         const SizedBox(width: 16),
-        Icon(Icons.access_time, color: colors.silver, size: 16),
+        Icon(Icons.access_time, color: colors.muted, size: 16),
         const SizedBox(width: 4),
         Text(
           hasFigures ? '${eta.ceil()} min ETA' : 'Calculating ETA',
-          style: GoogleFonts.inter(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             color: figureColor,
@@ -237,10 +236,10 @@ class JourneyProgressCard extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             _ageLabel(restored.ageAt(DateTime.now())),
-            style: GoogleFonts.inter(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w400,
-              color: colors.silver,
+              color: colors.muted,
             ),
           ),
         ],
@@ -258,13 +257,13 @@ class JourneyProgressCard extends StatelessWidget {
 
     final bg = showArrival
         ? (allArrived ? Colors.green : Colors.amber).withOpacity(0.18)
-        : colors.brushedSteel.withOpacity(0.3);
+        : colors.warmSand;
     final border = showArrival
         ? (allArrived ? Colors.green : Colors.amber).withOpacity(0.45)
         : Colors.transparent;
     final textColor = showArrival
         ? (allArrived ? Colors.green : Colors.amber)
-        : colors.white;
+        : colors.ink;
 
     final label = showArrival
         ? '$_arrivedCount/$_totalCount arrived'
@@ -279,7 +278,7 @@ class JourneyProgressCard extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: GoogleFonts.inter(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: textColor,
@@ -348,12 +347,12 @@ class JourneyProgressCard extends StatelessWidget {
                   ConvoyMemberPresentation.palette[index %
                       ConvoyMemberPresentation.palette.length],
               shape: BoxShape.circle,
-              border: Border.all(color: colors.carbonBlack, width: 2),
+              border: Border.all(color: colors.surface, width: 2),
             ),
             child: Center(
               child: Text(
                 initials,
-                style: GoogleFonts.rajdhani(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
@@ -371,7 +370,7 @@ class JourneyProgressCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.green,
                   shape: BoxShape.circle,
-                  border: Border.all(color: colors.carbonBlack, width: 1.5),
+                  border: Border.all(color: colors.surface, width: 1.5),
                 ),
                 child: const Icon(Icons.check, size: 9, color: Colors.white),
               ),
@@ -389,12 +388,12 @@ class JourneyProgressCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF3182CE),
         shape: BoxShape.circle,
-        border: Border.all(color: colors.carbonBlack, width: 2),
+        border: Border.all(color: colors.surface, width: 2),
       ),
       child: Center(
         child: Text(
           'ME',
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
             color: Colors.white,
@@ -411,14 +410,14 @@ class JourneyProgressCard extends StatelessWidget {
       width: 32,
       height: 32,
       decoration: BoxDecoration(
-        color: colors.brushedSteel,
+        color: colors.muted,
         shape: BoxShape.circle,
-        border: Border.all(color: colors.carbonBlack, width: 2),
+        border: Border.all(color: colors.surface, width: 2),
       ),
       child: Center(
         child: Text(
           '+$extraCount',
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
             color: Colors.white,
@@ -436,10 +435,10 @@ class JourneyProgressCard extends StatelessWidget {
 
     return Text(
       '$initials is ${distance.toStringAsFixed(1)}km behind',
-      style: GoogleFonts.inter(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: colors.silver,
+        color: colors.muted,
       ),
     );
   }
@@ -461,10 +460,10 @@ class JourneyProgressCard extends StatelessWidget {
     final remaining = _totalCount - _arrivedCount;
     return Text(
       "You've arrived — waiting for $remaining more",
-      style: GoogleFonts.inter(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: colors.silver,
+        color: colors.muted,
       ),
     );
   }
@@ -479,7 +478,7 @@ class JourneyProgressCard extends StatelessWidget {
             ? null
             : (isLeader ? onEndJourney : onLeaveJourney),
         style: ElevatedButton.styleFrom(
-          backgroundColor: colors.electricRed,
+          backgroundColor: isLeader ? colors.sunsetOrange : colors.deepTeal,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -495,7 +494,7 @@ class JourneyProgressCard extends StatelessWidget {
               )
             : Text(
                 _actionButtonLabel,
-                style: GoogleFonts.rajdhani(
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,

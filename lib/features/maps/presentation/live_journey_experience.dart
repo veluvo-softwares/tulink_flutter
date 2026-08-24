@@ -3,50 +3,91 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
-import 'package:google_fonts/google_fonts.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../../core/navigation/navigation_helper.dart';
+import '../../../core/di/service_locator.dart';
+import '../../../core/services/car_toast_service.dart';
+import '../../../core/services/location_service.dart';
 import '../../../core/theme/tulink_colors.dart';
 import '../data/models/route_result_model.dart';
-import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
 import 'providers/map_provider.dart';
 import 'services/convoy_interpolation_service.dart';
 import '../../journeys/presentation/providers/journey_provider.dart';
+import '../../journeys/data/models/journey_model.dart';
 import '../../journeys/domain/entities/journey.dart';
 import '../../convoy/presentation/providers/convoy_provider.dart';
 import '../../convoy/presentation/widgets/convoy_status_bar.dart';
 import '../../convoy/presentation/widgets/convoy_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/journey_progress_card.dart';
-import '../../convoy/presentation/widgets/driver_marker.dart';
 import '../../convoy/presentation/widgets/convoy_route_line.dart';
 import '../../convoy/presentation/services/journey_status_notifier.dart';
 import '../../convoy/presentation/utils/convoy_member_presentation.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
+import '../../convoy/domain/entities/journey_ended_event.dart';
 import '../../convoy/domain/entities/member_position.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
-import '../../analytics/presentation/screens/journey_details_screen.dart';
-import 'widgets/map_journey_overlay.dart';
-import 'widgets/map_header_overlay.dart';
 import 'widgets/turn_instruction_card.dart';
 import 'providers/navigation_provider.dart';
 import '../domain/entities/route_progress.dart';
 import 'utils/route_rendering.dart';
+import 'utils/route_source_resolver.dart';
+import 'controllers/persistent_map_controller.dart';
 
-class TulinkMapScreen extends StatefulWidget {
-  const TulinkMapScreen({super.key});
+/// The live convoy layer, drawn over the application's single persistent map.
+///
+/// This owns everything that only makes sense while a journey is running:
+/// convoy member markers, the route-snapped puck, turn-by-turn progress,
+/// camera-follow, arrival handling and journey exit. It deliberately does **not**
+/// own a `MapWidget` — it draws through [PersistentMapController], so starting
+/// and ending a journey no longer swaps one map for another.
+///
+/// Mount it only while a journey is running; the host shell decides that from
+/// [MapExperienceState].
+class LiveJourneyExperience extends StatefulWidget {
+  const LiveJourneyExperience({
+    super.key,
+    required this.controller,
+    this.onExit,
+    this.onCompleted,
+    this.onBack,
+    this.onEndingChanged,
+    this.onEndedWithoutSummary,
+  });
 
-  static const String routeName = '/mapview';
+  /// Handle to the one map surface in the app.
+  final PersistentMapController controller;
+
+  /// Invoked when the journey is over and the layer should be torn down. The
+  /// host returns to its non-journey state rather than popping a route — there
+  /// is no map screen to pop back from any more.
+  final VoidCallback? onExit;
+
+  /// Invoked when the journey completed and there is a summary to show. The
+  /// host renders it over the same map, so the route the user just drove stays
+  /// on screen behind the summary.
+  final ValueChanged<Journey>? onCompleted;
+
+  /// Invoked with the id of a journey that has ended but whose summary could
+  /// not be loaded, so the host can release it from selection.
+  final ValueChanged<String>? onEndedWithoutSummary;
+
+  /// Back pressed. This must never end or abandon the journey — the host
+  /// decides what Back means (it collapses this chrome), and the journey keeps
+  /// running underneath.
+  final VoidCallback? onBack;
+
+  /// Reports whether a journey teardown is in flight, so the host can drive the
+  /// authoritative `ending` experience state and keep chrome consistent.
+  final ValueChanged<bool>? onEndingChanged;
 
   @override
-  State<TulinkMapScreen> createState() => _TulinkMapScreenState();
+  State<LiveJourneyExperience> createState() => _LiveJourneyExperienceState();
 }
 
-class _TulinkMapScreenState extends State<TulinkMapScreen>
+class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     with WidgetsBindingObserver {
-  MapboxMap? _mapboxMap;
   PointAnnotationManager? _pointAnnotationManager;
   String? _activeJourneyId;
   bool _isConvoyCoordinationActive = false;
@@ -54,7 +95,32 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   int _lastUpdateHash = 0;
   bool _disposed = false;
   bool _isAppActive = true;
-  int _mapGeneration = 0;
+
+  /// The map surface is owned by the host shell, not by this layer.
+  MapboxMap? get _mapboxMap => widget.controller.map;
+
+  /// Bumped by the host whenever the native surface is rebuilt.
+  int get _mapGeneration => widget.controller.generation;
+
+  /// Generation this layer has already attached to, so a rebuild is detected
+  /// exactly once.
+  int? _attachedGeneration;
+
+  /// [PersistentMapController.userPanTick] value last observed, used to notice
+  /// a hand pan without the layer having to own the gesture listener.
+  int _lastUserPanTick = 0;
+
+  /// Bounded location access shared with [ConvoyProvider]; see [LocationService].
+  final LocationService _locationService = ServiceLocator().locationService;
+
+  /// Pending "draw the route once we finally get a fix" listener, armed only
+  /// when there is neither a cached route nor an origin. See
+  /// [_scheduleRouteRetryOnNextFix].
+  StreamSubscription<geo.Position>? _routeRetrySubscription;
+  String? _routeRetryJourneyId;
+
+  /// Guards against concurrent convoy reconnect attempts.
+  bool _isReconnectingConvoy = false;
 
   /// True when it's safe to call the Mapbox channel — set false on dispose
   /// so async chains that resume after the widget is unmounted bail out
@@ -142,6 +208,53 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _lastUserPanTick = widget.controller.userPanTick;
+    widget.controller.addListener(_onMapControllerChanged);
+    // The surface is frequently already attached — the host map outlives this
+    // layer, so there is no "map created" event to wait for.
+    _onMapControllerChanged();
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveJourneyExperience oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.controller, widget.controller)) return;
+    oldWidget.controller.removeListener(_onMapControllerChanged);
+    _attachedGeneration = null;
+    _lastUserPanTick = widget.controller.userPanTick;
+    widget.controller.addListener(_onMapControllerChanged);
+    _onMapControllerChanged();
+  }
+
+  /// Reacts to the two things the host can do to the shared surface: replace it
+  /// (new generation) and report a user pan.
+  void _onMapControllerChanged() {
+    if (_disposed || !mounted) return;
+
+    if (widget.controller.userPanTick != _lastUserPanTick) {
+      _lastUserPanTick = widget.controller.userPanTick;
+      // An explicit pan yields camera control until the user taps recenter.
+      // The guard keeps a camera animation we started from being mistaken for
+      // the user grabbing the map.
+      if (!_isProgrammaticCameraMove) {
+        _cameraFollowEnabled = false;
+      }
+    }
+
+    final map = widget.controller.map;
+    if (map == null || _attachedGeneration == _mapGeneration) return;
+    _attachedGeneration = _mapGeneration;
+    // Surface-local handles belong to the old surface; drop them before redraw.
+    _pointAnnotationManager = null;
+    _lastUpdateHash = 0;
+    _puckEnabled = null;
+    _rawPuckRemovedForNavigation = false;
+    _lastTrimAt = null;
+    unawaited(
+      _attachToMap(map).catchError((Object e) {
+        print('❌ Failed to attach live journey layer to map: $e');
+      }),
+    );
   }
 
   @override
@@ -155,35 +268,42 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
     if (state != AppLifecycleState.resumed || _isAppActive || !mounted) return;
 
-    // Recreate the native Mapbox view after a real background transition.
-    // On some devices the platform surface resumes black even though Flutter
-    // and the overlays continue rendering. A new keyed MapWidget gets a fresh
-    // surface; _onMapCreated restores route, destination, markers and camera.
     _isAppActive = true;
 
-    // The server heartbeat monitor evicts the socket while we're suspended
-    // (Dart timers freeze, so no heartbeats go out). Bring it back up now
-    // with a fresh token instead of waiting for the next publish to fail.
-    _mapboxMap = null;
-    _pointAnnotationManager = null;
-    _lastUpdateHash = 0;
-    _puckEnabled = null;
-    _rawPuckRemovedForNavigation = false;
-    _lastTrimAt = null;
-    setState(() => _mapGeneration++);
+    // Surface recreation is the *host's* responsibility and the host observes
+    // the same lifecycle event. Recreating here too produced two generation
+    // bumps and two restore passes for a single resume, so this layer only
+    // reacts: [_onMapControllerChanged] restores route, destination and markers
+    // when the host's rebuild lands.
   }
 
-  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
-    _mapboxMap = mapboxMap;
+  /// Restore the whole journey layer onto a (possibly brand new) surface.
+  ///
+  /// Idempotent, and safe to run repeatedly: every draw below either replaces
+  /// its own style layer or is keyed by journey, so a redundant attach costs
+  /// work but cannot duplicate geometry.
+  Future<void> _attachToMap(MapboxMap mapboxMap) async {
+    // Guards against a map recreated mid-restore (background/foreground churn):
+    // work started for an older surface must not draw onto the new one.
+    final generation = _mapGeneration;
+    await mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
     _pointAnnotationManager = await mapboxMap.annotations
         .createPointAnnotationManager();
+    if (!mounted || generation != _mapGeneration) return;
 
-    // Enable user location with defensive guards
-    await _enableUserLocation(mapboxMap);
+    // User location is drawn independently and is NOT awaited here: the puck is
+    // cosmetic, whereas the journey draw below is the reason the screen exists.
+    // Awaiting a location fix before drawing the journey is what used to leave
+    // the live screen empty on devices without GPS.
+    unawaited(
+      _enableUserLocation(mapboxMap).catchError((Object e) {
+        print('❌ Failed to enable user location: $e');
+      }),
+    );
 
     // Draw static journey data immediately — does not wait for any WebSocket
     // snapshot to arrive. The destination is journey data, not convoy data.
-    if (mounted) {
+    if (mounted && generation == _mapGeneration) {
       final currentJourney = context.read<JourneyProvider>().currentJourney;
       if (currentJourney != null &&
           currentJourney.status == JourneyStatus.ACTIVE) {
@@ -201,16 +321,9 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
         Future<void>.delayed(const Duration(milliseconds: 2500), () async {
           if (!_canUseMap || !_cameraFollowEnabled) return;
 
-          geo.Position? pos;
-          try {
-            pos = await geo.Geolocator.getCurrentPosition(
-              locationSettings: const geo.LocationSettings(
-                accuracy: geo.LocationAccuracy.high,
-              ),
-            ).timeout(const Duration(seconds: 5));
-          } catch (_) {
+          final pos = await _locationService.getCurrentPosition();
+          if (pos == null)
             return; // GPS not ready — leave the overview in place
-          }
 
           if (!_canUseMap) return;
 
@@ -311,36 +424,77 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   /// Fit the camera to show both the user's current position and the journey
   /// destination. Falls back to centering on the destination if GPS or the
   /// bounds calculation is unavailable.
-  Future<void> _fitCameraToJourney(Journey journey) async {
-    if (_mapboxMap == null) return;
+  /// Retry route initialization once the device produces a position.
+  ///
+  /// Reached when there was no cached route *and* no origin. Listens for the
+  /// first fix, then rebuilds the route for [journey]. Guarded by journey id so
+  /// a fix arriving after a switch cannot draw the previous journey's route.
+  void _scheduleRouteRetryOnNextFix(Journey journey) {
+    if (_routeRetryJourneyId == journey.id && _routeRetrySubscription != null) {
+      return; // already waiting for this journey
+    }
+    _cancelRouteLocationRetry();
+    _routeRetryJourneyId = journey.id;
+    _routeRetrySubscription = _locationService
+        .getPositionStream(
+          locationSettings: const geo.LocationSettings(
+            accuracy: geo.LocationAccuracy.high,
+          ),
+        )
+        .listen((position) {
+          if (!mounted || _routeRetryJourneyId != journey.id) return;
+          _cancelRouteLocationRetry();
+          unawaited(
+            _drawActualRoute(
+              journey,
+              knownLat: position.latitude,
+              knownLng: position.longitude,
+            ),
+          );
+        }, onError: (Object e) => print('⚠️ Route retry stream error: $e'));
+  }
 
-    geo.Position? pos;
+  void _cancelRouteLocationRetry() {
+    _routeRetrySubscription?.cancel();
+    _routeRetrySubscription = null;
+    _routeRetryJourneyId = null;
+  }
+
+  /// Frame the destination alone. Used whenever the user's position is
+  /// unavailable, so the map still shows something meaningful rather than
+  /// sitting on a default regional camera.
+  Future<void> _centerOnDestination(Journey journey) async {
+    if (!mounted || _mapboxMap == null) return;
+    _isProgrammaticCameraMove = true;
     try {
-      pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
+      await _mapboxMap!.setCamera(
+        CameraOptions(
+          center: Point(
+            coordinates: Position(
+              journey.destination.longitude,
+              journey.destination.latitude,
+            ),
+          ),
+          zoom: 13.0,
         ),
       );
     } catch (e) {
-      print(
-        '⚠️ Could not get position for camera fit — centering on destination',
-      );
-      _isProgrammaticCameraMove = true;
-      try {
-        await _mapboxMap!.setCamera(
-          CameraOptions(
-            center: Point(
-              coordinates: Position(
-                journey.destination.longitude,
-                journey.destination.latitude,
-              ),
-            ),
-            zoom: 13.0,
-          ),
-        );
-      } finally {
-        _isProgrammaticCameraMove = false;
-      }
+      print('⚠️ Could not center on destination: $e');
+    } finally {
+      _isProgrammaticCameraMove = false;
+    }
+  }
+
+  Future<void> _fitCameraToJourney(Journey journey) async {
+    if (_mapboxMap == null) return;
+
+    // Bounded: without a fix this returns null rather than hanging, so the
+    // camera still frames the destination instead of never moving at all.
+    final pos = await _locationService.getCurrentPosition();
+    if (!mounted || _mapboxMap == null) return;
+
+    if (pos == null) {
+      await _centerOnDestination(journey);
       return;
     }
 
@@ -433,30 +587,8 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     double? knownLat,
     double? knownLng,
   }) async {
-    if (_mapboxMap == null) return;
+    if (_mapboxMap == null || !mounted) return;
 
-    // Prefer a position already in hand (e.g. from the live navigation stream)
-    // to avoid paying the GPS cold-start cost (up to 5s on Android) again.
-    double? originLat = knownLat;
-    double? originLng = knownLng;
-
-    if (originLat == null || originLng == null) {
-      geo.Position? pos;
-      try {
-        pos = await geo.Geolocator.getCurrentPosition(
-          locationSettings: const geo.LocationSettings(
-            accuracy: geo.LocationAccuracy.high,
-          ),
-        ).timeout(const Duration(seconds: 5));
-      } catch (e) {
-        print('⚠️ Could not get position for route: $e');
-        return; // Keep the straight-line placeholder
-      }
-      originLat = pos.latitude;
-      originLng = pos.longitude;
-    }
-
-    if (!mounted) return;
     final mapProvider = context.read<MapProvider>();
     final userId = context.read<AuthProvider>().user?.id;
     if (userId == null || userId.isEmpty) {
@@ -464,32 +596,66 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       return;
     }
 
-    // Use the prefetched route if it matches this destination — no network call.
-    RouteResultModel? route = mapProvider.currentRoute;
-    final isCachedForThisDestination =
-        route != null &&
-        route.coordinates.isNotEmpty &&
-        _coordinatesMatch(
-          route.coordinates.last,
-          journey.destination.longitude,
-          journey.destination.latitude,
-        );
+    // The surface this draw belongs to. Every route decision below is stamped
+    // with it, so work that resolved against a surface which has since been
+    // rebuilt cannot paint the new one.
+    final generation = _mapGeneration;
 
-    if (isCachedForThisDestination) {
-      print('✅ Using prefetched route — skipping fetch');
-    } else {
-      print('🌐 No prefetched route — fetching now');
-      route = await mapProvider.fetchRoute(
+    // Cached route first — see [resolveRouteSource]. A cached route already
+    // ends at this destination and needs no origin, so it must be chosen
+    // before any GPS work.
+    //
+    // Read through [MapProvider.routeFor], never `currentRoute`: the held
+    // route must belong to *this* user, journey, destination and surface
+    // generation before it may be adopted as this journey's geometry.
+    final source = await resolveRouteSource(
+      cachedRoute: mapProvider.routeFor(
         userId: userId,
         journeyId: journey.id,
-        originLat: originLat,
-        originLng: originLng,
         destLat: journey.destination.latitude,
         destLng: journey.destination.longitude,
-      );
+        surfaceGeneration: generation,
+      ),
+      destinationLat: journey.destination.latitude,
+      destinationLng: journey.destination.longitude,
+      locationService: _locationService,
+      knownLat: knownLat,
+      knownLng: knownLng,
+    );
+    if (!mounted || _mapboxMap == null || generation != _mapGeneration) return;
+
+    final RouteResultModel? route;
+    switch (source) {
+      case CachedRouteSource(route: final cached):
+        print('✅ Using prefetched route — skipping fetch');
+        // Nothing is pending on location any more.
+        _cancelRouteLocationRetry();
+        route = cached;
+      case FetchRouteSource(:final originLat, :final originLng):
+        print('🌐 No prefetched route — fetching now');
+        route = await mapProvider.fetchRoute(
+          userId: userId,
+          journeyId: journey.id,
+          originLat: originLat,
+          originLng: originLng,
+          destLat: journey.destination.latitude,
+          destLng: journey.destination.longitude,
+          surfaceGeneration: generation,
+        );
+      case AwaitingLocationRouteSource():
+        // No cached route and no origin. Keep the destination visible and
+        // recover as soon as a position arrives, instead of leaving the map on
+        // a default regional camera with nothing drawn.
+        await _centerOnDestination(journey);
+        _scheduleRouteRetryOnNextFix(journey);
+        return;
     }
 
     if (route == null || !mounted || _mapboxMap == null) return;
+    // The surface was rebuilt while the route was being resolved: these layer
+    // ids belong to a style that no longer exists, and whichever layer owns the
+    // new surface redraws its own geometry.
+    if (generation != _mapGeneration) return;
 
     // Draw the actual road-following route
     const sourceId = 'actual-route-source';
@@ -592,7 +758,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
     await _drawActualRoute(journey, knownLat: knownLat, knownLng: knownLng);
 
-    final newRoute = context.read<MapProvider>().currentRoute;
+    final newRoute = context.read<MapProvider>().routeFor(
+      userId: context.read<AuthProvider>().user?.id ?? '',
+      journeyId: journey.id,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+    );
     print('🧭 reroute fetched: ${newRoute?.coordinates.length ?? 0} coords');
     if (newRoute != null && mounted) {
       context.read<NavigationProvider>().loadRoute(newRoute);
@@ -602,28 +773,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   /// True if a route's last coordinate is within ~110 m of the given target.
   /// Used to detect whether a cached route was generated for the current
   /// journey's destination. [coord] is [lng, lat].
-  bool _coordinatesMatch(List<double> coord, double destLng, double destLat) {
-    return (coord[0] - destLng).abs() < 0.001 &&
-        (coord[1] - destLat).abs() < 0.001;
-  }
-
   /// Snap the camera to the user's current GPS position and re-enable follow
   /// Animates the camera back to the device's current position and
   /// re-enables follow mode. Called by the recenter button after the user
   /// has panned away.
   Future<void> _recenterOnUser() async {
     if (_mapboxMap == null) return;
-    geo.Position? pos;
-    try {
-      pos = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
-        ),
-      ).timeout(const Duration(seconds: 5));
-    } catch (e) {
-      print('⚠️ Recenter: could not get position: $e');
-      return;
-    }
+    final pos = await _locationService.getCurrentPosition();
+    if (pos == null || !mounted || _mapboxMap == null) return;
 
     // Prefer snapped position when available, mirroring _updateCameraFollow.
     final progress = _navigationProvider?.currentProgress;
@@ -1077,14 +1234,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       }
 
       await _setBuiltInPuckEnabled(false);
-      final position = await geo.Geolocator.getCurrentPosition(
-        locationSettings: const geo.LocationSettings(
-          accuracy: geo.LocationAccuracy.high,
-        ),
-      );
+      // Bounded: a device with no fix yields null instead of an unresolved
+      // future. This used to be an unbounded getCurrentPosition() awaited by
+      // _onMapCreated, which meant no fix == no destination pin, no route and
+      // no camera fit, forever.
+      final position = await _locationService.getCurrentPosition();
+      if (!mounted || position == null) return;
       _lastRawPuckPosition = position;
       await _drawRawPuck(position);
-      print('✅ User location component enabled for ${currentUser.id}');
     } catch (e) {
       print('❌ Failed to enable user location: $e');
       // Continue without user location rather than crashing
@@ -1264,6 +1421,39 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     return hash;
   }
 
+  /// Re-establish the convoy connection for the journey already in progress.
+  ///
+  /// Distinct from [_retryLocation]: this recovers the socket/room, not the GPS
+  /// fix. It never recreates the journey — the same journey id is re-joined.
+  Future<void> _reconnectConvoy(String journeyId) async {
+    if (_isReconnectingConvoy) return; // no concurrent attempts
+    // The attempt id itself is owned by ConvoyProvider, which outlives this
+    // widget; this flag only drives local progress affordances.
+    setState(() => _isReconnectingConvoy = true);
+    try {
+      final convoy = context.read<ConvoyProvider>();
+      await convoy.reconnect(journeyId);
+      if (!mounted) return;
+      if (convoy.snapshot == null && convoy.errorMessage != null) {
+        context.showWarningToast(convoy.errorMessage!);
+      }
+    } finally {
+      if (mounted) setState(() => _isReconnectingConvoy = false);
+    }
+  }
+
+  /// Retry location acquisition without tearing down the convoy room.
+  Future<void> _retryLocation() async {
+    final convoy = context.read<ConvoyProvider>();
+    final recovered = await convoy.retryLocationPublishing();
+    if (!mounted) return;
+    if (!recovered) {
+      context.showWarningToast(
+        convoy.locationFailure?.message ?? 'Still waiting for your location',
+      );
+    }
+  }
+
   /// Check if convoy coordination should be started
   void _checkAndStartConvoyCoordination() {
     if (!mounted) return;
@@ -1282,8 +1472,10 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       // snapped puck actually starts drawing (see _drawSnappedPuck), otherwise
       // the user has no puck during the journey overview / pre-driving window.
 
-      // Start convoy coordination
-      convoyProvider.startCoordination(currentJourney.id);
+      // Start convoy coordination. Errors are surfaced on the provider's own
+      // state (error / locationFailure), which the status bar renders — so this
+      // deliberately-unawaited call has an observable failure representation.
+      unawaited(convoyProvider.startCoordination(currentJourney.id));
 
       // Ensure the destination pin and route are drawn from static journey
       // data even when the map screen is reached without _onMapCreated firing.
@@ -1294,13 +1486,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
 
       // Track the user's position so the camera follows during driving.
       // This is a separate stream from ConvoyProvider's publishing stream.
-      _cameraFollowSubscription ??=
-          geo.Geolocator.getPositionStream(
+      _cameraFollowSubscription ??= _locationService
+          .getPositionStream(
             locationSettings: const geo.LocationSettings(
               accuracy: geo.LocationAccuracy.high,
               distanceFilter: 10, // Update camera every 10m
             ),
-          ).listen((position) {
+          )
+          .listen((position) {
             _updateCameraFollow(position);
           });
     }
@@ -1486,6 +1679,14 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   /// polling timer sees the journey gone from the server's active list).
   /// If the API call fails because the backend already completed the journey,
   /// we still navigate home rather than leaving the user stranded on the map.
+  /// Track teardown locally *and* publish it, so the host's authoritative
+  /// experience state can reach `ending` instead of it being unreachable.
+  void _setExitInProgress(bool value) {
+    if (!mounted || _isJourneyExitInProgress == value) return;
+    setState(() => _isJourneyExitInProgress = value);
+    widget.onEndingChanged?.call(value);
+  }
+
   Future<void> _endJourney() async {
     if (_isJourneyExitInProgress) return;
     final convoyProvider = context.read<ConvoyProvider>();
@@ -1495,14 +1696,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     final journeyId = journeyProvider.currentJourney?.id ?? _activeJourneyId;
 
     if (journeyId == null) {
-      // Journey already cleared externally — just navigate home cleanly.
-      if (mounted) {
-        await NavigationHelper.toHomeAndClearStack(context);
-      }
+      // Journey already cleared externally — hand the shell back its map.
+      widget.onExit?.call();
       return;
     }
 
-    setState(() => _isJourneyExitInProgress = true);
+    _setExitInProgress(true);
     final success = await journeyProvider.endJourney(journeyId);
 
     if (!mounted) return;
@@ -1514,22 +1713,16 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       final completedJourney = journeyProvider.lastCompletedJourney;
       journeyProvider.consumeLastCompletedJourney();
 
+      // The summary is rendered by the shell over the same map, so the route
+      // just driven stays visible behind it instead of being replaced by a
+      // separate screen.
       if (completedJourney != null) {
-        unawaited(
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (context) => JourneyDetailsScreen(
-                journey: completedJourney,
-                showDoneButton: true,
-              ),
-            ),
-          ),
-        );
+        widget.onCompleted?.call(completedJourney);
       } else {
-        await NavigationHelper.toHomeAndClearStack(context);
+        widget.onExit?.call();
       }
     } else {
-      setState(() => _isJourneyExitInProgress = false);
+      _setExitInProgress(false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(journeyProvider.error ?? 'Could not end journey'),
@@ -1546,12 +1739,12 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     final journeyId = journeyProvider.currentJourney?.id ?? _activeJourneyId;
     if (journeyId == null) return;
 
-    setState(() => _isJourneyExitInProgress = true);
+    _setExitInProgress(true);
     final success = await journeyProvider.leaveJourney(journeyId);
     if (!mounted) return;
 
     if (!success) {
-      setState(() => _isJourneyExitInProgress = false);
+      _setExitInProgress(false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(journeyProvider.error ?? 'Could not leave journey'),
@@ -1564,7 +1757,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     await _navigationProvider?.stopNavigation();
     await convoyProvider.stopCoordination();
     if (!mounted) return;
-    await NavigationHelper.toHomeAndClearStack(context);
+    widget.onExit?.call();
   }
 
   /// Handles a `participant-arrived` WebSocket event.
@@ -1597,6 +1790,22 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
   ///
   /// Called from the build post-frame callback so it runs after the widget
   /// tree has settled and navigation is safe.
+  /// Build the finished journey from the `journey-ended` payload.
+  ///
+  /// Returns null when the payload is absent or unparseable, so the caller can
+  /// fall back rather than crash on an unexpected shape.
+  Journey? _journeyFromEndedEvent(JourneyEndedEvent event) {
+    final raw = event.journey;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      // JourneyModel extends Journey, so it is already the entity.
+      return JourneyModel.fromJson(raw);
+    } catch (e) {
+      print('⚠️ Could not parse journey from journey-ended payload: $e');
+      return null;
+    }
+  }
+
   void _handleJourneyEndedEvent() {
     if (!mounted || _isJourneyExitInProgress) return;
     final convoyProvider = context.read<ConvoyProvider>();
@@ -1608,30 +1817,42 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     convoyProvider.consumeJourneyEndedEvent();
     final journeyId = event.journeyId;
 
-    setState(() => _isJourneyExitInProgress = true);
+    _setExitInProgress(true);
 
     _navigationProvider?.stopNavigation();
 
-    // Fetch the completed journey so we can pass full details to the
-    // details screen. Falls back to home if the fetch fails.
+    // Prefer the journey carried on the event itself. Completing a journey
+    // marks every participant LEFT, so `GET /journeys/{id}` answers 403 to the
+    // very people who were on it — re-fetching here could never succeed after a
+    // server-driven end, which is why the completion summary never appeared.
+    final fromEvent = _journeyFromEndedEvent(event);
+    if (fromEvent != null && fromEvent.id == journeyId) {
+      widget.onCompleted?.call(fromEvent);
+      _setExitInProgress(false);
+      return;
+    }
+
+    // No usable journey on the event (older server): fall back to a fetch.
     () async {
       final journeyProvider = context.read<JourneyProvider>();
-      await journeyProvider.fetchJourneyById(journeyId);
+      // Validate from the returned entity; currentJourney survives a failed
+      // fetch and would misreport which journey just ended.
+      final journey = await journeyProvider.fetchJourneyById(journeyId);
       if (!mounted) return;
 
-      final journey = journeyProvider.currentJourney;
       if (journey != null && journey.id == journeyId) {
-        unawaited(
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (context) =>
-                  JourneyDetailsScreen(journey: journey, showDoneButton: true),
-            ),
-          ),
-        );
+        widget.onCompleted?.call(journey);
       } else {
-        await NavigationHelper.toHomeAndClearStack(context);
+        // The journey really did end; we just could not load its summary (for
+        // example the backend drops participation on completion and returns
+        // 403). Exit anyway, and tell the host which journey ended so it can
+        // release it — otherwise the stale selection keeps this layer mounted
+        // and the "Finishing journey…" overlay never goes away.
+        widget.onEndedWithoutSummary?.call(journeyId);
+        widget.onExit?.call();
       }
+      // If the host kept this layer mounted, do not leave a permanent spinner.
+      _setExitInProgress(false);
     }();
   }
 
@@ -1740,7 +1961,7 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     _disposed = true;
     unawaited(_statusNotifier.clear());
     WidgetsBinding.instance.removeObserver(this);
-    _mapboxMap = null;
+    widget.controller.removeListener(_onMapControllerChanged);
     // Stop the peer-marker interpolation ticker before the map handle is gone.
     _stopInterpolationTicker();
     _navigationFrameTicker?.cancel();
@@ -1748,13 +1969,18 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
     // Stop the camera-follow GPS stream — independent of convoy coordination
     _cameraFollowSubscription?.cancel();
     _cameraFollowSubscription = null;
+    // Drop any pending "retry the route when a fix arrives" listener.
+    _cancelRouteLocationRetry();
     // Detach the polyline-trim listener before releasing the provider reference.
     _navigationProvider?.removeListener(_onNavigationProgress);
     // Stop the navigation layer — independent of convoy coordination.
     // Uses the cached reference because context.read<>() is unsafe here.
     _navigationProvider?.stopNavigation();
-    // Best-effort puck cleanup — we're losing the map handle anyway.
-    unawaited(_drawSnappedPuck(null).catchError((Object _) {}));
+    // Deliberately no Mapbox cleanup here. `_disposed` is already true, so
+    // `_canUseMap` is false and any channel call would be a no-op anyway — and
+    // the drawings belong to the shell's persistent surface, not to this
+    // widget. The shell removes them explicitly via LiveArtifactCleaner when
+    // the user dismisses the journey.
     // Don't stop convoy coordination when leaving map screen
     // The journey should continue in the background
     // Only stop convoy coordination when journey is actually ended
@@ -1791,334 +2017,260 @@ class _TulinkMapScreenState extends State<TulinkMapScreen>
       _handleJourneyEndedEvent();
     });
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Standard Mapbox Map.
-          // onScrollListener fires only on user-initiated panning — not on
-          // programmatic setCamera / flyTo calls — so no _isProgrammaticCameraMove
-          // guard is needed here. The old GestureDetector(onPanStart) wrapper was
-          // winning the Flutter gesture arena and blocking the native MapWidget
-          // from receiving touch events, making the map impossible to pan.
-          RepaintBoundary(
-            child: MapWidget(
-              key: ValueKey('mapbox_map_$_mapGeneration'),
-              onMapCreated: _onMapCreated,
-              onScrollListener: (_) {
-                if (!_isProgrammaticCameraMove) {
-                  _cameraFollowEnabled = false;
-                }
-              },
-              styleUri: MapboxStyles.DARK,
-              cameraOptions: CameraOptions(
-                center: Point(
-                  coordinates: Position(36.8219, -1.2921), // Nairobi
-                ),
-                zoom: 10,
-              ),
-            ),
-          ),
-
-          // Convoy Status Bar - Show when active journey exists
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE)
-            Align(
-              alignment: Alignment.topCenter,
-              child: GestureDetector(
+    // Overlay chrome only — the map underneath belongs to the host shell.
+    return Stack(
+      children: [
+        // Convoy Status Bar - Show when active journey exists
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE)
+          Align(
+            alignment: Alignment.topCenter,
+            child: GestureDetector(
+              onTap: _showConvoyBottomSheet,
+              onLongPress: _showConvoyManagementOptions,
+              child: ConvoyStatusBar(
+                snapshot: convoySnapshot,
+                connectionState: convoyConnectionState,
                 onTap: _showConvoyBottomSheet,
-                onLongPress: _showConvoyManagementOptions,
-                child: ConvoyStatusBar(
-                  snapshot: convoySnapshot,
-                  connectionState: convoyConnectionState,
-                  onTap: _showConvoyBottomSheet,
-                  onBack: () => NavigationHelper.toHomeAndClearStack(context),
-                ),
+                // Back collapses chrome; it must never reach the exit path,
+                // which tears the journey down and clears the draft.
+                onBack: widget.onBack,
+                locationFailure: context
+                    .watch<ConvoyProvider>()
+                    .locationFailure,
+                onRetryLocation: _retryLocation,
+                journeyId: currentJourney.id,
+                connectionAttemptId: context
+                    .watch<ConvoyProvider>()
+                    .connectionAttemptId,
+                onReconnect: () => _reconnectConvoy(currentJourney.id),
+                isReconnecting: _isReconnectingConvoy,
               ),
             ),
-
-          // Turn-by-turn instruction card — hidden once user has arrived
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE &&
-              !_currentUserHasArrived)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 100,
-              left: 0,
-              right: 0,
-              child: Consumer<NavigationProvider>(
-                builder: (context, nav, _) {
-                  return TurnInstructionCard(
-                    progress: nav.currentProgress,
-                    isVoiceEnabled: nav.isVoiceEnabled,
-                    onToggleVoice: () =>
-                        nav.setVoiceEnabled(!nav.isVoiceEnabled),
-                  );
-                },
-              ),
-            ),
-
-          Consumer<NavigationProvider>(
-            builder: (context, navigation, _) {
-              if (!navigation.offlineReroutePending) {
-                return const SizedBox.shrink();
-              }
-              return Positioned(
-                top: MediaQuery.of(context).padding.top + 176,
-                left: 16,
-                right: 16,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xE61A1A1A),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFFFB020)),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    child: Text(
-                      'Offline — stay aware and return to the shown route. '
-                      'A new road route will be calculated after reconnecting.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-              );
-            },
           ),
 
-          // Arrival confirmation banner — replaces the turn card once the
-          // current user is confirmed at the destination. Stays visible until
-          // all members arrive and the journey-ended event navigates away.
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE &&
-              _currentUserHasArrived)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 100,
+        // Turn-by-turn instruction card — hidden once user has arrived
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE &&
+            !_currentUserHasArrived)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 100,
+            left: 0,
+            right: 0,
+            child: Consumer<NavigationProvider>(
+              builder: (context, nav, _) {
+                return TurnInstructionCard(
+                  progress: nav.currentProgress,
+                  isVoiceEnabled: nav.isVoiceEnabled,
+                  onToggleVoice: () => nav.setVoiceEnabled(!nav.isVoiceEnabled),
+                );
+              },
+            ),
+          ),
+
+        Consumer<NavigationProvider>(
+          builder: (context, navigation, _) {
+            if (!navigation.offlineReroutePending) {
+              return const SizedBox.shrink();
+            }
+            return Positioned(
+              top: MediaQuery.of(context).padding.top + 176,
               left: 16,
               right: 16,
-              child: Consumer<ConvoyProvider>(
-                builder: (context, convoy, _) {
-                  final arrived = convoy.arrivedCount;
-                  final total = convoy.totalMemberCount;
-                  final allArrived = total > 0 && arrived >= total;
-                  final waiting = total > arrived ? total - arrived : 0;
-                  return _ArrivalBanner(
-                    arrived: arrived,
-                    total: total,
-                    allArrived: allArrived,
-                    waiting: waiting,
-                    isLeader: isLeader,
-                    onEndJourney: isLeader ? _showEndJourneyConfirmation : null,
-                  );
-                },
-              ),
-            ),
-
-          // Route loading indicator — visible only while POST /maps/route is in flight
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 100,
-              left: 0,
-              right: 0,
-              child: Consumer<MapProvider>(
-                builder: (context, mapProvider, _) {
-                  if (!mapProvider.isFetchingRoute)
-                    return const SizedBox.shrink();
-                  return const _RouteLoadingPill();
-                },
-              ),
-            ),
-
-          // Map Header - Top Overlay (when no active journey)
-          if (currentJourney == null ||
-              currentJourney.status != JourneyStatus.ACTIVE)
-            const Align(
-              alignment: Alignment.topCenter,
-              child: MapHeaderOverlay(),
-            ),
-
-          // Journey Progress Card - Bottom Overlay (collapsed pill by default)
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Consumer<NavigationProvider>(
-                builder: (context, navigation, _) => JourneyProgressCard(
-                  journey: currentJourney,
-                  convoySnapshot: convoySnapshot,
-                  currentUserId: currentUserId,
-                  isLeader: isLeader,
-                  routeProgress: navigation.currentProgress,
-                  lastKnownProgress: navigation.lastKnownProgress,
-                  onEndJourney: _showEndJourneyConfirmation,
-                  onLeaveJourney: _showLeaveJourneyConfirmation,
-                  isActionInProgress: _isJourneyExitInProgress,
-                  isExpanded: _isProgressCardExpanded,
-                  onToggleExpanded: () => setState(
-                    () => _isProgressCardExpanded = !_isProgressCardExpanded,
-                  ),
-                ),
-              ),
-            ),
-
-          // Map Bottom Bar - Show when no active journey
-          if (currentJourney == null ||
-              currentJourney.status != JourneyStatus.ACTIVE)
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: MapJourneyOverlay(),
-            ),
-
-          // Recenter button — active journey.
-          // Shifts up by the card-expansion delta (182 px) so it always clears
-          // the expanded card header.
-          if (currentJourney != null &&
-              currentJourney.status == JourneyStatus.ACTIVE)
-            Positioned(
-              bottom: _isProgressCardExpanded ? 254 : 72,
-              right: 16,
-              child: GestureDetector(
-                onTap: _recenterOnUser,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.4),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.my_location,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-
-          // Recenter button — no active journey: sits above the bottom overlay
-          if (currentJourney == null ||
-              currentJourney.status != JourneyStatus.ACTIVE)
-            Positioned(
-              bottom: 120,
-              right: 16,
-              child: GestureDetector(
-                onTap: _recenterOnUser,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.4),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.my_location,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-
-          // Error Banner - Show when convoy has errors
-          if (convoyError != null && convoyError.isNotEmpty)
-            Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                margin: const EdgeInsets.only(top: 120, left: 16, right: 16),
-                padding: const EdgeInsets.all(12),
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade700),
+                  color: const Color(0xE61A1A1A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFB020)),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text(
+                    'Offline — stay aware and return to the shown route. '
+                    'A new road route will be calculated after reconnecting.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
+        // Arrival confirmation banner — replaces the turn card once the
+        // current user is confirmed at the destination. Stays visible until
+        // all members arrive and the journey-ended event navigates away.
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE &&
+            _currentUserHasArrived)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 100,
+            left: 16,
+            right: 16,
+            child: Consumer<ConvoyProvider>(
+              builder: (context, convoy, _) {
+                final arrived = convoy.arrivedCount;
+                final total = convoy.totalMemberCount;
+                final allArrived = total > 0 && arrived >= total;
+                final waiting = total > arrived ? total - arrived : 0;
+                return _ArrivalBanner(
+                  arrived: arrived,
+                  total: total,
+                  allArrived: allArrived,
+                  waiting: waiting,
+                  isLeader: isLeader,
+                  onEndJourney: isLeader ? _showEndJourneyConfirmation : null,
+                );
+              },
+            ),
+          ),
+
+        // Route loading indicator — visible only while POST /maps/route is in flight
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 100,
+            left: 0,
+            right: 0,
+            child: Consumer<MapProvider>(
+              builder: (context, mapProvider, _) {
+                if (!mapProvider.isFetchingRoute)
+                  return const SizedBox.shrink();
+                return const _RouteLoadingPill();
+              },
+            ),
+          ),
+
+        // Journey Progress Card - Bottom Overlay (collapsed pill by default)
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Consumer<NavigationProvider>(
+              builder: (context, navigation, _) => JourneyProgressCard(
+                journey: currentJourney,
+                convoySnapshot: convoySnapshot,
+                currentUserId: currentUserId,
+                isLeader: isLeader,
+                routeProgress: navigation.currentProgress,
+                lastKnownProgress: navigation.lastKnownProgress,
+                onEndJourney: _showEndJourneyConfirmation,
+                onLeaveJourney: _showLeaveJourneyConfirmation,
+                isActionInProgress: _isJourneyExitInProgress,
+                isExpanded: _isProgressCardExpanded,
+                onToggleExpanded: () => setState(
+                  () => _isProgressCardExpanded = !_isProgressCardExpanded,
+                ),
+              ),
+            ),
+          ),
+
+        // Recenter button — active journey.
+        // Shifts up by the card-expansion delta (182 px) so it always clears
+        // the expanded card header.
+        if (currentJourney != null &&
+            currentJourney.status == JourneyStatus.ACTIVE)
+          Positioned(
+            bottom: _isProgressCardExpanded ? 254 : 72,
+            right: 16,
+            child: GestureDetector(
+              onTap: _recenterOnUser,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.grey.withValues(alpha: 0.4),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.my_location,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+
+        // Error Banner - Show when convoy has errors
+        if (convoyError != null && convoyError.isNotEmpty)
+          Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              margin: const EdgeInsets.only(top: 120, left: 16, right: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade700),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      convoyError,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _showConvoyManagementOptions,
+                    icon: const Icon(
+                      Icons.settings,
                       color: Colors.white,
                       size: 20,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        convoyError,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: _showConvoyManagementOptions,
-                      icon: const Icon(
-                        Icons.settings,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      tooltip: 'Convoy Management',
-                    ),
-                  ],
-                ),
+                    tooltip: 'Convoy Management',
+                  ),
+                ],
               ),
             ),
+          ),
 
-          if (_isJourneyExitInProgress)
-            Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black54,
-                child: AbsorbPointer(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 20,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1A1A),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: Color(0xFFE8002D)),
-                          SizedBox(height: 14),
-                          Text(
-                            'Finishing journey…',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ],
-                      ),
+        if (_isJourneyExitInProgress)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black54,
+              child: AbsorbPointer(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFFE8002D)),
+                        SizedBox(height: 14),
+                        Text(
+                          'Finishing journey…',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-        ],
-      ),
-      // Convoy Metrics FAB - Show when active convoy exists
-      // floatingActionButton: (currentJourney != null &&
-      //     currentJourney.status == JourneyStatus.ACTIVE &&
-      //     convoySnapshot != null &&
-      //     convoySnapshot.members.isNotEmpty)
-      //   ? FloatingActionButton(
-      //       onPressed: _showConvoyMetricsBottomSheet,
-      //       backgroundColor: const Color(0xFFE53E3E),
-      //       child: const Icon(
-      //         Icons.analytics_outlined,
-      //         color: Colors.white,
-      //       ),
-      //     )
-      //   : null,
-      // floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+          ),
+      ],
     );
   }
 }
@@ -2150,7 +2302,7 @@ class _ArrivalBanner extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: allArrived
@@ -2186,7 +2338,7 @@ class _ArrivalBanner extends StatelessWidget {
                 children: [
                   Text(
                     allArrived ? 'Everyone has arrived!' : "You've arrived!",
-                    style: GoogleFonts.rajdhani(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: Colors.green,
@@ -2199,18 +2351,18 @@ class _ArrivalBanner extends StatelessWidget {
                       total > 1
                           ? 'Waiting for $waiting more member${waiting == 1 ? '' : 's'} — $arrived/$total arrived'
                           : 'Journey complete',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: colors.silver,
+                        color: colors.muted,
                         height: 1.3,
                       ),
                     )
                   else
                     Text(
                       'Ending journey…',
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: colors.silver,
+                        color: colors.muted,
                         height: 1.3,
                       ),
                     ),
@@ -2227,12 +2379,12 @@ class _ArrivalBanner extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.electricRed,
+                    color: colors.sunsetOrange,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     'End',
-                    style: GoogleFonts.rajdhani(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
@@ -2259,10 +2411,10 @@ class _RouteLoadingPill extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: colors.carbonBlack.withOpacity(0.95),
+          color: colors.surface.withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: colors.electricRed.withOpacity(0.45),
+            color: colors.routeTeal.withValues(alpha: 0.45),
             width: 1.5,
           ),
           boxShadow: [
@@ -2281,16 +2433,16 @@ class _RouteLoadingPill extends StatelessWidget {
               height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 2.0,
-                valueColor: AlwaysStoppedAnimation(colors.electricRed),
+                valueColor: AlwaysStoppedAnimation(colors.routeTeal),
               ),
             ),
             const SizedBox(width: 10),
             Text(
               'Calculating route',
-              style: GoogleFonts.rajdhani(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: colors.white,
+                color: colors.ink,
                 letterSpacing: 1.5,
               ),
             ),

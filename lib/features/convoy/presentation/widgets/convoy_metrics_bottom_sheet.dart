@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/theme/tulink_colors.dart';
@@ -19,10 +18,11 @@ class ConvoyMetricsBottomSheet extends StatefulWidget {
   final VoidCallback? onEndJourney;
 
   @override
-  State<ConvoyMetricsBottomSheet> createState() => _ConvoyMetricsBottomSheetState();
+  State<ConvoyMetricsBottomSheet> createState() =>
+      _ConvoyMetricsBottomSheetState();
 }
 
-class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet> 
+class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -30,21 +30,17 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
   @override
   void initState() {
     super.initState();
-    
+
     // Setup pulsing animation for active indicator
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    
+
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     _pulseController.repeat(reverse: true);
   }
 
@@ -57,10 +53,10 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<TulinkColors>()!;
-    
+
     return Container(
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
+        color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -68,10 +64,10 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
         children: [
           // Journey info header
           _buildJourneyHeader(colors),
-          
+
           // Metrics row
           _buildMetricsRow(colors),
-          
+
           // Active status and action button
           _buildActionSection(colors),
         ],
@@ -109,9 +105,9 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
               );
             },
           ),
-          
+
           const SizedBox(width: 12),
-          
+
           // Journey status
           Expanded(
             child: Column(
@@ -119,7 +115,7 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
               children: [
                 Text(
                   'IN PROGRESS',
-                  style: GoogleFonts.rajdhani(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: Colors.green,
@@ -129,38 +125,34 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
                 const SizedBox(height: 2),
                 Text(
                   widget.journeyName,
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: colors.white,
+                    color: colors.ink,
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // Riders count
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.brushedSteel.withOpacity(0.3),
+              color: colors.warmSand,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.group,
-                  size: 14,
-                  color: colors.white,
-                ),
+                Icon(Icons.group, size: 14, color: colors.deepTeal),
                 const SizedBox(width: 4),
                 Text(
                   '${widget.snapshot.totalMembers + 1} riders', // +1 for current user
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: colors.white,
+                    color: colors.ink,
                   ),
                 ),
               ],
@@ -186,39 +178,21 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
               'KM',
             ),
           ),
-          
+
           // Divider
-          Container(
-            width: 1,
-            height: 40,
-            color: colors.brushedSteel.withOpacity(0.3),
-          ),
-          
+          Container(width: 1, height: 40, color: colors.divider),
+
           // Time
           Expanded(
-            child: _buildMetricItem(
-              colors,
-              'TIME',
-              _getFormattedTime(),
-              'MIN',
-            ),
+            child: _buildMetricItem(colors, 'TIME', _getFormattedTime(), 'MIN'),
           ),
-          
+
           // Divider
-          Container(
-            width: 1,
-            height: 40,
-            color: colors.brushedSteel.withOpacity(0.3),
-          ),
-          
+          Container(width: 1, height: 40, color: colors.divider),
+
           // Pace
           Expanded(
-            child: _buildMetricItem(
-              colors,
-              'PACE',
-              _getFormattedPace(),
-              '/KM',
-            ),
+            child: _buildMetricItem(colors, 'PACE', _getFormattedPace(), '/KM'),
           ),
         ],
       ),
@@ -226,15 +200,20 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
   }
 
   /// Build individual metric item
-  Widget _buildMetricItem(TulinkColors colors, String label, String value, String unit) {
+  Widget _buildMetricItem(
+    TulinkColors colors,
+    String label,
+    String value,
+    String unit,
+  ) {
     return Column(
       children: [
         Text(
           label,
-          style: GoogleFonts.rajdhani(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: colors.silver,
+            color: colors.muted,
             letterSpacing: 0.5,
           ),
         ),
@@ -244,18 +223,18 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
             children: [
               TextSpan(
                 text: value,
-                style: GoogleFonts.rajdhani(
+                style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
-                  color: colors.white,
+                  color: colors.ink,
                 ),
               ),
               TextSpan(
                 text: ' $unit',
-                style: GoogleFonts.rajdhani(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: colors.silver,
+                  color: colors.muted,
                 ),
               ),
             ],
@@ -276,27 +255,25 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: colors.brushedSteel.withOpacity(0.2),
+                color: colors.warmSand,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.brushedSteel.withOpacity(0.3),
-                ),
+                border: Border.all(color: colors.divider),
               ),
               child: Text(
                 'ACTIVE',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.rajdhani(
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: colors.white,
+                  color: colors.ink,
                   letterSpacing: 1.0,
                 ),
               ),
             ),
           ),
-          
+
           const SizedBox(width: 16),
-          
+
           // End journey button
           SizedBox(
             width: 60,
@@ -304,17 +281,13 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
             child: ElevatedButton(
               onPressed: widget.onEndJourney,
               style: ElevatedButton.styleFrom(
-                backgroundColor: colors.electricRed,
+                backgroundColor: colors.sunsetOrange,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: EdgeInsets.zero,
               ),
-              child: Icon(
-                Icons.stop,
-                color: Colors.white,
-                size: 24,
-              ),
+              child: Icon(Icons.stop, color: Colors.white, size: 24),
             ),
           ),
         ],
@@ -337,7 +310,7 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
     final duration = widget.snapshot.journeyDuration;
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
-    
+
     if (hours > 0) {
       return '${hours}h ${minutes}m';
     }
@@ -348,7 +321,7 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
   String _getFormattedPace() {
     final pace = widget.snapshot.averagePace;
     if (pace == 0) return '0:00';
-    
+
     final minutes = pace.floor();
     final seconds = ((pace - minutes) * 60).round();
     return '${minutes}:${seconds.toString().padLeft(2, '0')}';
@@ -361,10 +334,10 @@ extension ConvoyMetricsCalculations on ConvoySnapshot {
   /// Uses the average distance of all convoy members
   double get totalDistance {
     if (members.isEmpty) return 0.0;
-    
+
     double totalDistance = 0.0;
     int memberCount = 0;
-    
+
     // Calculate distance for each member from their starting position
     for (final member in members.values) {
       // For now, estimate based on member movement
@@ -372,12 +345,13 @@ extension ConvoyMetricsCalculations on ConvoySnapshot {
       if (member.speed != null && member.speed! > 0) {
         // Rough estimation: assume member has been moving at current speed
         final estimatedTime = 5.0; // 5 minutes average
-        final estimatedDistance = (member.speed! * estimatedTime * 60) / 1000; // Convert to km
+        final estimatedDistance =
+            (member.speed! * estimatedTime * 60) / 1000; // Convert to km
         totalDistance += estimatedDistance;
         memberCount++;
       }
     }
-    
+
     return memberCount > 0 ? totalDistance / memberCount : 0.0;
   }
 
@@ -386,12 +360,12 @@ extension ConvoyMetricsCalculations on ConvoySnapshot {
   Duration get journeyDuration {
     // Calculate duration based on the oldest member timestamp
     if (members.isEmpty) return const Duration();
-    
+
     final now = DateTime.now().millisecondsSinceEpoch;
     final oldestTimestamp = members.values
         .map((member) => member.timestamp)
         .reduce((a, b) => a < b ? a : b);
-    
+
     final durationMs = now - oldestTimestamp;
     return Duration(milliseconds: durationMs.clamp(0, double.infinity).toInt());
   }
@@ -400,9 +374,9 @@ extension ConvoyMetricsCalculations on ConvoySnapshot {
   double get averagePace {
     final distance = totalDistance;
     final duration = journeyDuration;
-    
+
     if (distance == 0 || duration.inSeconds == 0) return 0.0;
-    
+
     return duration.inMinutes / distance; // minutes per km
   }
 
@@ -410,9 +384,9 @@ extension ConvoyMetricsCalculations on ConvoySnapshot {
   double get averageSpeed {
     final distance = totalDistance;
     final duration = journeyDuration;
-    
+
     if (distance == 0 || duration.inSeconds == 0) return 0.0;
-    
+
     return distance / (duration.inHours); // km/h
   }
 

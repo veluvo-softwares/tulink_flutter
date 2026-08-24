@@ -56,7 +56,7 @@ class SocialAuthButtons extends StatelessWidget {
                 const Expanded(child: Divider()),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('or', style: TextStyle(color: colors.silver)),
+                  child: Text('or', style: TextStyle(color: colors.muted)),
                 ),
                 const Expanded(child: Divider()),
               ],
@@ -85,7 +85,7 @@ class SocialAuthButtons extends StatelessWidget {
                     fontSize: 15,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
@@ -111,8 +111,8 @@ class SocialAuthButtons extends StatelessWidget {
                       fontSize: 15,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: colors.brushedSteel),
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: colors.divider),
                     ),
                   ),
                 ),

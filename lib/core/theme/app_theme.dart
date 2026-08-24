@@ -1,249 +1,189 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import 'tulink_colors.dart';
 
-/// Tu-Link app theme following motorsports-inspired dark design
-/// Implements exact typography and color specifications
 class AppTheme {
   AppTheme._();
 
-  // Tu-Link brand colors (accessible via ThemeExtension)
-  static const TulinkColors _colors = TulinkColors.dark;
+  static const _colors = TulinkColors.light;
 
-  // Color scheme for dark theme (Tu-Link is dark mode only)
-  static const ColorScheme _tulinkColorScheme = ColorScheme.dark(
-    primary: Color(0xFFE8002D), // Electric red for CTAs and highlights
-    onPrimary: Color(0xFFFFFFFF), // White text on red buttons
-    secondary: Color(0xFF2A2A2A), // Steel grey for secondary elements
-    onSecondary: Color(0xFFFFFFFF), // White text on secondary elements
-    error: Color(0xFFE8002D), // Use electric red for errors/alerts
-    onError: Color(0xFFFFFFFF), // White text on error states
-    surface: Color(0xFF0D0D0D), // Deep carbon black background
-    onSurface: Color(0xFFFFFFFF), // White text on surface
-    surfaceContainerHighest: Color(0xFF1E1E1E), // Card surfaces
-    onSurfaceVariant: Color(0xFFC8C8C8), // Secondary text
-    outline: Color(0xFF404040), // Borders and dividers
-  );
-
-  /// Tu-Link theme configuration (dark mode only)
-  /// Returns ThemeData with exact typography and styling specifications
   static ThemeData get tulinkTheme {
-    return ThemeData(
+    const scheme = ColorScheme.light(
+      primary: Color(0xFF075261),
+      onPrimary: Color(0xFFFFFFFF),
+      secondary: Color(0xFF12848D),
+      onSecondary: Color(0xFFFFFFFF),
+      tertiary: Color(0xFFF35D32),
+      onTertiary: Color(0xFF1A1A19),
+      error: Color(0xFFB42318),
+      onError: Color(0xFFFFFFFF),
+      surface: Color(0xFFFFFFFF),
+      onSurface: Color(0xFF1A1A19),
+      surfaceContainerHighest: Color(0xFFF9F4F0),
+      onSurfaceVariant: Color(0xFF6F7472),
+      outline: Color(0xFFE3DDD7),
+    );
+
+    final base = ThemeData(
       useMaterial3: true,
-      colorScheme: _tulinkColorScheme,
-      fontFamily: GoogleFonts.rajdhani().fontFamily,
-      scaffoldBackgroundColor: _colors.carbonBlack,
-      
-      // Theme extensions for custom colors
-      extensions: const [
-        TulinkColors.dark,
-      ],
-      
-      // AppBar theme - motorsports dashboard style
-      appBarTheme: AppBarTheme(
-        elevation: 0,
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        foregroundColor: _colors.white,
-        titleTextStyle: GoogleFonts.rajdhani(
+      brightness: Brightness.light,
+      colorScheme: scheme,
+      fontFamily: 'Manrope',
+      scaffoldBackgroundColor: _colors.warmSand,
+      extensions: const [TulinkColors.light],
+    );
+
+    return base.copyWith(
+      textTheme: base.textTheme.copyWith(
+        displaySmall: const TextStyle(
+          fontSize: 34,
+          height: 1.12,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF1A1A19),
+        ),
+        headlineMedium: const TextStyle(
           fontSize: 22,
+          height: 1.18,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF1A1A19),
+        ),
+        headlineSmall: const TextStyle(
+          fontSize: 22,
+          height: 1.25,
           fontWeight: FontWeight.w700,
-          color: _colors.white,
+          color: Color(0xFF1A1A19),
+        ),
+        titleLarge: const TextStyle(
+          fontSize: 20,
+          height: 1.25,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF1A1A19),
+        ),
+        titleMedium: const TextStyle(
+          fontSize: 16,
+          height: 1.35,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF1A1A19),
+        ),
+        bodyLarge: const TextStyle(
+          fontSize: 16,
+          height: 1.5,
+          fontWeight: FontWeight.w400,
+          color: Color(0xFF1A1A19),
+        ),
+        bodyMedium: const TextStyle(
+          fontSize: 14,
+          height: 1.45,
+          fontWeight: FontWeight.w400,
+          color: Color(0xFF6F7472),
+        ),
+        labelLarge: const TextStyle(
+          fontSize: 16,
+          height: 1.25,
+          fontWeight: FontWeight.w700,
         ),
       ),
-
-      // Card theme - Brushed Steel Grey with 16px radius
-      cardTheme: CardThemeData(
-        elevation: 4,
-        color: _colors.brushedSteel,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        centerTitle: false,
+        backgroundColor: Color(0xFFF9F4F0),
+        foregroundColor: Color(0xFF1A1A19),
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Manrope',
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF1A1A19),
         ),
-        clipBehavior: Clip.antiAlias,
       ),
-
-      // Global ElevatedButton theme - 16px radius, red background, bold Rajdhani text
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: _colors.electricRed,
-          foregroundColor: _colors.white,
-          elevation: 6,
-          shadowColor: _colors.electricRed.withValues(alpha: 0.3),
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          minimumSize: const Size(48, 56),
+          elevation: 0,
+          backgroundColor: _colors.deepTeal,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: _colors.divider,
+          disabledForegroundColor: _colors.muted,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.rajdhani(
+          textStyle: const TextStyle(
+            fontFamily: 'Manrope',
             fontSize: 16,
-            fontWeight: FontWeight.w700, // Bold
-            color: _colors.white,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
-
-      // Secondary button theme - outlined with brushed steel
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: _colors.white,
-          side: BorderSide(color: _colors.brushedSteel, width: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          minimumSize: const Size(48, 52),
+          foregroundColor: _colors.deepTeal,
+          side: const BorderSide(color: Color(0xFFE3DDD7)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.rajdhani(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _colors.white,
+          textStyle: const TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
-
-      // Text button theme - for small action links
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: _colors.electricRed,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: GoogleFonts.rajdhani(
+          foregroundColor: _colors.deepTeal,
+          textStyle: const TextStyle(
+            fontFamily: 'Manrope',
             fontSize: 14,
-            fontWeight: FontWeight.w600, // Semi-Bold
-            color: _colors.electricRed,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
-
-      // Global InputDecoration theme - steel grey fill, 16px radius, red focused border
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: _colors.brushedSteel,
+        fillColor: _colors.surface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
+        hintStyle: const TextStyle(color: Color(0xFF7D817F)),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+          borderSide: const BorderSide(color: Color(0xFFE3DDD7)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: _colors.brushedSteel),
+          borderSide: const BorderSide(color: Color(0xFFE3DDD7)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: _colors.electricRed, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: _colors.electricRed, width: 2),
-        ),
-        hintStyle: GoogleFonts.rajdhani(
-          color: _colors.silver,
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-        ),
-        labelStyle: GoogleFonts.rajdhani(
-          color: _colors.silver,
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
+          borderSide: const BorderSide(color: Color(0xFF12848D), width: 2),
         ),
       ),
-
-      // Bottom navigation bar theme - dark with red accents
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        type: BottomNavigationBarType.fixed,
-        elevation: 8,
-        backgroundColor: _colors.cardDark,
-        selectedItemColor: _colors.electricRed,
-        unselectedItemColor: _colors.silver,
-        showUnselectedLabels: true,
-        selectedLabelStyle: GoogleFonts.rajdhani(
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-        ),
-        unselectedLabelStyle: GoogleFonts.rajdhani(
-          fontWeight: FontWeight.w500,
-          fontSize: 12,
-        ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: _colors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-
-      // Custom Typography Specification (Rajdhani Family)
-      textTheme: GoogleFonts.rajdhaniTextTheme().copyWith(
-        // Sign-In/Sign-Up Titles: Rajdhani, Bold, Size 34, White
-        headlineLarge: GoogleFonts.rajdhani(
-          fontSize: 34,
-          fontWeight: FontWeight.w700, // Bold
-          color: _colors.white,
-        ),
-        // Card Action Titles: Rajdhani, Bold, Size 22, White
-        headlineMedium: GoogleFonts.rajdhani(
-          fontSize: 22,
-          fontWeight: FontWeight.w700, // Bold
-          color: _colors.white,
-        ),
-        // Standard Body Text: Rajdhani, Medium, Size 16, Silver
-        bodyLarge: GoogleFonts.rajdhani(
-          fontSize: 16,
-          fontWeight: FontWeight.w500, // Medium
-          color: _colors.silver,
-        ),
-        bodyMedium: GoogleFonts.rajdhani(
-          fontSize: 16,
-          fontWeight: FontWeight.w500, // Medium
-          color: _colors.silver,
-        ),
-        // Small Action Links: Rajdhani, Semi-Bold, Size 14, Electric Red
-        bodySmall: GoogleFonts.rajdhani(
-          fontSize: 14,
-          fontWeight: FontWeight.w600, // Semi-Bold
-          color: _colors.electricRed,
-        ),
-        // Additional text styles
-        labelLarge: GoogleFonts.rajdhani(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: _colors.white,
-        ),
-        labelMedium: GoogleFonts.rajdhani(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: _colors.electricRed,
-        ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Color(0xFFF9F4F0),
+        modalBackgroundColor: Color(0xFFF9F4F0),
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
       ),
-
-      // Floating Action Button theme
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: _colors.electricRed,
-        foregroundColor: _colors.white,
-        elevation: 8,
-      ),
-
-      // Dialog theme
       dialogTheme: DialogThemeData(
-        backgroundColor: _colors.cardDark,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
-        ),
+        backgroundColor: _colors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
-
-      // Snackbar theme
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: _colors.brushedSteel,
-        contentTextStyle: GoogleFonts.rajdhani(
-          color: _colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-        ),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
-        ),
         behavior: SnackBarBehavior.floating,
+        backgroundColor: _colors.deepTeal,
+        contentTextStyle: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
-
-  /// Alias for the main Tu-Link theme
-  static ThemeData get darkTheme => tulinkTheme;
-  
-  /// Light theme is not supported - Tu-Link is dark mode only
-  static ThemeData get lightTheme => tulinkTheme;
 }

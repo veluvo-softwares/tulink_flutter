@@ -22,12 +22,9 @@ class JourneyInfoCard extends StatelessWidget {
       margin: margin ?? const EdgeInsets.symmetric(horizontal: 16),
       padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.cardDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.brushedSteel.withOpacity(0.3),
-          width: 1,
-        ),
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.divider),
       ),
       child: child,
     );
@@ -62,7 +59,7 @@ class JourneyInfoCardContent extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  color: colors.silver,
+                  color: colors.muted,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.0,
@@ -72,7 +69,7 @@ class JourneyInfoCardContent extends StatelessWidget {
               Text(
                 subtitle,
                 style: TextStyle(
-                  color: colors.white,
+                  color: colors.ink,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -134,9 +131,7 @@ class JourneyInfoCardItem {
 class _JourneyInfoGridItem extends StatelessWidget {
   final JourneyInfoCardItem item;
 
-  const _JourneyInfoGridItem({
-    required this.item,
-  });
+  const _JourneyInfoGridItem({required this.item});
 
   @override
   Widget build(BuildContext context) {
@@ -145,26 +140,19 @@ class _JourneyInfoGridItem extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colors.carbonBlack,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: colors.brushedSteel.withOpacity(0.2),
-          width: 1,
-        ),
+        color: colors.warmSand,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.divider),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            item.icon,
-            color: item.iconColor ?? colors.electricRed,
-            size: 20,
-          ),
+          Icon(item.icon, color: item.iconColor ?? colors.routeTeal, size: 20),
           const SizedBox(height: 8),
           Text(
             item.title,
             style: TextStyle(
-              color: colors.silver,
+              color: colors.muted,
               fontSize: 10,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
@@ -175,7 +163,7 @@ class _JourneyInfoGridItem extends StatelessWidget {
           Text(
             item.value,
             style: TextStyle(
-              color: colors.white,
+              color: colors.ink,
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),

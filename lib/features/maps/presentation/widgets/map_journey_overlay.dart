@@ -13,11 +13,11 @@ class MapJourneyOverlay extends StatelessWidget {
     final colors = Theme.of(context).tulinkColors;
     final journeyProvider = context.watch<JourneyProvider>();
     final activeJourney = journeyProvider.currentJourney;
-    
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colors.cardDark,
+        color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
@@ -38,18 +38,19 @@ class MapJourneyOverlay extends StatelessWidget {
               height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                color: colors.brushedSteel,
+                color: colors.divider,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            
+
             if (activeJourney == null)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pushNamed(CreateJourneyScreen.routeName),
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pushNamed(CreateJourneyScreen.routeName),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: colors.electricRed,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: const Text("CREATE NEW JOURNEY"),
@@ -65,33 +66,40 @@ class MapJourneyOverlay extends StatelessWidget {
                   _buildStat(context, "PACE", "0:00", "/KM"),
                 ],
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Action Buttons
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: activeJourney.status == JourneyStatus.PENDING 
-                        ? () => journeyProvider.startJourney(activeJourney.id)
-                        : null,
+                      onPressed: activeJourney.status == JourneyStatus.PENDING
+                          ? () => journeyProvider.startJourney(activeJourney.id)
+                          : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: colors.electricRed,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
-                      child: Text(activeJourney.status == JourneyStatus.PENDING ? "START JOURNEY" : "ACTIVE"),
+                      child: Text(
+                        activeJourney.status == JourneyStatus.PENDING
+                            ? "START JOURNEY"
+                            : "ACTIVE",
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Container(
                     decoration: BoxDecoration(
-                      color: colors.brushedSteel,
+                      color: colors.warmSand,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: IconButton(
                       onPressed: () {},
-                      icon: Icon(Icons.stop_rounded, color: colors.electricRed, size: 28),
+                      icon: Icon(
+                        Icons.stop_rounded,
+                        color: colors.sunsetOrange,
+                        size: 28,
+                      ),
                       padding: const EdgeInsets.all(12),
                     ),
                   ),
@@ -104,15 +112,20 @@ class MapJourneyOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildStat(BuildContext context, String label, String value, String unit) {
+  Widget _buildStat(
+    BuildContext context,
+    String label,
+    String value,
+    String unit,
+  ) {
     final colors = Theme.of(context).tulinkColors;
-    
+
     return Column(
       children: [
         Text(
           label,
           style: TextStyle(
-            color: colors.silver,
+            color: colors.muted,
             fontSize: 12,
             fontWeight: FontWeight.w600,
             letterSpacing: 1.2,
@@ -125,7 +138,7 @@ class MapJourneyOverlay extends StatelessWidget {
               TextSpan(
                 text: value,
                 style: TextStyle(
-                  color: colors.white,
+                  color: colors.ink,
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                 ),
@@ -134,7 +147,7 @@ class MapJourneyOverlay extends StatelessWidget {
               TextSpan(
                 text: unit,
                 style: TextStyle(
-                  color: colors.silver,
+                  color: colors.muted,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),

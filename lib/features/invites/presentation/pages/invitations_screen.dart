@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
@@ -7,7 +9,6 @@ import 'package:tulink_flutter/features/invites/domain/entities/journey_invitati
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
-import 'package:tulink_flutter/features/journeys/presentation/pages/journey_preview_screen.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 
 class InvitationsScreen extends StatefulWidget {
@@ -43,24 +44,29 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
       context.showSuccessToast('You joined "${invitation.journeyName}"!');
 
       // Fetch the journey to determine its current status.
-      await context.read<JourneyProvider>().fetchJourneyById(
+      // Identity must come from the returned entity — a failed fetch leaves the
+      // previous selection intact, which would branch on the wrong journey.
+      final journey = await context.read<JourneyProvider>().fetchJourneyById(
         invitation.journeyId,
       );
       if (!mounted) return;
 
-      final journey = context.read<JourneyProvider>().currentJourney;
+      if (journey == null || journey.id != invitation.journeyId) {
+        context.showErrorToast('Joined, but the journey could not be loaded');
+        return;
+      }
 
-      if (journey?.status == JourneyStatus.ACTIVE) {
-        // Journey already started — skip the preview and go straight to the map.
-        // startCoordination begins GPS publishing, so gate location first; a
-        // blocked user is routed to settings and does not enter the map.
-        if (!await ensureLocationReady(context)) return;
-        if (!mounted) return;
+      if (journey.status == JourneyStatus.ACTIVE) {
+        // Journey already started — join the live convoy on the shell's map.
+        // Joining is *not* an activation, so it is deliberately not gated on
+        // location: the member must be able to observe the convoy and recover
+        // even with permission denied. ConvoyProvider joins the room first and
+        // reports any location failure separately.
         await context.read<ConvoyProvider>().startCoordination(
           invitation.journeyId,
         );
         if (!mounted) return;
-        Navigator.of(context).pushNamed('/mapview');
+        await NavigationHelper.toHomeAndClearStack(context);
       } else {
         // Journey is still PENDING — pre-join the WS room so we receive the
         // journey-started event when the leader taps Start, then show the preview.
@@ -73,10 +79,9 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
             'Journey joined. Live updates are reconnecting; reopen the app if the start is missed.',
           );
         }
-        Navigator.of(context).pushNamed(
-          JourneyPreviewScreen.routeName,
-          arguments: invitation.journeyId,
-        );
+        // Still pending — the shell stages it over the map and shows the
+        // waiting-for-leader experience there.
+        await NavigationHelper.toHomeAndClearStack(context);
       }
     } else {
       final error = context.read<InviteProvider>().acceptError;

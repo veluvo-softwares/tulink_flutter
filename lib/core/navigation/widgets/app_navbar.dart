@@ -1,56 +1,53 @@
 import 'package:flutter/material.dart';
-import '../../theme/tulink_colors.dart';
+import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 
 class AppNavbar extends StatelessWidget {
-  final int currentIndex;
-  final Function(int) onTap;
-
   const AppNavbar({
     super.key,
     required this.currentIndex,
+    required this.invitationCount,
     required this.onTap,
   });
+
+  final int currentIndex;
+  final int invitationCount;
+  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
-    
-    return Container(
-      height: 100,
-      decoration: BoxDecoration(
-        color: colors.cardDark,
-        border: Border(
-          top: BorderSide(
-            color: colors.brushedSteel.withValues(alpha: 0.5),
-            width: 1,
-          ),
+    return NavigationBar(
+      height: 72,
+      selectedIndex: currentIndex,
+      onDestinationSelected: onTap,
+      backgroundColor: colors.surface,
+      indicatorColor: colors.routeTeal.withValues(alpha: .14),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      destinations: [
+        const NavigationDestination(
+          icon: Icon(Icons.map_outlined),
+          selectedIcon: Icon(Icons.map_rounded),
+          label: 'Map',
         ),
-      ),
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: onTap,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: colors.electricRed,
-        unselectedItemColor: colors.silver,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
+        const NavigationDestination(
+          icon: Icon(Icons.route_outlined),
+          selectedIcon: Icon(Icons.route_rounded),
+          label: 'Journeys',
+        ),
+        NavigationDestination(
+          icon: Badge(
+            isLabelVisible: invitationCount > 0,
+            label: Text(invitationCount > 9 ? '9+' : '$invitationCount'),
+            child: const Icon(Icons.mail_outline_rounded),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.route_outlined),
-            label: 'Journeys',
+          selectedIcon: Badge(
+            isLabelVisible: invitationCount > 0,
+            label: Text(invitationCount > 9 ? '9+' : '$invitationCount'),
+            child: const Icon(Icons.mail_rounded),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
-        ],
-      ),
+          label: 'Invites',
+        ),
+      ],
     );
   }
 }

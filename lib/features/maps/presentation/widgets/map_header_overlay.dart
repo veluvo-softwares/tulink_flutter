@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/tulink_colors.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class MapHeaderOverlay extends StatelessWidget {
   const MapHeaderOverlay({super.key});
@@ -9,7 +8,7 @@ class MapHeaderOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
     final topPadding = MediaQuery.of(context).padding.top;
-    
+
     return Container(
       padding: EdgeInsets.only(
         top: topPadding + 8,
@@ -34,23 +33,28 @@ class MapHeaderOverlay extends StatelessWidget {
           // Back Button / Menu
           Container(
             decoration: BoxDecoration(
-              color: colors.brushedSteel.withValues(alpha: 0.8),
+              color: colors.surface.withValues(alpha: 0.94),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
               onPressed: () => Navigator.of(context).pop(),
-              icon: Icon(Icons.arrow_back_ios_new_rounded, color: colors.white, size: 20),
+              tooltip: 'Back',
+              icon: Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: colors.ink,
+                size: 20,
+              ),
             ),
           ),
-          
+
           // Race Title Info
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                "RIO MARATHON 2024",
-                style: GoogleFonts.rajdhani(
-                  color: colors.white,
+                'Tulink map',
+                style: TextStyle(
+                  color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.5,
@@ -60,14 +64,16 @@ class MapHeaderOverlay extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: colors.electricRed.withValues(alpha: 0.2),
+                  color: colors.routeTeal.withValues(alpha: 0.22),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: colors.electricRed.withValues(alpha: 0.5), width: 1),
+                  border: Border.all(
+                    color: colors.routeTeal.withValues(alpha: 0.6),
+                  ),
                 ),
                 child: Text(
-                  "ACTIVE JOURNEY",
+                  'MAP VIEW',
                   style: TextStyle(
-                    color: colors.electricRed,
+                    color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.0,
@@ -76,18 +82,8 @@ class MapHeaderOverlay extends StatelessWidget {
               ),
             ],
           ),
-          
-          // Settings / Profile Icon
-          Container(
-            decoration: BoxDecoration(
-              color: colors.brushedSteel.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              onPressed: () {},
-              icon: Icon(Icons.tune_rounded, color: colors.white, size: 20),
-            ),
-          ),
+
+          const SizedBox(width: 48),
         ],
       ),
     );

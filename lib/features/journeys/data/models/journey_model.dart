@@ -8,6 +8,7 @@ class JourneyModel extends Journey {
     required super.leaderId,
     required super.status,
     required super.destination,
+    super.destinationName,
     required super.destinationAddress,
     required super.lagThresholdMeters,
     super.createdAt,
@@ -31,6 +32,9 @@ class JourneyModel extends Journey {
       leaderId: json['leaderId']?.toString() ?? '',
       status: _parseStatus(json['status']?.toString()),
       destination: _parseDestination(destination),
+      // Absent on journeys created before the field existed — stays null and
+      // display falls back to destinationAddress via Journey.destinationLabel.
+      destinationName: json['destinationName']?.toString(),
       destinationAddress: json['destinationAddress']?.toString() ?? '',
       lagThresholdMeters: (json['lagThresholdMeters'] as num?)?.toInt() ?? 500,
       createdAt: json['createdAt'] != null
@@ -130,6 +134,7 @@ class JourneyModel extends Journey {
         'latitude': destination.latitude,
         'longitude': destination.longitude,
       },
+      if (destinationName != null) 'destinationName': destinationName,
       'destinationAddress': destinationAddress,
       'lagThresholdMeters': lagThresholdMeters,
       'createdAt': createdAt?.toIso8601String(),

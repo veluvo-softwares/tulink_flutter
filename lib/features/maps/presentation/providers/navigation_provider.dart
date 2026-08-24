@@ -33,6 +33,8 @@ class NavigationProvider with ChangeNotifier {
   final ConnectivityService _connectivityService;
   final OfflineStorageService? _offlineStorage;
   final Future<String?> Function()? _currentUserId;
+  final Future<bool?> Function()? _loadVoiceEnabled;
+  final Future<void> Function(bool enabled)? _saveVoiceEnabled;
   late final OffRouteDetectionService _offRouteDetector;
 
   StreamSubscription<geo.Position>? _positionSubscription;
@@ -53,11 +55,15 @@ class NavigationProvider with ChangeNotifier {
     ConnectivityService? connectivityService,
     OfflineStorageService? offlineStorage,
     Future<String?> Function()? currentUserId,
+    Future<bool?> Function()? loadVoiceEnabled,
+    Future<void> Function(bool enabled)? saveVoiceEnabled,
   }) : _maneuverTracker = maneuverTracker ?? ManeuverTrackerService(),
        _voiceService = voiceService ?? VoiceInstructionService(),
        _connectivityService = connectivityService ?? ConnectivityService(),
        _offlineStorage = offlineStorage,
-       _currentUserId = currentUserId {
+       _currentUserId = currentUserId,
+       _loadVoiceEnabled = loadVoiceEnabled,
+       _saveVoiceEnabled = saveVoiceEnabled {
     _offRouteDetector = OffRouteDetectionService(
       onRerouteNeeded: () async {
         if (_onRerouteCallback != null) {
@@ -111,6 +117,17 @@ class NavigationProvider with ChangeNotifier {
 
   /// Whether voice instructions are enabled.
   bool get isVoiceEnabled => _voiceService.isEnabled;
+
+  /// Restores the device-level voice guidance preference before app startup.
+  Future<void> initializePreferences() async {
+    final loadVoiceEnabled = _loadVoiceEnabled;
+    if (loadVoiceEnabled == null) return;
+    try {
+      _voiceService.isEnabled = await loadVoiceEnabled() ?? true;
+    } catch (error) {
+      debugPrint('Could not restore voice navigation preference: $error');
+    }
+  }
 
   /// All maneuvers for the active route. Empty when not navigating.
   List<Maneuver> get maneuvers => _maneuverTracker.maneuvers;
@@ -199,6 +216,14 @@ class NavigationProvider with ChangeNotifier {
       _voiceService.stop();
     }
     notifyListeners();
+    final saveVoiceEnabled = _saveVoiceEnabled;
+    if (saveVoiceEnabled != null) {
+      unawaited(
+        saveVoiceEnabled(enabled).catchError((Object error) {
+          debugPrint('Could not save voice navigation preference: $error');
+        }),
+      );
+    }
   }
 
   Future<void> _onPositionUpdate(geo.Position position) async {

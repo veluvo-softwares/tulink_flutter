@@ -6,6 +6,7 @@ abstract class JourneyRepository {
     required String name,
     required double latitude,
     required double longitude,
+    String? destinationName,
     required String destinationAddress,
     required int lagThresholdMeters,
     DateTime? scheduledFor,

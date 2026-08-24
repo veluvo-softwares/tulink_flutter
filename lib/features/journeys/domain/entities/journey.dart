@@ -26,6 +26,17 @@ class Journey extends Equatable {
   final String leaderId;
   final JourneyStatus status;
   final LatLng destination;
+
+  /// Human-readable place name (e.g. "Karen Shopping Centre").
+  ///
+  /// Null for journeys created before the field existed, and for clients that
+  /// still omit it. Read [destinationLabel] rather than this field when
+  /// displaying a destination.
+  final String? destinationName;
+
+  /// Formatted address from the place provider. Frequently far coarser than the
+  /// place itself (Google returns "Nairobi, Kenya" for some POIs), so it is
+  /// secondary information — see [destinationLabel].
   final String destinationAddress;
   final int lagThresholdMeters;
   final DateTime? createdAt;
@@ -49,6 +60,7 @@ class Journey extends Equatable {
     required this.leaderId,
     required this.status,
     required this.destination,
+    this.destinationName,
     required this.destinationAddress,
     required this.lagThresholdMeters,
     this.createdAt,
@@ -65,6 +77,24 @@ class Journey extends Equatable {
   bool get isScheduled =>
       status == JourneyStatus.PENDING && scheduledFor != null;
 
+  /// The destination as it should be shown to a user.
+  ///
+  /// Prefers the place name and falls back to the formatted address, so
+  /// journeys created before [destinationName] existed still render something
+  /// meaningful instead of an empty label.
+  String get destinationLabel =>
+      (destinationName != null && destinationName!.trim().isNotEmpty)
+      ? destinationName!.trim()
+      : destinationAddress;
+
+  /// Secondary line for a destination, or null when it would merely repeat
+  /// [destinationLabel].
+  String? get destinationSubtitle {
+    final address = destinationAddress.trim();
+    if (address.isEmpty || address == destinationLabel) return null;
+    return address;
+  }
+
   @override
   List<Object?> get props => [
     id,
@@ -73,6 +103,7 @@ class Journey extends Equatable {
     leaderId,
     status,
     destination,
+    destinationName,
     destinationAddress,
     lagThresholdMeters,
     createdAt,

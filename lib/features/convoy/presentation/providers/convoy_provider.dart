@@ -17,6 +17,7 @@ import '../../domain/usecases/fetch_latest_snapshot.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/services/location_permission_service.dart';
+import '../../../../core/services/location_service.dart';
 
 /// Provider for convoy coordination state management
 /// Handles real-time position sharing and convoy member tracking
@@ -26,20 +27,32 @@ class ConvoyProvider extends ChangeNotifier {
     required PublishMyPosition publishMyPosition,
     required FetchLatestSnapshot fetchLatestSnapshot,
     required ConvoyRepository repository,
+    LocationService? locationService,
+    LocationPermissionGate? permissionGate,
   }) : _streamConvoyPositions = streamConvoyPositions,
        _publishMyPosition = publishMyPosition,
        _fetchLatestSnapshot = fetchLatestSnapshot,
-       _repository = repository;
+       _repository = repository,
+       _locationService = locationService ?? const GeolocatorLocationService(),
+       _permissionGate =
+           permissionGate ?? const DefaultLocationPermissionGate();
 
   final StreamConvoyPositions _streamConvoyPositions;
   final PublishMyPosition _publishMyPosition;
   final FetchLatestSnapshot _fetchLatestSnapshot;
   final ConvoyRepository _repository;
+  final LocationService _locationService;
+  final LocationPermissionGate _permissionGate;
 
   // State
   ConvoySnapshot? _snapshot;
   bool _isPublishing = false;
   bool _isSubscribed = false;
+
+  /// Increments on every room-selection attempt. Async work captures the value
+  /// it started under and abandons itself if a newer selection has taken over,
+  /// so at most one room is ever owned.
+  int _roomGeneration = 0;
   ConvoyConnectionState _connectionState = ConvoyConnectionState.disconnected;
   String? _errorMessage;
 
@@ -131,6 +144,15 @@ class ConvoyProvider extends ChangeNotifier {
   int _participantAcceptedTick = 0;
   int get participantAcceptedTick => _participantAcceptedTick;
 
+  /// The journey the most recent `participant-accepted` event belonged to.
+  ///
+  /// Published alongside the tick so a listener can confirm the burst it is
+  /// reacting to is for the journey it is staging, instead of inferring it
+  /// from whatever happens to be selected when the refresh finally runs.
+  String? _lastParticipantAcceptedJourneyId;
+  String? get lastParticipantAcceptedJourneyId =>
+      _lastParticipantAcceptedJourneyId;
+
   /// Increments every time the backend pushes a `journey-invite` to this user
   /// over the WebSocket user channel. The home screen watches this to refresh
   /// the invite list and show a banner without a reload. [lastJourneyInvite]
@@ -150,6 +172,97 @@ class ConvoyProvider extends ChangeNotifier {
   ConvoyConnectionState get connectionState => _connectionState;
   String? get errorMessage => _errorMessage;
   String? get currentJourneyId => _currentJourneyId;
+
+  /// Set when the device could not produce a GPS fix, so this client has joined
+  /// the convoy room but is not publishing its own position yet.
+  ///
+  /// Deliberately separate from [errorMessage]: room membership and location
+  /// availability fail independently, and conflating them is what made the UI
+  /// claim the socket was "connecting" when the only thing missing was a fix.
+  Failure? _locationFailure;
+  Failure? get locationFailure => _locationFailure;
+
+  /// True once the convoy room is joined, regardless of whether GPS is working.
+  bool get isCoordinating => _isSubscribed;
+
+  /// Monotonic identity of the current connection attempt.
+  ///
+  /// Owned here rather than by a screen: the attempt lifecycle outlives any
+  /// particular widget, so a rebuild (or the retirement of the old map screen)
+  /// must not lose or restart it. Consumers use a change in this value as the
+  /// signal to begin a fresh bounded connection window.
+  int _connectionAttemptId = 0;
+  int get connectionAttemptId => _connectionAttemptId;
+
+  /// Begin a new connection attempt. Monotonic for the whole session.
+  void _beginConnectionAttempt() {
+    _connectionAttemptId++;
+  }
+
+  void _setLocationFailure(Failure? failure) {
+    if (_locationFailure == failure) return;
+    _locationFailure = failure;
+    notifyListeners();
+  }
+
+  /// Re-establish the convoy connection for [journeyId] without recreating the
+  /// journey.
+  ///
+  /// Recovers the socket and room membership only; GPS publishing is recovered
+  /// separately by [retryLocationPublishing], because the two fail for
+  /// different reasons. Safe to call while already connected.
+  Future<void> reconnect(String journeyId) async {
+    _clearError();
+    // An explicit reconnect is a new attempt even for the same journey.
+    _beginConnectionAttempt();
+    notifyListeners();
+    try {
+      // Bring the socket back up (fresh token) before re-subscribing.
+      await _repository.ensureLiveConnection();
+
+      // Re-subscribe only if this journey lost its streams; an existing healthy
+      // subscription is left alone so we don't churn a working connection.
+      if (_currentJourneyId != journeyId || !_isSubscribed) {
+        await stopCoordination();
+        await startCoordination(journeyId);
+        return;
+      }
+
+      await _repository.joinJourneyRoom(journeyId);
+    } catch (e) {
+      _setError(e is Failure ? e.message : 'Could not reconnect to the convoy');
+    }
+  }
+
+  /// Retry location acquisition for the journey already being coordinated,
+  /// without tearing down or recreating the room membership. Safe to call from
+  /// a UI retry affordance.
+  Future<bool> retryLocationPublishing() async {
+    final journeyId = _currentJourneyId;
+    if (journeyId == null) return false;
+
+    // The pipeline may already be running but starved of a fix. Ask for a
+    // fresh one rather than reporting success off a stale flag.
+    if (_isPublishing) {
+      final position = await _locationService.getCurrentPosition();
+      if (_currentJourneyId != journeyId) return false;
+      if (position == null) {
+        _setLocationFailure(ConvoyFailure.locationUnavailable);
+        return false;
+      }
+      await _handleLocationUpdate(journeyId, position);
+      return _locationFailure == null;
+    }
+
+    // Pipeline is down — rebuild it, replacing any half-built subscription.
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    _publishTimer?.cancel();
+    _publishTimer = null;
+
+    await _startLocationPublishing(journeyId);
+    return _isPublishing && _locationFailure == null;
+  }
 
   /// Start convoy coordination for a journey.
   /// Begins both GPS publishing and real-time position streaming.
@@ -215,34 +328,72 @@ class ConvoyProvider extends ChangeNotifier {
   }
 
   Future<void> _startCoordinationInternal(String journeyId) async {
+    // Same single-room ownership rule as joinJourneyRoom: going live in B must
+    // release A first, or A's subscriptions keep delivering into B's session.
+    final generation = ++_roomGeneration;
+    if (_currentJourneyId != null && _currentJourneyId != journeyId) {
+      await _releaseRoomState();
+      if (generation != _roomGeneration) return;
+    }
+
     try {
       _clearError();
+      _setLocationFailure(null);
       _currentJourneyId = journeyId;
+      // Joining a journey is a new connection attempt.
+      _beginConnectionAttempt();
 
-      // Check permissions first
-      final permissionResult =
-          await LocationPermissionService.requestLocationPermission();
-      if (!permissionResult.granted) {
-        _setError(
-          permissionResult.failure?.message ??
-              'Location permissions required for convoy coordination',
-        );
-        _currentJourneyId = null;
-        throw permissionResult.failure ??
-            ConvoyFailure.locationPermissionDenied;
-      }
-
-      // Start location publishing (GPS)
-      await _startLocationPublishing(journeyId);
-
-      // Set up convoy streams only if not already subscribed (e.g. joinJourneyRoom
-      // was called first and streams are already running in listener mode).
+      // 1. Join and subscribe FIRST. Room membership and the journey snapshot
+      //    depend on neither a permission grant nor a GPS fix. The OS
+      //    permission dialog can stay open indefinitely, so awaiting it here
+      //    delayed the snapshot by exactly as long as the user hesitated.
       if (!_isSubscribed) {
-        _startConvoyStream(journeyId);
+        _startConvoyStream(journeyId, generation);
       }
-
       _isSubscribed = true;
       notifyListeners();
+
+      // 2. Permission is then requested independently of membership.
+      //
+      // Everything from here on is location work, and it runs in its own
+      // try/catch so that a throwing permission gate cannot fall through to the
+      // outer handler — that one nulls _currentJourneyId, which would leave the
+      // provider subscribed to a room it no longer believes it is in.
+      try {
+        final permissionResult = await _permissionGate.request();
+
+        // The journey may have been switched or stopped while the dialog was
+        // open; a late grant must not start publishing for the wrong room.
+        if (_currentJourneyId != journeyId || generation != _roomGeneration) {
+          return;
+        }
+
+        // Location problems are reported on their own channel so the UI can say
+        // "we can't see your location" without implying the convoy is
+        // unreachable, and without tearing down convoy membership.
+        if (!permissionResult.granted) {
+          _setLocationFailure(
+            permissionResult.failure ?? ConvoyFailure.locationPermissionDenied,
+          );
+          return;
+        }
+
+        // 3. Bounded; can fail without invalidating the room join.
+        await _startLocationPublishing(journeyId);
+      } catch (e) {
+        if (_currentJourneyId != journeyId) return;
+        // A location-side failure, not a convoy failure: membership stands.
+        _setLocationFailure(
+          e is Failure
+              ? e
+              : ConvoyFailure(
+                  message: 'Could not access your location',
+                  details: e.toString(),
+                  timestamp: DateTime.now(),
+                  isRetryable: true,
+                ),
+        );
+      }
     } catch (e) {
       print('❌ Failed to start convoy coordination: $e');
       _currentJourneyId = null;
@@ -292,18 +443,45 @@ class ConvoyProvider extends ChangeNotifier {
   /// Join a journey room to receive real-time events without starting GPS.
   /// Used by members waiting on the home screen for the leader to start.
   Future<bool> joinJourneyRoom(String journeyId) async {
+    // A user is in at most one convoy room. Claim ownership of the handoff with
+    // a generation token *before anything else* — including the already-joined
+    // shortcut. Claiming it after that check let two joins that both started
+    // while `_currentJourneyId`/`_isSubscribed` were still unset run
+    // concurrently all the way into the repository.
+    final generation = ++_roomGeneration;
+
+    // Already ours and confirmed. Still claims the generation above, so a
+    // concurrent join for another journey is correctly ordered against it.
     if (_currentJourneyId == journeyId && _isSubscribed) return true;
+
+    // Tear the previous room down completely — subscriptions included — before
+    // joining the new one. Overwriting `_currentJourneyId` while room A's
+    // snapshot, connection, journey-ended, journey-started, arrival and
+    // participant subscriptions were still live meant A's events arrived and
+    // were attributed to B.
+    if (_currentJourneyId != null || _isSubscribed) {
+      await _releaseRoomState();
+      if (generation != _roomGeneration) return false;
+    }
 
     try {
       _clearError();
-      _currentJourneyId = journeyId;
 
       // Do not mark listener mode ready until the server confirms room
-      // membership. Previously _startConvoyStream kicked off its async socket
-      // setup in the background and this method returned immediately, so a
-      // leader could start before the follower was actually in the room.
+      // membership. The repository serialises the handoff and only resolves
+      // once the server's ack names *this* journey.
       await _repository.joinJourneyRoom(journeyId);
-      _startConvoyStream(journeyId);
+
+      // A newer join took over while the server was answering: that room owns
+      // the session now, so this one must not install its streams or id.
+      if (generation != _roomGeneration) {
+        print('↩️ ConvoyProvider: discarding stale room join $journeyId');
+        return false;
+      }
+
+      // Only now is the room safely ours.
+      _currentJourneyId = journeyId;
+      _startConvoyStream(journeyId, generation);
 
       _isSubscribed = true;
       notifyListeners();
@@ -311,8 +489,16 @@ class ConvoyProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       print('❌ ConvoyProvider: failed to join room: $e');
-      _currentJourneyId = null;
-      _setError('Live updates are reconnecting');
+      if (generation == _roomGeneration) {
+        // A failed join must leave a deterministic recoverable state, never a
+        // mixed A/B one: nothing of this attempt survives, and nothing of the
+        // previous room does either.
+        await _cancelRoomSubscriptions();
+        _currentJourneyId = null;
+        _isSubscribed = false;
+        _setError('Live updates are reconnecting');
+        notifyListeners();
+      }
       return false;
     }
   }
@@ -331,34 +517,9 @@ class ConvoyProvider extends ChangeNotifier {
     _publishTimer?.cancel();
     _publishTimer = null;
 
-    // Stop the coalesced snapshot-notify timer
-    _snapshotNotifyTimer?.cancel();
-    _snapshotNotifyTimer = null;
-
-    // Stop convoy streaming
-    await _convoySubscription?.cancel();
-    _convoySubscription = null;
-
-    // Stop connection state monitoring
-    await _connectionSubscription?.cancel();
-    _connectionSubscription = null;
-
-    // Stop journey-ended monitoring
-    await _journeyEndedSubscription?.cancel();
-    _journeyEndedSubscription = null;
-
-    // Stop participant-arrived monitoring
-    await _participantArrivedSubscription?.cancel();
-    _participantArrivedSubscription = null;
-
-    // Stop journey-started monitoring
-    await _journeyStartedSubscription?.cancel();
-    _journeyStartedSubscription = null;
-    _pendingJourneyStartedId = null;
-
-    // Stop participant-accepted monitoring
-    await _participantAcceptedSubscription?.cancel();
-    _participantAcceptedSubscription = null;
+    // Stop every journey-scoped subscription in one place, so a room handoff
+    // and a full stop can never disagree about what was cancelled.
+    await _cancelRoomSubscriptions();
 
     // Stop the repository coordination (WebSocket, etc.)
     try {
@@ -380,6 +541,7 @@ class ConvoyProvider extends ChangeNotifier {
     _arrivedCount = 0;
     _totalMemberCount = 0;
     _lastArrivalEvent = null;
+    _locationFailure = null;
     _clearError();
 
     print('✅ ConvoyProvider: Coordination stopped completely');
@@ -440,24 +602,41 @@ class ConvoyProvider extends ChangeNotifier {
     final locationSettings = _buildLocationSettings();
 
     try {
-      // Seed an initial position immediately so we beacon before the first
-      // movement event arrives (a still device emits nothing on its own).
-      try {
-        final initial = await Geolocator.getCurrentPosition();
+      // Seed an initial position so we beacon before the first movement event
+      // arrives (a still device emits nothing on its own). Bounded by
+      // [LocationService]: a device that cannot produce a fix yields null
+      // rather than hanging this method — and therefore the whole coordination
+      // start — forever.
+      final initial = await _locationService.getCurrentPosition();
+
+      // The journey may have been switched or stopped while we waited for the
+      // fix; a late position must never publish against the wrong room.
+      if (_currentJourneyId != journeyId) return;
+
+      if (initial != null) {
         _lastKnownPosition = initial;
+        // A fix was obtained — clear any failure left over from an earlier
+        // attempt so a successful retry is reported as recovered.
+        _setLocationFailure(null);
         await _publishLocation(journeyId, initial, false);
-      } catch (e) {
-        print('⚠️ Failed to get initial position: $e');
+        if (_currentJourneyId != journeyId) return;
+      } else {
+        _setLocationFailure(ConvoyFailure.locationUnavailable);
       }
 
-      _locationSubscription =
-          Geolocator.getPositionStream(
-            locationSettings: locationSettings,
-          ).listen(
+      _locationSubscription = _locationService
+          .getPositionStream(locationSettings: locationSettings)
+          .listen(
             (Position position) => _handleLocationUpdate(journeyId, position),
-            onError: (error) {
-              print('❌ Location stream error: $error');
-              _setError('GPS error: $error');
+            onError: (Object error) {
+              _setLocationFailure(
+                ConvoyFailure(
+                  message: 'Location updates stopped',
+                  details: error.toString(),
+                  timestamp: DateTime.now(),
+                  isRetryable: true,
+                ),
+              );
             },
           );
 
@@ -474,8 +653,11 @@ class ConvoyProvider extends ChangeNotifier {
       _isPublishing = true;
       notifyListeners();
     } catch (e) {
-      print('❌ Failed to start location stream: $e');
-      throw ConvoyFailure.locationServiceDisabled;
+      // The publishing pipeline could not be established. Room membership is
+      // unaffected, so report this on the location channel rather than
+      // failing coordination outright.
+      _isPublishing = false;
+      _setLocationFailure(ConvoyFailure.locationServiceDisabled);
     }
   }
 
@@ -486,7 +668,14 @@ class ConvoyProvider extends ChangeNotifier {
     String journeyId,
     Position position,
   ) async {
+    // A stream tick for a journey we have since left must not publish.
+    if (_currentJourneyId != journeyId) return;
+
     _lastKnownPosition = position;
+
+    // A fix arrived after a cold start — publishing can resume without the
+    // journey being recreated.
+    if (_locationFailure != null) _setLocationFailure(null);
 
     final now = DateTime.now();
     final isMoving = (position.speed ?? 0.0) > 0.5; // Moving if speed > 0.5 m/s
@@ -642,11 +831,55 @@ class ConvoyProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Start streaming convoy positions and connection state
-  void _startConvoyStream(String journeyId) {
+  /// Cancel every journey-scoped subscription without touching room identity.
+  ///
+  /// Separated from [stopCoordination] so a superseded join can clean up its
+  /// own streams without also tearing down the room that replaced it.
+  Future<void> _cancelRoomSubscriptions() async {
+    await _convoySubscription?.cancel();
+    _convoySubscription = null;
+    await _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    await _journeyEndedSubscription?.cancel();
+    _journeyEndedSubscription = null;
+    await _participantArrivedSubscription?.cancel();
+    _participantArrivedSubscription = null;
+    await _journeyStartedSubscription?.cancel();
+    _journeyStartedSubscription = null;
+    await _participantAcceptedSubscription?.cancel();
+    _participantAcceptedSubscription = null;
+    _snapshotNotifyTimer?.cancel();
+    _snapshotNotifyTimer = null;
+    _pendingJourneyStartedId = null;
+  }
+
+  /// Release the room currently held, ahead of claiming a different one.
+  ///
+  /// Identical to [stopCoordination] except that it is used *inside* a handoff,
+  /// where the caller has already claimed the newer generation.
+  Future<void> _releaseRoomState() => stopCoordination();
+
+  /// Start streaming convoy positions and connection state.
+  ///
+  /// [generation] is the room-ownership token this subscription set belongs
+  /// to. Every callback re-checks it, so a stream installed by a superseded
+  /// attempt can never deliver into the room that replaced it — checking only
+  /// `_currentJourneyId` was not enough, because a re-entry into the *same*
+  /// journey produces the same id with a different owner.
+  void _startConvoyStream(String journeyId, int generation) {
+    // A previous attempt's streams must go before this one's are installed;
+    // overwriting the fields leaked the old subscriptions, which kept
+    // delivering into the new session.
+    unawaited(_cancelRoomSubscriptions());
+
+    /// True while this subscription set still owns the room.
+    bool owns() =>
+        generation == _roomGeneration && _currentJourneyId == journeyId;
+
     // Listen to convoy position updates
     _convoySubscription = _streamConvoyPositions(journeyId).listen(
       (result) {
+        if (!owns()) return;
         if (result.snapshot != null) {
           _snapshot = result.snapshot;
           _clearError();
@@ -672,6 +905,13 @@ class ConvoyProvider extends ChangeNotifier {
     // Listen to WebSocket connection state changes
     _connectionSubscription = _repository.connectionStateStream.listen(
       (connectionState) {
+        if (!owns()) return;
+        // An automatic reconnect is a new attempt too, so consumers restart
+        // their bounded window rather than inheriting the previous timeout.
+        if (connectionState == ConvoyConnectionState.reconnecting &&
+            _connectionState != ConvoyConnectionState.reconnecting) {
+          _beginConnectionAttempt();
+        }
         _connectionState = connectionState;
         notifyListeners();
       },
@@ -687,8 +927,10 @@ class ConvoyProvider extends ChangeNotifier {
     // don't keep hammering the now-invalid room.
     _journeyEndedSubscription = _repository.journeyEndedStream.listen(
       (event) async {
-        // Ignore stale events from a previous journey.
-        if (event.journeyId != _currentJourneyId) return;
+        // Identity is the event's own; ownership is this subscription's.
+        // A late end for A must not tear down B, and an end delivered to a
+        // superseded subscription must not act at all.
+        if (!owns() || event.journeyId != journeyId) return;
 
         print(
           '🏁 ConvoyProvider: journey-ended received for ${event.journeyId}',
@@ -708,6 +950,7 @@ class ConvoyProvider extends ChangeNotifier {
     // journey-ended subscription above handles the navigation/teardown.
     _participantArrivedSubscription = _repository.participantArrivedStream.listen(
       (event) async {
+        if (!owns()) return;
         _arrivedCount = event.arrivedCount;
         _totalMemberCount = event.totalCount;
         _lastArrivalEvent = event;
@@ -727,12 +970,14 @@ class ConvoyProvider extends ChangeNotifier {
     );
 
     _journeyStartedSubscription = _repository.journeyStartedStream.listen(
-      (journeyId) {
-        if (journeyId == _currentJourneyId) {
-          print('🚀 ConvoyProvider: journey-started for $journeyId');
-          _pendingJourneyStartedId = journeyId;
-          notifyListeners();
-        }
+      (eventJourneyId) {
+        // The event carries its own identity (parsed from the payload by the
+        // data source). It is accepted only for the room this subscription set
+        // owns — a start broadcast for A must never activate B.
+        if (!owns() || eventJourneyId != journeyId) return;
+        print('🚀 ConvoyProvider: journey-started for $eventJourneyId');
+        _pendingJourneyStartedId = eventJourneyId;
+        notifyListeners();
       },
       onError: (Object error) {
         print('❌ journey-started stream error: $error');
@@ -741,12 +986,16 @@ class ConvoyProvider extends ChangeNotifier {
 
     _participantAcceptedSubscription = _repository.participantAcceptedStream
         .listen(
-          (journeyId) {
-            if (journeyId == _currentJourneyId) {
-              print('🤝 ConvoyProvider: participant-accepted for $journeyId');
-              _participantAcceptedTick++;
-              notifyListeners();
-            }
+          (eventJourneyId) {
+            // Journey-scoped from the payload — see the data source. A late
+            // acceptance for A must not refresh B's roster.
+            if (!owns() || eventJourneyId != journeyId) return;
+            print(
+              '🤝 ConvoyProvider: participant-accepted for $eventJourneyId',
+            );
+            _lastParticipantAcceptedJourneyId = eventJourneyId;
+            _participantAcceptedTick++;
+            notifyListeners();
           },
           onError: (Object error) {
             print('❌ participant-accepted stream error: $error');

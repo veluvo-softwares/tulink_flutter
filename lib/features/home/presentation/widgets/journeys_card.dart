@@ -68,9 +68,9 @@ class JourneysCard extends StatelessWidget {
                 ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Journey items or loading state
           if (isLoading && displayJourneys.isEmpty)
             _buildLoadingState()
@@ -81,7 +81,7 @@ class JourneysCard extends StatelessWidget {
               final index = entry.key;
               final journey = entry.value;
               final isLast = index == displayJourneys.length - 1;
-              
+
               return Column(
                 children: [
                   _buildJourneyItem(journey, colors),
@@ -126,9 +126,9 @@ class JourneysCard extends StatelessWidget {
                 size: 20,
               ),
             ),
-            
+
             const SizedBox(width: 12),
-            
+
             // Journey details
             Expanded(
               child: Column(
@@ -145,18 +145,15 @@ class JourneysCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  
+
                   const SizedBox(height: 4),
-                  
+
                   // Destination and time or participants
                   Text(
                     showParticipants
-                        ? '${journey.participants?.length ?? 0} participants • ${journey.destinationAddress}'
-                        : '${_formatDate(journey.createdAt)} • ${journey.destinationAddress}',
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 12,
-                    ),
+                        ? '${journey.participants?.length ?? 0} participants • ${journey.destinationLabel}'
+                        : '${_formatDate(journey.createdAt)} • ${journey.destinationLabel}',
+                    style: TextStyle(color: colors.silver, fontSize: 12),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -214,36 +211,31 @@ class JourneysCard extends StatelessWidget {
   Widget _buildEmptyState(TulinkColors colors) {
     return Column(
       children: [
-        Icon(
-          Icons.route_outlined,
-          color: colors.electricRed,
-          size: 32,
-        ),
+        Icon(Icons.route_outlined, color: colors.electricRed, size: 32),
         const SizedBox(height: 8),
         Text(
           showParticipants ? 'No active journeys' : 'No recent journeys',
-          style: TextStyle(
-            color: colors.silver,
-            fontSize: 14,
-          ),
+          style: TextStyle(color: colors.silver, fontSize: 14),
         ),
-      
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: showParticipants ? Text(
-              'Start a journey to see it here',
-              style: TextStyle(
-                color: colors.silver.withOpacity(0.7),
-                fontSize: 12,
-              ),
-            ) : Text(
-              'Your recent journeys will show up here',
-              style: TextStyle(
-                color: colors.silver.withOpacity(0.7),
-                fontSize: 12,
-              ),
-            ),
-          ),
+
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: showParticipants
+              ? Text(
+                  'Start a journey to see it here',
+                  style: TextStyle(
+                    color: colors.silver.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                )
+              : Text(
+                  'Your recent journeys will show up here',
+                  style: TextStyle(
+                    color: colors.silver.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+        ),
       ],
     );
   }
@@ -252,37 +244,40 @@ class JourneysCard extends StatelessWidget {
     return Column(
       children: [
         // Generate 3 shimmer items that match the journey item layout
-        ...List.generate(3, (index) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Builder(
-                builder: (context) => ShimmerEffect.listItem(context),
+        ...List.generate(
+          3,
+          (index) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Builder(
+                  builder: (context) => ShimmerEffect.listItem(context),
+                ),
               ),
-            ),
-            if (index < 2)
-              Builder(
-                builder: (context) {
-                  final colors = Theme.of(context).tulinkColors;
-                  return Container(
-                    height: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    color: colors.brushedSteel.withValues(alpha: 0.3),
-                  );
-                },
-              ),
-          ],
-        )),
+              if (index < 2)
+                Builder(
+                  builder: (context) {
+                    final colors = Theme.of(context).tulinkColors;
+                    return Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      color: colors.brushedSteel.withValues(alpha: 0.3),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
   String _formatDate(DateTime? date) {
     if (date == null) return 'Unknown';
-    
+
     final now = DateTime.now();
     final difference = now.difference(date);
-    
+
     if (difference.inDays > 30) {
       final months = (difference.inDays / 30).floor();
       return '${months}mo ago';

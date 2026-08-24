@@ -5,7 +5,7 @@ import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/navigation/navigation_helper.dart';
 import '../../../../core/widgets/status_indicator.dart';
 import '../../../journeys/domain/entities/journey.dart';
-import '../../../journeys/presentation/widgets/journey_preview_map.dart';
+import '../../../journeys/presentation/widgets/journey_destination_banner.dart';
 import '../../../journeys/presentation/providers/journey_provider.dart';
 import '../providers/analytics_provider.dart';
 
@@ -52,7 +52,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     final showJourneyStats = journey.status == JourneyStatus.COMPLETED;
 
     return Scaffold(
-      backgroundColor: colors.carbonBlack,
+      backgroundColor: colors.warmSand,
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -67,17 +67,14 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: Colors.white,
-                        size: 24,
-                      ),
+                      tooltip: 'Back',
+                      icon: Icon(Icons.arrow_back, color: colors.ink, size: 24),
                     ),
                     const Spacer(),
                     Text(
                       'Journey Details',
                       style: TextStyle(
-                        color: colors.white,
+                        color: colors.ink,
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
@@ -91,17 +88,14 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
 
             // Compact Map View
             Container(
-              height: 180,
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.brushedSteel.withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: colors.divider),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: JourneyPreviewMap(journey: journey),
+                child: JourneyDestinationBanner(journey: journey),
               ),
             ),
 
@@ -116,7 +110,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                     child: Text(
                       journey.name,
                       style: TextStyle(
-                        color: colors.white,
+                        color: colors.ink,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
@@ -144,7 +138,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                   Text(
                     'CONVOY • ',
                     style: TextStyle(
-                      color: colors.silver,
+                      color: colors.muted,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
@@ -155,7 +149,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         ? 'CREATED ${_getTimeAgo(journey.createdAt)}'
                         : 'CREATED RECENTLY',
                     style: TextStyle(
-                      color: colors.silver,
+                      color: colors.muted,
                       fontSize: 12,
                       letterSpacing: 0.5,
                     ),
@@ -171,15 +165,13 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colors.cardDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colors.brushedSteel.withValues(alpha: 0.3),
-                ),
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: colors.divider),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.location_on, color: colors.electricRed, size: 24),
+                  Icon(Icons.location_on, color: colors.sunsetOrange, size: 24),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -188,16 +180,16 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         Text(
                           'DESTINATION',
                           style: TextStyle(
-                            color: colors.silver,
+                            color: colors.muted,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          journey.destinationAddress,
+                          journey.destinationLabel,
                           style: TextStyle(
-                            color: colors.white,
+                            color: colors.ink,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -265,8 +257,9 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 16),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: colors.cardDark,
-                        borderRadius: BorderRadius.circular(12),
+                        color: colors.surface,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: colors.divider),
                       ),
                       child: Row(
                         children: [
@@ -274,7 +267,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                             child: Text(
                               analytics.summaryError ??
                                   'Journey statistics are still being prepared.',
-                              style: TextStyle(color: colors.silver),
+                              style: TextStyle(color: colors.muted),
                             ),
                           ),
                           TextButton(
@@ -295,7 +288,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                         Text(
                           'TRIP STATS',
                           style: TextStyle(
-                            color: colors.silver,
+                            color: colors.muted,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.5,
@@ -386,8 +379,6 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                       ? null
                       : () => _navigateToHomeAndRefresh(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: colors.electricRed,
-                    foregroundColor: colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -397,7 +388,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
                       ? SizedBox.square(
                           dimension: 20,
                           child: CircularProgressIndicator(
-                            color: colors.white,
+                            color: colors.surface,
                             strokeWidth: 2,
                           ),
                         )
@@ -427,18 +418,18 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colors.cardDark,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.brushedSteel.withValues(alpha: 0.3)),
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.divider),
       ),
       child: Column(
         children: [
-          Icon(icon, color: colors.electricRed, size: 20),
+          Icon(icon, color: colors.routeTeal, size: 20),
           const SizedBox(height: 8),
           Text(
             title,
             style: TextStyle(
-              color: colors.silver,
+              color: colors.muted,
               fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
@@ -447,7 +438,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
           Text(
             value,
             style: TextStyle(
-              color: colors.white,
+              color: colors.ink,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -466,19 +457,19 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colors.cardDark,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.brushedSteel.withValues(alpha: 0.3)),
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: colors.electricRed, size: 18),
+          Icon(icon, color: colors.routeTeal, size: 18),
           const SizedBox(height: 8),
           Text(
             value,
             style: TextStyle(
-              color: colors.white,
+              color: colors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -487,7 +478,7 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
           Text(
             label,
             style: TextStyle(
-              color: colors.silver,
+              color: colors.muted,
               fontSize: 10,
               fontWeight: FontWeight.w600,
               letterSpacing: 1.0,

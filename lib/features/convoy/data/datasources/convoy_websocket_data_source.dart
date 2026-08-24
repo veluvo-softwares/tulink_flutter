@@ -6,6 +6,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../models/member_position_model.dart';
 import '../models/location_update_dto.dart';
+import 'location_publish_ack.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/participant_arrived_event.dart';
@@ -104,14 +105,24 @@ abstract class ConvoyWebSocketDataSource {
   /// have exhausted its reconnect budget or be waiting out a long backoff.
   Future<void> reconnectIfDisconnected();
 
-  /// Join a journey room for real-time updates
+  /// Join a journey room for real-time updates.
+  ///
+  /// Completes only once the server's `joined-journey` acknowledgement names
+  /// **this** journey. A generic ack, or one for a different room, must never
+  /// complete this call — that is how a join for A reported room B as ready.
   Future<void> joinJourney(String journeyId);
 
   /// Leave a journey room
   Future<void> leaveJourney(String journeyId);
 
-  /// Publish location update via WebSocket
-  Future<void> publishLocationUpdate(LocationUpdateDto locationUpdate);
+  /// Publish a location update and report what the server answered.
+  ///
+  /// Returns a [LocationPublishAck] rather than completing unconditionally:
+  /// the backend can answer `accepted: false`, and treating that as success is
+  /// what dropped points out of the offline outbox without delivering them.
+  Future<LocationPublishAck> publishLocationUpdate(
+    LocationUpdateDto locationUpdate,
+  );
 
   /// Stream of convoy snapshots from WebSocket updates
   Stream<ConvoySnapshot> get convoyUpdatesStream;
@@ -134,8 +145,11 @@ abstract class ConvoyWebSocketDataSource {
   Stream<String> get journeyStartedStream;
 
   /// Stream of `participant-accepted` events. Fires when an invited member
-  /// accepts; emits the current journeyId so the leader can refresh its
-  /// participant list live without a manual reload.
+  /// accepts.
+  ///
+  /// Emits the **event's own** `journeyId`, taken from the payload, so a late
+  /// acceptance for a journey the user has already left cannot be attributed
+  /// to the journey they are on now. Events without a `journeyId` are dropped.
   Stream<String> get participantAcceptedStream;
 
   /// Stream of `journey-invite` events pushed to this user's per-user room when
@@ -235,7 +249,15 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   /// every time the TCP handshake succeeds, even if the heartbeat
   /// immediately times out.
   int _shortLivedConnections = 0;
-  final Map<String, Completer<void>> _pendingLocationAcks = {};
+  final Map<String, Completer<LocationPublishAck>> _pendingLocationAcks = {};
+
+  /// Monotonic token for room ownership inside the transport.
+  ///
+  /// Bumped by every join and leave. A join captures it before emitting and
+  /// re-checks it after the ack, so a newer attempt invalidates an older one
+  /// that is still waiting — without this, two joins raced and whichever ack
+  /// arrived last decided which room the socket believed it was in.
+  int _roomEpoch = 0;
   Completer<Map<String, dynamic>>? _pendingResync;
   int _lastAppliedSequence = 0;
   static const int _maxShortLivedConnections = 3;
@@ -258,6 +280,53 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
   @override
   Stream<String> get journeyStartedStream => _journeyStartedController.stream;
+
+  /// Test seam for [_journeyIdFromStartedPayload].
+  ///
+  /// The parsing is the whole fix — exposing it keeps the contract testable
+  /// without standing up a socket.
+  @visibleForTesting
+  static String? debugJourneyIdFromStartedPayload(Object? data) =>
+      _journeyIdFromStartedPayload(data);
+
+  /// Extract the journey id from a `journey-started` payload.
+  ///
+  /// Tolerates the nested shape the gateway actually sends plus a flat
+  /// fallback, and returns null for anything unrecognised so a malformed event
+  /// is dropped rather than silently attributed to the current room.
+  static String? _journeyIdFromStartedPayload(Object? data) {
+    String? read(Object? value) {
+      if (value is! String) return null;
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    if (data is! Map) return null;
+    final journey = data['journey'];
+    if (journey is Map) {
+      return read(journey['journeyId']) ?? read(journey['id']);
+    }
+    return read(data['journeyId']) ?? read(data['id']);
+  }
+
+  /// Test seam for [_journeyIdFromParticipantAcceptedPayload].
+  @visibleForTesting
+  static String? debugJourneyIdFromParticipantAcceptedPayload(Object? data) =>
+      _journeyIdFromParticipantAcceptedPayload(data);
+
+  /// Extract the journey id from a `participant-accepted` payload.
+  ///
+  /// The backend stamps it in `LocationGateway.broadcastParticipantAccepted`.
+  /// Returns null for anything unrecognised so the event is dropped rather
+  /// than being attributed to whatever room we happen to believe we are in —
+  /// which is how a late acceptance for journey A refreshed journey B.
+  static String? _journeyIdFromParticipantAcceptedPayload(Object? data) {
+    if (data is! Map) return null;
+    final value = data['journeyId'];
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 
   @override
   Stream<String> get participantAcceptedStream =>
@@ -375,7 +444,12 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       );
     }
 
-    _currentJourneyId = journeyId;
+    // Claim ownership of the room handoff before anything is emitted. Room
+    // identity is *not* assigned here: `_currentJourneyId` used to be written
+    // before the await, so a join for A advertised itself as the current room
+    // while the server was still deciding, and a concurrent join for B then
+    // overwrote it mid-flight.
+    final epoch = ++_roomEpoch;
 
     // Await joined-journey confirmation so we know whether the server actually
     // added us to the room (vs silently rejecting with an error event).
@@ -383,6 +457,21 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     late void Function(dynamic) onJoined;
     onJoined = (data) {
+      // The backend's ack carries the room it joined
+      // (location.gateway.ts handleJoinJourney → `joined-journey`).
+      // An ack for a *different* journey must not complete this attempt.
+      final ackJourneyId = data is Map ? data['journeyId']?.toString() : null;
+      if (ackJourneyId != null && ackJourneyId != journeyId) {
+        _roomDebug(
+          '⚠️ joined-journey ACK for $ackJourneyId ignored while joining '
+          '$journeyId',
+        );
+        return;
+      }
+      if (ackJourneyId == null) {
+        _roomDebug('⚠️ joined-journey ACK without journeyId ignored');
+        return;
+      }
       _socket!.off('joined-journey', onJoined);
       _roomDebug('✅ joined-journey ACK for $journeyId');
       if (!completer.isCompleted) completer.complete();
@@ -396,27 +485,56 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     // A missing acknowledgement means room membership is unknown. Treat it as
     // a retryable failure instead of reporting listener mode as ready and then
     // silently missing journey-started events.
-    await completer.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        _socket!.off('joined-journey', onJoined);
-        throw ConvoyFailure(
-          message: 'Live updates are reconnecting',
-          details: 'The server did not confirm journey room membership',
-          timestamp: DateTime.now(),
-          isRetryable: true,
-        );
-      },
-    );
+    try {
+      await completer.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw ConvoyFailure(
+            message: 'Live updates are reconnecting',
+            details: 'The server did not confirm journey room membership',
+            timestamp: DateTime.now(),
+            isRetryable: true,
+          );
+        },
+      );
+    } finally {
+      _socket?.off('joined-journey', onJoined);
+    }
+
+    // A newer join or an explicit leave took over while the server answered.
+    // Give the room straight back rather than installing it as ours.
+    if (epoch != _roomEpoch) {
+      _roomDebug('↩️ discarding superseded join for $journeyId');
+      try {
+        _socket?.emit('leave-journey', {'journeyId': journeyId});
+      } catch (_) {
+        // Socket already gone; the server drops the room with it.
+      }
+      throw ConvoyFailure(
+        message: 'Live updates are reconnecting',
+        details: 'A newer journey room took over this connection',
+        timestamp: DateTime.now(),
+        isRetryable: true,
+      );
+    }
+
+    // Only now is this room genuinely ours.
+    _currentJourneyId = journeyId;
     await _restoreCursorAndResync(journeyId);
   }
 
   @override
   Future<void> leaveJourney(String journeyId) async {
-    if (!isConnected || _currentJourneyId != journeyId) return;
+    // Leaving invalidates any join still waiting for its ack, including a join
+    // for this same room that has not completed yet.
+    _roomEpoch++;
+    if (!isConnected) {
+      if (_currentJourneyId == journeyId) _currentJourneyId = null;
+      return;
+    }
 
     _socket!.emit('leave-journey', {'journeyId': journeyId});
-    _currentJourneyId = null;
+    if (_currentJourneyId == journeyId) _currentJourneyId = null;
 
     // Clear convoy state
     _members.clear();
@@ -427,7 +545,9 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   }
 
   @override
-  Future<void> publishLocationUpdate(LocationUpdateDto locationUpdate) async {
+  Future<LocationPublishAck> publishLocationUpdate(
+    LocationUpdateDto locationUpdate,
+  ) async {
     if (!isConnected) {
       throw ConvoyFailure(
         message: 'Cannot publish location - not connected',
@@ -456,14 +576,21 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     final pointId = locationUpdate.clientPointId;
     if (pointId == null) {
+      // Uncorrelatable by construction: there is nothing to match an ack
+      // against, so this cannot be reported as delivered.
       _socket!.emit('location-update', payload);
-      return;
+      return LocationPublishAck.malformed;
     }
-    final completer = Completer<void>();
+    final completer = Completer<LocationPublishAck>();
     _pendingLocationAcks[pointId] = completer;
     _socket!.emit('location-update', payload);
     try {
-      await completer.future.timeout(const Duration(seconds: 10));
+      return await completer.future.timeout(
+        const Duration(seconds: 10),
+        // A timeout is *not* a delivery. The point stays queued and the caller
+        // falls back to REST — raising this window would only hide the defect.
+        onTimeout: () => LocationPublishAck.timedOut,
+      );
     } finally {
       _pendingLocationAcks.remove(pointId);
     }
@@ -602,11 +729,13 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     _socket!.on('journey-ended', (data) {
       print('🏁 Journey ended: $data');
 
-      // Notify listeners so ConvoyProvider can stop publishing and surface UI.
-      // The journeyId we care about is whichever one we're currently in —
-      // the backend emits this event to that journey's room only.
-      final journeyId = _currentJourneyId;
-      if (journeyId != null) {
+      // Identity comes from the payload only. Falling back to the room we
+      // believe we are in let an event emitted for a room we had just left be
+      // attributed to the one we had just joined.
+      final journeyId = JourneyEndedEvent.journeyIdFrom(data);
+      if (journeyId == null) {
+        _roomDebug('⚠️ journey-ended DROPPED (no journeyId in payload)');
+      } else {
         final payload = data is Map<String, dynamic>
             ? data
             : <String, dynamic>{};
@@ -630,26 +759,50 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       _roomDebug(
         '🚀 journey-started RECV currentJourney=$_currentJourneyId data=$data',
       );
-      final journeyId = _currentJourneyId;
-      if (journeyId != null && !_journeyStartedController.isClosed) {
-        _journeyStartedController.add(journeyId);
-      } else {
-        _roomDebug('⚠️ journey-started DROPPED (currentJourneyId=$journeyId)');
+      // Identity comes from the payload, never from mutable local state. The
+      // backend emits `{journey: {journeyId, journeyName, status}, timestamp}`
+      // (location.gateway.ts broadcastJourneyStarted / journey.service.ts).
+      // Substituting `_currentJourneyId` meant an event from a room we had
+      // just left was reported as the room we had just joined.
+      final eventJourneyId = _journeyIdFromStartedPayload(data);
+      if (eventJourneyId == null) {
+        _roomDebug('⚠️ journey-started DROPPED (no journeyId in payload)');
+        return;
+      }
+      // A late event from a previous room must not activate the current one.
+      if (_currentJourneyId != null && eventJourneyId != _currentJourneyId) {
+        _roomDebug(
+          '⚠️ journey-started IGNORED (event=$eventJourneyId '
+          'current=$_currentJourneyId)',
+        );
+        return;
+      }
+      if (!_journeyStartedController.isClosed) {
+        _journeyStartedController.add(eventJourneyId);
       }
     });
 
     _socket!.on('participant-accepted', (data) {
       final userId = data is Map ? data['userId'] : null;
+      // Identity comes from the payload, never from `_currentJourneyId`.
+      // Attributing the event to whatever room we happen to believe we are in
+      // meant a late acceptance for journey A refreshed journey B's roster.
+      // The backend stamps `journeyId` in
+      // `LocationGateway.broadcastParticipantAccepted`.
+      final journeyId = _journeyIdFromParticipantAcceptedPayload(data);
       _roomDebug(
-        '🤝 participant-accepted RECV userId=$userId currentJourney=$_currentJourneyId',
+        '🤝 participant-accepted RECV userId=$userId journeyId=$journeyId '
+        'currentJourney=$_currentJourneyId',
       );
-      final journeyId = _currentJourneyId;
-      if (journeyId != null && !_participantAcceptedController.isClosed) {
+      if (journeyId == null) {
+        // A server that predates the journey-scoped contract. Dropping is the
+        // safe failure: the roster still refreshes on the next explicit read,
+        // whereas guessing refreshes the wrong journey.
+        _roomDebug('⚠️ participant-accepted DROPPED (no journeyId in payload)');
+        return;
+      }
+      if (!_participantAcceptedController.isClosed) {
         _participantAcceptedController.add(journeyId);
-      } else {
-        _roomDebug(
-          '⚠️ participant-accepted DROPPED (currentJourneyId=$journeyId)',
-        );
       }
     });
 
@@ -712,15 +865,35 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     });
 
     _socket!.on('location-update-ack', (data) {
-      final sequenceNumber = data['sequenceNumber'] as int?;
+      if (data is! Map) return;
       final pointId = data['clientPointId']?.toString();
-      final pending = pointId == null
-          ? (_pendingLocationAcks.isEmpty
-                ? null
-                : _pendingLocationAcks.values.first)
-          : _pendingLocationAcks[pointId];
-      if (pending != null && !pending.isCompleted) pending.complete();
-      print('✅ Location update acknowledged: $sequenceNumber');
+
+      // The server answers per `clientPointId`. An ack naming a point we are
+      // not waiting on belongs to a publish that already timed out (or to a
+      // point we never sent) — completing an arbitrary pending publish with it
+      // would report the wrong point as delivered.
+      if (pointId != null) {
+        final pending = _pendingLocationAcks[pointId];
+        if (pending == null) {
+          print('⚠️ Unmatched location-update-ack for $pointId — ignored');
+          return;
+        }
+        final ack = LocationPublishAck.fromPayload(data);
+        if (!pending.isCompleted) pending.complete(ack);
+        print('📬 location-update-ack $pointId → $ack');
+        return;
+      }
+
+      // No correlation id. The gateway always echoes `clientPointId`, so this
+      // is a malformed answer: it is reported as a failure (the point stays
+      // queued) rather than being guessed onto a pending publish.
+      if (_pendingLocationAcks.length == 1) {
+        final pending = _pendingLocationAcks.values.first;
+        if (!pending.isCompleted) {
+          pending.complete(LocationPublishAck.malformed);
+        }
+      }
+      print('⚠️ location-update-ack without clientPointId — treated as failed');
     });
 
     _socket!.on('latest-locations', (data) {

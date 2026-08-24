@@ -30,36 +30,31 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
     final colors = Theme.of(context).tulinkColors;
 
     return Scaffold(
-      backgroundColor: colors.carbonBlack,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('JOURNEY HISTORY'),
-        centerTitle: true,
-      ),
+      backgroundColor: colors.warmSand,
+      appBar: AppBar(title: const Text('Journey history')),
       body: Consumer<AnalyticsProvider>(
         builder: (context, analyticsProvider, child) {
-          if (analyticsProvider.isLoading && analyticsProvider.journeyHistory.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (analyticsProvider.isLoading &&
+              analyticsProvider.journeyHistory.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
           }
 
-          if (analyticsProvider.error != null && analyticsProvider.journeyHistory.isEmpty) {
+          if (analyticsProvider.error != null &&
+              analyticsProvider.journeyHistory.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     Icons.error_outline,
-                    color: colors.electricRed,
-                    size: 64,
+                    color: colors.sunsetOrange,
+                    size: 56,
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'Failed to load journey history',
                     style: TextStyle(
-                      color: colors.white,
+                      color: colors.ink,
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                     ),
@@ -67,18 +62,12 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
                   const SizedBox(height: 8),
                   Text(
                     analyticsProvider.error!,
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: colors.muted, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton(
                     onPressed: () => analyticsProvider.loadJourneyHistory(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colors.electricRed,
-                    ),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -91,16 +80,12 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.route_outlined,
-                    color: colors.silver,
-                    size: 64,
-                  ),
+                  Icon(Icons.route_outlined, color: colors.routeTeal, size: 56),
                   const SizedBox(height: 16),
                   Text(
                     'No journeys yet',
                     style: TextStyle(
-                      color: colors.white,
+                      color: colors.ink,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -108,10 +93,7 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Create your first journey to get started',
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: colors.muted, fontSize: 14),
                   ),
                 ],
               ),
@@ -120,8 +102,8 @@ class _JourneyHistoryScreenState extends State<JourneyHistoryScreen> {
 
           return RefreshIndicator(
             onRefresh: () => analyticsProvider.loadJourneyHistory(),
-            color: colors.electricRed,
-            backgroundColor: colors.cardDark,
+            color: colors.routeTeal,
+            backgroundColor: colors.surface,
             child: ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: analyticsProvider.journeyHistory.length,
@@ -149,130 +131,110 @@ class _JourneyHistoryItem extends StatelessWidget {
   final Journey journey;
   final VoidCallback onTap;
 
-  const _JourneyHistoryItem({
-    required this.journey,
-    required this.onTap,
-  });
+  const _JourneyHistoryItem({required this.journey, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
 
-    return JourneyInfoCard(
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Journey name and status
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      journey.name,
-                      style: TextStyle(
-                        color: colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+    return Semantics(
+      button: true,
+      label: '${journey.name}, ${journey.destinationLabel}',
+      child: JourneyInfoCard(
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Journey name and status
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        journey.name,
+                        style: TextStyle(
+                          color: colors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  StatusIndicator(status: journey.status),
-                ],
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // Destination
-              Row(
-                children: [
-                  Icon(
-                    Icons.location_on,
-                    color: colors.electricRed,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      journey.destinationAddress,
-                      style: TextStyle(
-                        color: colors.silver,
-                        fontSize: 14,
+                    StatusIndicator(status: journey.status),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Destination
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      color: colors.sunsetOrange,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        journey.destinationLabel,
+                        style: TextStyle(color: colors.muted, fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 8),
-              
-              // Info row
-              Row(
-                children: [
-                  // Lag threshold
-                  Icon(
-                    Icons.speed,
-                    color: colors.silver,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${journey.lagThresholdMeters}m',
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 12,
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Info row
+                Row(
+                  children: [
+                    // Lag threshold
+                    Icon(Icons.speed, color: colors.muted, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${journey.lagThresholdMeters}m',
+                      style: TextStyle(color: colors.muted, fontSize: 12),
                     ),
-                  ),
-                  
-                  const SizedBox(width: 16),
-                  
-                  // Participants count
-                  Icon(
-                    Icons.group,
-                    color: colors.silver,
-                    size: 14,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${journey.participants?.length ?? 0} participants',
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 12,
+
+                    const SizedBox(width: 16),
+
+                    // Participants count
+                    Icon(Icons.group, color: colors.muted, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${journey.participants?.length ?? 0} participants',
+                      style: TextStyle(color: colors.muted, fontSize: 12),
                     ),
-                  ),
-                  
-                  const Spacer(),
-                  
-                  // Created date
-                  Text(
-                    _formatDate(journey.createdAt),
-                    style: TextStyle(
-                      color: colors.silver,
-                      fontSize: 12,
+
+                    const Spacer(),
+
+                    // Created date
+                    Text(
+                      _formatDate(journey.createdAt),
+                      style: TextStyle(color: colors.muted, fontSize: 12),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-
   String _formatDate(DateTime? date) {
     if (date == null) return 'Unknown';
-    
+
     final now = DateTime.now();
     final difference = now.difference(date);
-    
+
     if (difference.inDays > 30) {
       return '${date.month}/${date.year}';
     } else if (difference.inDays > 0) {

@@ -143,11 +143,7 @@ class ServerFailure extends Failure {
 
 /// Failure related to cache/local storage operations
 class CacheFailure extends Failure {
-  const CacheFailure({
-    required super.message,
-    super.details,
-    super.timestamp,
-  });
+  const CacheFailure({required super.message, super.details, super.timestamp});
 
   static CacheFailure read = CacheFailure(
     message: 'Failed to read data from cache',
@@ -261,13 +257,15 @@ class ValidationFailure extends Failure {
 
   static ValidationFailure invalidPassword = ValidationFailure(
     message: 'Password must be at least 8 characters long',
-    details: 'Password should contain at least 8 characters with a mix of letters and numbers.',
+    details:
+        'Password should contain at least 8 characters with a mix of letters and numbers.',
     timestamp: DateTime.now(),
   );
 
   static ValidationFailure weakPassword = ValidationFailure(
     message: 'Password is too weak',
-    details: 'Please use a stronger password with uppercase, lowercase, numbers, and symbols.',
+    details:
+        'Please use a stronger password with uppercase, lowercase, numbers, and symbols.',
     timestamp: DateTime.now(),
   );
 
@@ -388,7 +386,8 @@ class AuthFailure extends Failure {
   static AuthFailure accountLocked = AuthFailure(
     message: 'Account temporarily locked. Try again later',
     statusCode: 423,
-    details: 'Your account has been temporarily locked due to multiple failed login attempts.',
+    details:
+        'Your account has been temporarily locked due to multiple failed login attempts.',
     timestamp: DateTime.now(),
     isRetryable: true,
   );
@@ -397,7 +396,8 @@ class AuthFailure extends Failure {
   static AuthFailure accountSuspended = AuthFailure(
     message: 'Account suspended. Contact support',
     statusCode: 403,
-    details: 'Your account has been suspended. Please contact support for assistance.',
+    details:
+        'Your account has been suspended. Please contact support for assistance.',
     timestamp: DateTime.now(),
   );
 
@@ -615,21 +615,36 @@ class ConvoyFailure extends Failure {
   /// Location permission denied
   static ConvoyFailure locationPermissionDenied = ConvoyFailure(
     message: 'Location permission denied',
-    details: 'Please enable location permissions to participate in convoy coordination.',
+    details:
+        'Please enable location permissions to participate in convoy coordination.',
     timestamp: DateTime.now(),
   );
 
   /// Location service disabled
   static ConvoyFailure locationServiceDisabled = ConvoyFailure(
     message: 'Location service disabled',
-    details: 'Please enable location services to share your position with the convoy.',
+    details:
+        'Please enable location services to share your position with the convoy.',
     timestamp: DateTime.now(),
+  );
+
+  /// Permission is granted and the service is on, but the device has not
+  /// produced a fix yet (cold GPS, indoors, simulator with no location set).
+  /// Retryable: a later fix resumes publishing without restarting the journey.
+  static ConvoyFailure locationUnavailable = ConvoyFailure(
+    message: 'Waiting for your location',
+    details:
+        'Your position has not been shared with the convoy yet. This usually '
+        'resolves once the device gets a GPS fix.',
+    timestamp: DateTime.now(),
+    isRetryable: true,
   );
 
   /// GPS accuracy too low
   static ConvoyFailure gpsAccuracyLow = ConvoyFailure(
     message: 'GPS signal too weak',
-    details: 'Cannot get accurate location. Please move to an area with better GPS signal.',
+    details:
+        'Cannot get accurate location. Please move to an area with better GPS signal.',
     timestamp: DateTime.now(),
     isRetryable: true,
   );
@@ -637,7 +652,8 @@ class ConvoyFailure extends Failure {
   /// Real-time database connection failed
   static ConvoyFailure rtdbConnectionFailed = ConvoyFailure(
     message: 'Failed to connect to convoy coordination',
-    details: 'Cannot connect to real-time database. Please check your internet connection.',
+    details:
+        'Cannot connect to real-time database. Please check your internet connection.',
     timestamp: DateTime.now(),
     isRetryable: true,
   );
@@ -645,7 +661,8 @@ class ConvoyFailure extends Failure {
   /// Publishing location update failed
   static ConvoyFailure publishLocationFailed = ConvoyFailure(
     message: 'Failed to update location',
-    details: 'Could not share your location with the convoy. Will retry automatically.',
+    details:
+        'Could not share your location with the convoy. Will retry automatically.',
     timestamp: DateTime.now(),
     isRetryable: true,
   );
@@ -653,7 +670,8 @@ class ConvoyFailure extends Failure {
   /// Rate limit exceeded
   static ConvoyFailure rateLimitExceeded = ConvoyFailure(
     message: 'Too many location updates',
-    details: 'Location updates are being sent too frequently. Please wait a moment.',
+    details:
+        'Location updates are being sent too frequently. Please wait a moment.',
     timestamp: DateTime.now(),
     isRetryable: true,
   );
