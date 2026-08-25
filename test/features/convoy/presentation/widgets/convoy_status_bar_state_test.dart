@@ -13,6 +13,7 @@ import 'package:tulink_flutter/features/convoy/presentation/widgets/convoy_statu
 void main() {
   Widget wrap({
     ConvoySnapshot? snapshot,
+    int? rosterMemberCount,
     ConvoyConnectionState connectionState = ConvoyConnectionState.connecting,
     Failure? locationFailure,
     VoidCallback? onRetryLocation,
@@ -26,6 +27,7 @@ void main() {
       home: Scaffold(
         body: ConvoyStatusBar(
           snapshot: snapshot,
+          rosterMemberCount: rosterMemberCount,
           connectionState: connectionState,
           locationFailure: locationFailure,
           onRetryLocation: onRetryLocation,
@@ -47,6 +49,23 @@ void main() {
   );
 
   group('connection status text', () {
+    testWidgets('uses the accepted roster before peers publish locations', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(
+          snapshot: buildSnapshot(),
+          rosterMemberCount: 2,
+          connectionState: ConvoyConnectionState.connected,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('SOLO JOURNEY'), findsNothing);
+      expect(find.text('WAITING'), findsOneWidget);
+      expect(find.text('2 MEMBERS • 0 ACTIVE'), findsOneWidget);
+    });
+
     testWidgets('shows CONNECTING during the grace period', (tester) async {
       await tester.pumpWidget(wrap());
       await tester.pump();

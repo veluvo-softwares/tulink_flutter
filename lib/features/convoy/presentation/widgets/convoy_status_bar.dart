@@ -13,6 +13,7 @@ class ConvoyStatusBar extends StatefulWidget {
     super.key,
     required this.snapshot,
     required this.connectionState,
+    this.rosterMemberCount,
     this.onTap,
     this.onBack,
     this.locationFailure,
@@ -29,6 +30,11 @@ class ConvoyStatusBar extends StatefulWidget {
   static const Duration connectingGracePeriod = Duration(seconds: 12);
 
   final ConvoySnapshot? snapshot;
+
+  /// Accepted journey participants, including the current user. Unlike a
+  /// location snapshot this remains authoritative before everyone has shared
+  /// their first position.
+  final int? rosterMemberCount;
   final ConvoyConnectionState connectionState;
   final VoidCallback? onTap;
   final VoidCallback? onBack;
@@ -268,9 +274,12 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
     // looked like when it last arrived — presenting it as live while the
     // connection is down showed users a confident "SOLO JOURNEY" over dead
     // data and hid the Reconnect action behind a `snapshot == null` guard.
-    if (_hasLiveSnapshot) {
-      statusText = _getStatusText(snapshot!);
-      memberText = _getMemberCountText(snapshot);
+    if (_hasLiveSnapshot && snapshot != null) {
+      statusText = _getStatusText(snapshot, _effectiveMemberCount(snapshot));
+      memberText = _getMemberCountText(
+        snapshot,
+        _effectiveMemberCount(snapshot),
+      );
     } else {
       switch (widget.connectionState) {
         case ConvoyConnectionState.error:
@@ -291,7 +300,8 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
       // Stale membership is still useful context, but only when marked as
       // such — never as evidence that the convoy is reachable.
       if (snapshot != null) {
-        memberText = 'Last known: ${_getMemberCountText(snapshot)}';
+        memberText =
+            'Last known: ${_getMemberCountText(snapshot, _effectiveMemberCount(snapshot))}';
       }
     }
 
@@ -441,13 +451,18 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
   }
 
   /// Get status text based on convoy state
-  String _getStatusText(ConvoySnapshot snapshot) {
+  int _effectiveMemberCount(ConvoySnapshot snapshot) {
+    final roster = widget.rosterMemberCount ?? 0;
+    return roster > snapshot.totalMembers ? roster : snapshot.totalMembers;
+  }
+
+  String _getStatusText(ConvoySnapshot snapshot, int totalMembers) {
     if (snapshot.allMembersArrived) return 'ALL ARRIVED';
     if (snapshot.laggingMembers.isNotEmpty) return 'MEMBERS LAGGING';
     if (snapshot.movingMemberCount > 0) return 'IN PROGRESS';
 
     // For solo journeys, show journey status instead of waiting
-    if (snapshot.totalMembers <= 1) return 'SOLO JOURNEY';
+    if (totalMembers <= 1) return 'SOLO JOURNEY';
 
     if (!snapshot.hasActiveMembers) return 'WAITING';
 
@@ -455,8 +470,7 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
   }
 
   /// Get member count text
-  String _getMemberCountText(ConvoySnapshot snapshot) {
-    final total = snapshot.totalMembers;
+  String _getMemberCountText(ConvoySnapshot snapshot, int total) {
     final active = snapshot.activeMemberCount;
     final moving = snapshot.movingMemberCount;
 

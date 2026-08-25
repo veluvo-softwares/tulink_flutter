@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -54,10 +55,14 @@ class JourneyStatusNotifier {
     required Map<String, ConvoyMemberPresentation> presentation,
     ConvoySnapshot? snapshot,
     RouteProgress? progress,
+    int rosterMemberCount = 0,
   }) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
 
-    final memberCount = snapshot?.members.length ?? 0;
+    final memberCount = math.max(
+      snapshot?.members.length ?? 0,
+      rosterMemberCount,
+    );
     final arrivedCount =
         snapshot?.members.values.where((m) => m.hasArrived).length ?? 0;
     final significantChange =
@@ -91,15 +96,16 @@ class JourneyStatusNotifier {
           );
 
     if (Platform.isAndroid) {
-      await _updateAndroid(title, entries);
+      await _updateAndroid(title, entries, memberCount);
     } else {
-      await _updateIos(title, entries, presentation, progress);
+      await _updateIos(title, entries, presentation, progress, memberCount);
     }
   }
 
   Future<void> _updateAndroid(
     String title,
     List<MemberStatusEntry> entries,
+    int memberCount,
   ) async {
     if (!_androidInitialized) {
       const settings = InitializationSettings(
@@ -111,7 +117,9 @@ class JourneyStatusNotifier {
 
     final lines = entries.map(memberLine).toList();
     final body = lines.isEmpty
-        ? 'Convoy running — you are the only member on the map'
+        ? memberCount > 1
+              ? '$memberCount people in convoy — waiting for shared locations'
+              : 'Convoy running — you are the only member on the map'
         : lines.join('\n');
 
     await _plugin.show(
@@ -122,17 +130,13 @@ class JourneyStatusNotifier {
         android: AndroidNotificationDetails(
           _channelId,
           'Journey status',
-          channelDescription:
-              'Live convoy progress while a journey is running',
+          channelDescription: 'Live convoy progress while a journey is running',
           importance: Importance.low,
           priority: Priority.low,
           ongoing: true,
           onlyAlertOnce: true,
           showWhen: false,
-          styleInformation: BigTextStyleInformation(
-            body,
-            contentTitle: title,
-          ),
+          styleInformation: BigTextStyleInformation(body, contentTitle: title),
         ),
       ),
     );
@@ -143,6 +147,7 @@ class JourneyStatusNotifier {
     List<MemberStatusEntry> entries,
     Map<String, ConvoyMemberPresentation> presentation,
     RouteProgress? progress,
+    int memberCount,
   ) async {
     if (!_iosInitialized) {
       await _liveActivities.init(appGroupId: _appGroupId);
@@ -155,6 +160,7 @@ class JourneyStatusNotifier {
       entries: entries,
       presentation: presentation,
       progress: progress,
+      totalMemberCount: memberCount,
     );
 
     final existing = _activityId;
@@ -183,15 +189,16 @@ class JourneyStatusNotifier {
     required List<MemberStatusEntry> entries,
     required Map<String, ConvoyMemberPresentation> presentation,
     RouteProgress? progress,
+    int? totalMemberCount,
   }) {
     final visible = entries.take(_maxLiveActivityMembers).toList();
     return <String, dynamic>{
       'title': title,
       'subtitle': progress != null
           ? formatEta(progress.durationRemainingSeconds)
-          : entries.isEmpty
+          : (totalMemberCount ?? entries.length + 1) <= 1
           ? 'Solo journey'
-          : '${entries.length + 1} in convoy',
+          : '${totalMemberCount ?? entries.length + 1} in convoy',
       'extraMembers': entries.length - visible.length,
       for (var i = 0; i < _maxLiveActivityMembers; i++)
         'member$i': i < visible.length

@@ -97,6 +97,17 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   bool _disposed = false;
   bool _isAppActive = true;
 
+  int _rosterMemberCount(Journey journey) => <String>{
+    journey.leaderId,
+    for (final participant in journey.participants ?? const <Participant>[])
+      if (!const {
+        'INVITED',
+        'LEFT',
+        'DECLINED',
+      }.contains(participant.status.toUpperCase()))
+        participant.userId,
+  }.length;
+
   /// The map surface is owned by the host shell, not by this layer.
   MapboxMap? get _mapboxMap => widget.controller.map;
 
@@ -1329,6 +1340,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           presentation: _memberPresentation,
           snapshot: convoySnapshot,
           progress: _navigationProvider?.currentProgress,
+          rosterMemberCount: _rosterMemberCount(journey),
         ),
       );
     }
@@ -2084,6 +2096,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
               onLongPress: _showConvoyManagementOptions,
               child: ConvoyStatusBar(
                 snapshot: convoySnapshot,
+                rosterMemberCount: _rosterMemberCount(currentJourney),
                 connectionState: convoyConnectionState,
                 onTap: _showConvoyBottomSheet,
                 // Back collapses chrome; it must never reach the exit path,
