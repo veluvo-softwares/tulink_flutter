@@ -298,6 +298,37 @@ void main() {
     });
   });
 
+  group('native directional location puck', () {
+    test('live journeys keep Mapbox course-bearing location enabled', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+
+      expect(
+        live.contains('puckBearing: PuckBearing.COURSE'),
+        isTrue,
+        reason:
+            'the journey puck must point in the direction of travel, rather '
+            'than using a non-directional custom circle',
+      );
+      expect(
+        live.contains('await _setBuiltInPuckEnabled(true);'),
+        isTrue,
+        reason: 'the native Mapbox location component must remain enabled',
+      );
+      expect(
+        live.contains('Future<void> _drawLegacySnappedPuck'),
+        isFalse,
+        reason: 'the retired circle puck must not become a second renderer',
+      );
+      expect(
+        live.contains('Future<void> _renderRawPuck'),
+        isFalse,
+        reason: 'raw GPS must use the same native puck as active navigation',
+      );
+    });
+  });
+
   group('join and observe are not gated on location', () {
     test('only leader activation retains a location precondition', () {
       // Phase 1's invariant: membership, journey events and reconnect must

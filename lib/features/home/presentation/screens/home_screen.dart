@@ -584,11 +584,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshData() async {
+    final journeys = context.read<JourneyProvider>();
     await Future.wait([
       context.read<AnalyticsProvider>().loadJourneyHistory(),
-      context.read<JourneyProvider>().fetchActiveJourneys(),
+      journeys.fetchActiveJourneys(),
       context.read<InviteProvider>().fetchInvitations(),
     ]);
+    if (!mounted) return;
+
+    // Active-journey list responses are intentionally compact and may omit
+    // participants. Hydrate the restored selection before its roster drives
+    // waiting/live labels; otherwise a two-person convoy becomes "0" (and
+    // later "Solo journey") after a cold start until another lifecycle event
+    // happens to refresh it.
+    final restored = journeys.currentJourney;
+    if (restored != null) {
+      await journeys.fetchJourneyById(restored.id);
+    }
   }
 
   void _onPushMessage(RemoteMessage message) {
@@ -1089,6 +1101,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _chooseCompanions() async {
+    if (_isStarting) return;
     final selected = await showModalBottomSheet<List<_SelectedCompanion>>(
       context: context,
       isScrollControlled: true,
@@ -1097,6 +1110,86 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (selected != null && mounted) {
       setState(() => _companions = selected);
+      if (selected.isNotEmpty) {
+        await _stageGroupJourney();
+      }
+    }
+  }
+
+  /// Persist a group journey and deliver its invitations before the leader
+  /// starts moving.
+  ///
+  /// A group selection used to remain a device-local draft until Start was
+  /// tapped. That made the companion UI look committed while no journey or
+  /// invitation existed for the other device. Persisting the PENDING journey
+  /// here lets invitees accept, join the listener-only room, and wait for the
+  /// leader before location publishing begins.
+  Future<void> _stageGroupJourney() async {
+    final destination = _destination;
+    final companions = List<_SelectedCompanion>.of(_companions);
+    if (destination == null || companions.isEmpty || _isStarting) return;
+
+    setState(() => _isStarting = true);
+    try {
+      final journeys = context.read<JourneyProvider>();
+      final created = await journeys.createJourney(
+        name: 'Trip to ${_destinationTitle(destination.displayName)}',
+        latitude: destination.lat,
+        longitude: destination.lng,
+        destinationName: destination.displayName,
+        destinationAddress: destination.address,
+        lagThresholdMeters: 500,
+      );
+      if (!mounted) return;
+      final pending = journeys.currentJourney;
+      if (!created || pending == null) {
+        context.showErrorToast(
+          journeys.error ?? 'Could not prepare this journey',
+        );
+        return;
+      }
+
+      final invites = context.read<InviteProvider>();
+      invites.resetInviteSession();
+      final failed = <String>[];
+      for (final person in companions) {
+        final sent = await invites.sendInvite(
+          journeyId: pending.id,
+          invitedUserId: person.id,
+        );
+        if (!sent) failed.add(person.name);
+      }
+      if (!mounted) return;
+
+      // Re-read the exact journey so the leader's waiting roster reflects the
+      // server-side INVITED participants, then join its listener-only room.
+      final refreshed = await journeys.fetchJourneyById(pending.id);
+      if (!mounted) return;
+      // The PENDING journey now owns the setup UI. Retire only the local draft
+      // state; its route and destination stay on the persistent map and are
+      // adopted by the pending journey below.
+      if (_destination == destination) {
+        setState(() {
+          _destination = null;
+          _companions = const [];
+        });
+      }
+      await _enterPendingJourney(
+        refreshed != null && refreshed.id == pending.id ? refreshed : pending,
+      );
+      if (!mounted) return;
+
+      final sentCount = companions.length - failed.length;
+      if (sentCount > 0) {
+        context.showSuccessToast(
+          '$sentCount invitation${sentCount == 1 ? '' : 's'} sent',
+        );
+      }
+      if (failed.isNotEmpty) {
+        context.showErrorToast('Could not invite ${failed.join(', ')}');
+      }
+    } finally {
+      if (mounted) setState(() => _isStarting = false);
     }
   }
 
@@ -1447,7 +1540,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
         return;
       }
-      final activeJourney = journeys.currentJourney;
+      // The start response is compact and can omit participants. Rehydrate the
+      // exact ACTIVE journey before handing it to the live layer, otherwise
+      // the leader alone forgets the accepted roster and renders a group as
+      // "Solo journey" until another event or relaunch repairs it.
+      final detailed = await journeys.fetchJourneyById(journey.id);
+      if (!mounted) return;
+      final activeJourney = detailed ?? journeys.currentJourney;
       await _adoptCurrentJourney(
         activeJourney != null && activeJourney.id == journey.id
             ? activeJourney

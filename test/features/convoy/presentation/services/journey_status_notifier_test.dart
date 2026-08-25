@@ -15,12 +15,15 @@ void main() {
 
   setUp(() => notifier = JourneyStatusNotifier());
 
-  Map<String, dynamic> build(List<MemberStatusEntry> entries) =>
-      notifier.buildLiveActivityData(
-        title: 'home card test',
-        entries: entries,
-        presentation: const {},
-      );
+  Map<String, dynamic> build(
+    List<MemberStatusEntry> entries, {
+    int? totalMemberCount,
+  }) => notifier.buildLiveActivityData(
+    title: 'home card test',
+    entries: entries,
+    presentation: const {},
+    totalMemberCount: totalMemberCount,
+  );
 
   group('member slots are always fully written', () {
     test('a solo journey blanks every slot', () {
@@ -81,6 +84,10 @@ void main() {
         build([_member('Ada', 1200), _member('Brian', 2400)])['subtitle'],
         '3 in convoy',
       );
+    });
+
+    test('an accepted roster is not labelled solo before GPS arrives', () {
+      expect(build(const [], totalMemberCount: 2)['subtitle'], '2 in convoy');
     });
   });
 

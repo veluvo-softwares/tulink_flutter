@@ -97,6 +97,17 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   bool _disposed = false;
   bool _isAppActive = true;
 
+  int _rosterMemberCount(Journey journey) => <String>{
+    journey.leaderId,
+    for (final participant in journey.participants ?? const <Participant>[])
+      if (!const {
+        'INVITED',
+        'LEFT',
+        'DECLINED',
+      }.contains(participant.status.toUpperCase()))
+        participant.userId,
+  }.length;
+
   /// The map surface is owned by the host shell, not by this layer.
   MapboxMap? get _mapboxMap => widget.controller.map;
 
@@ -175,12 +186,6 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// expensive enough that doing it every GPS tick causes visible jitter.
   DateTime? _lastTrimAt;
 
-  /// Last time we wrote to the snapped puck source. Higher update rate
-  /// than the polyline (200 ms) because puck responsiveness is more
-  /// perceptually important.
-  DateTime? _lastPuckUpdateAt;
-  Future<void>? _rawPuckRenderFuture;
-
   // Eases the local, route-snapped puck between GNSS fixes. The route leading
   // edge is rendered from the same coordinate so the line never detaches.
   Timer? _navigationFrameTicker;
@@ -197,13 +202,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   final JourneyStatusNotifier _statusNotifier = JourneyStatusNotifier();
 
   /// Tracks the built-in Mapbox location puck's enabled state.
-  /// `null` = unknown (nothing applied yet). The custom snapped puck owns the
-  /// screen during navigation, so we keep the built-in puck off while a
-  /// journey is active — otherwise both render and you see the red + blue
-  /// double-marker. See [_setBuiltInPuckEnabled].
+  /// `null` = unknown (nothing applied yet).
   bool? _puckEnabled;
-  geo.Position? _lastRawPuckPosition;
-  bool _rawPuckRemovedForNavigation = false;
+  bool _legacyCustomPucksCleared = false;
 
   @override
   void initState() {
@@ -249,7 +250,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _pointAnnotationManager = null;
     _lastUpdateHash = 0;
     _puckEnabled = null;
-    _rawPuckRemovedForNavigation = false;
+    _legacyCustomPucksCleared = false;
     _lastTrimAt = null;
     unawaited(
       _attachToMap(map).catchError((Object e) {
@@ -811,11 +812,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   Future<void> _updateCameraFollow(geo.Position position) async {
     if (_mapboxMap == null || !_cameraFollowEnabled) return;
 
-    // Prefer snapped position when navigation is active so the camera centre
-    // matches the custom puck. Falls back to raw GPS when navigation is
-    // inactive or no progress snapshot exists yet.
+    // Prefer snapped position when navigation is active. Falls back to raw
+    // GPS when navigation is inactive or no progress snapshot exists yet.
     final progress = _navigationProvider?.currentProgress;
-    _lastRawPuckPosition = position;
     if (progress == null) {
       unawaited(_drawRawPuck(position));
     }
@@ -1000,209 +999,43 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
   }
 
-  /// Draw a custom puck at the snapped (on-road) position from the
-  /// navigation provider. Replaces Mapbox's built-in puck during active
-  /// navigation so the visible position matches the planned route.
-  ///
-  /// When [progress] is null (navigation stopped) the puck layers are
-  /// removed. When the source already exists subsequent calls only update
-  /// the GeoJSON data — cheaper than re-adding layers on every tick.
-  Future<void> _drawSnappedPuck(RouteProgress? progress) async {
+  /// Keep the native directional location puck active during navigation.
+  Future<void> _drawSnappedPuck(RouteProgress? _) async {
     if (!_canUseMap) return;
-    const sourceId = 'snapped-puck-source';
-    const ringId = 'snapped-puck-ring';
-    const dotId = 'snapped-puck-dot';
-
-    if (progress == null) {
-      try {
-        await _mapboxMap!.style.removeStyleLayer(dotId);
-      } catch (_) {}
-      try {
-        await _mapboxMap!.style.removeStyleLayer(ringId);
-      } catch (_) {}
-      try {
-        await _mapboxMap!.style.removeStyleSource(sourceId);
-      } catch (_) {}
-      final rawPosition = _lastRawPuckPosition;
-      _rawPuckRemovedForNavigation = false;
-      if (rawPosition != null) await _drawRawPuck(rawPosition);
-      return;
-    }
-
-    if (!_rawPuckRemovedForNavigation) {
-      await _removeRawPuck();
-      _rawPuckRemovedForNavigation = true;
-    }
-
-    // Match the local animation ticker without flooding the platform channel.
-    final now = DateTime.now();
-    if (_lastPuckUpdateAt != null &&
-        now.difference(_lastPuckUpdateAt!).inMilliseconds < 80) {
-      return;
-    }
-    _lastPuckUpdateAt = now;
-
-    // Keep the built-in puck off for the entire life of the snapped puck.
-    // Re-asserted on every (throttled) tick — but cheap: _setBuiltInPuckEnabled
-    // short-circuits once the state is applied, so this is a no-op after the
-    // first disable. A single failed disable can no longer leave the blue puck
-    // stranded under the red one.
-    await _setBuiltInPuckEnabled(false);
-
-    final geoJson = jsonEncode({
-      'type': 'Feature',
-      'properties': <String, dynamic>{'color': _currentUserColorHex},
-      'geometry': {
-        'type': 'Point',
-        'coordinates': [progress.snappedLongitude, progress.snappedLatitude],
-      },
-    });
-
-    try {
-      final sourceExists = await _mapboxMap!.style.styleSourceExists(sourceId);
-      if (!sourceExists) {
-        // Built-in puck is already disabled above; just add the snapped puck.
-        await _mapboxMap!.style.addSource(
-          GeoJsonSource(id: sourceId, data: geoJson),
-        );
-
-        // Red halo indicates that the position is snapped to the road route.
-        await _mapboxMap!.style.addLayer(
-          CircleLayer(
-            id: ringId,
-            sourceId: sourceId,
-            circleRadius: 14.0,
-            circleColorExpression: ['get', 'color'],
-            circleOpacity: 0.45,
-            circleStrokeWidth: 0,
-          ),
-        );
-
-        // Inner solid dot — Electric Red, Tu-Link branded.
-        await _mapboxMap!.style.addLayer(
-          CircleLayer(
-            id: dotId,
-            sourceId: sourceId,
-            circleRadius: 7.0,
-            circleColorExpression: ['get', 'color'],
-            circleStrokeColor: 0xFFFFFFFF,
-            circleStrokeWidth: 2.5,
-            circleOpacity: 1.0,
-          ),
-        );
-      } else {
-        // Update geometry only — avoids recreating the layers on every tick.
-        await _mapboxMap!.style.setStyleSourceProperty(
-          sourceId,
-          'data',
-          geoJson,
-        );
-      }
-    } catch (e) {
-      print('⚠️ Failed to draw snapped puck: $e');
-    }
+    await _useDirectionalLocationPuck();
   }
 
-  /// Render TuLink's red self-marker at the raw GPS position while route
-  /// snapping is not ready. The white halo distinguishes acquisition/raw GPS
-  /// from the red-halo snapped navigation state without changing identity.
-  Future<void> _drawRawPuck(geo.Position position) async {
-    if (!_canUseMap || _navigationProvider?.currentProgress != null) return;
-    final inFlight = _rawPuckRenderFuture;
-    if (inFlight != null) return inFlight;
-
-    final render = _renderRawPuck(position);
-    _rawPuckRenderFuture = render;
-    try {
-      await render;
-    } finally {
-      if (identical(_rawPuckRenderFuture, render)) {
-        _rawPuckRenderFuture = null;
-      }
-    }
-  }
-
-  Future<void> _renderRawPuck(geo.Position position) async {
-    const sourceId = 'raw-puck-source';
-    const ringId = 'raw-puck-ring';
-    const dotId = 'raw-puck-dot';
-
-    await _setBuiltInPuckEnabled(false);
-    final geoJson = jsonEncode({
-      'type': 'Feature',
-      'properties': <String, dynamic>{'color': _currentUserColorHex},
-      'geometry': {
-        'type': 'Point',
-        'coordinates': [position.longitude, position.latitude],
-      },
-    });
-
-    try {
-      final exists = await _mapboxMap!.style.styleSourceExists(sourceId);
-      if (!exists) {
-        await _mapboxMap!.style.addSource(
-          GeoJsonSource(id: sourceId, data: geoJson),
-        );
-        await _mapboxMap!.style.addLayer(
-          CircleLayer(
-            id: ringId,
-            sourceId: sourceId,
-            circleRadius: 14,
-            circleColor: 0xFFFFFFFF,
-            circleOpacity: 0.65,
-            circleStrokeWidth: 0,
-          ),
-        );
-        await _mapboxMap!.style.addLayer(
-          CircleLayer(
-            id: dotId,
-            sourceId: sourceId,
-            circleRadius: 7,
-            circleColorExpression: ['get', 'color'],
-            circleStrokeColor: 0xFFFFFFFF,
-            circleStrokeWidth: 2.5,
-            circleOpacity: 1,
-          ),
-        );
-      } else {
-        await _mapboxMap!.style.setStyleSourceProperty(
-          sourceId,
-          'data',
-          geoJson,
-        );
-      }
-    } catch (e) {
-      print('⚠️ Failed to draw raw TuLink puck: $e');
-    }
-  }
-
-  Future<void> _removeRawPuck() async {
+  /// Use the same native puck while acquiring a route and while navigating.
+  Future<void> _drawRawPuck(geo.Position _) async {
     if (!_canUseMap) return;
-    // Navigation can become ready while the initial raw-puck source is still
-    // being created. Wait for that mutation before removing it so create and
-    // remove cannot cross and leave either a duplicate source or a stale puck.
-    final pendingRender = _rawPuckRenderFuture;
-    if (pendingRender != null) {
-      try {
-        await pendingRender;
-      } catch (_) {}
+    await _useDirectionalLocationPuck();
+  }
+
+  Future<void> _useDirectionalLocationPuck() async {
+    if (!_canUseMap) return;
+    if (!_legacyCustomPucksCleared) {
+      for (final layer in const [
+        'snapped-puck-dot',
+        'snapped-puck-ring',
+        'raw-puck-dot',
+        'raw-puck-ring',
+      ]) {
+        try {
+          await _mapboxMap!.style.removeStyleLayer(layer);
+        } catch (_) {}
+      }
+      for (final source in const ['snapped-puck-source', 'raw-puck-source']) {
+        try {
+          await _mapboxMap!.style.removeStyleSource(source);
+        } catch (_) {}
+      }
+      _legacyCustomPucksCleared = true;
     }
-    try {
-      await _mapboxMap!.style.removeStyleLayer('raw-puck-dot');
-    } catch (_) {}
-    try {
-      await _mapboxMap!.style.removeStyleLayer('raw-puck-ring');
-    } catch (_) {}
-    try {
-      await _mapboxMap!.style.removeStyleSource('raw-puck-source');
-    } catch (_) {}
+    await _setBuiltInPuckEnabled(true);
   }
 
   /// Set Mapbox's built-in location puck on/off, tracking the applied state so
-  /// we never spam the platform channel and so navigation can cheaply
-  /// re-assert "off" on every tick. Errors are logged, not swallowed — a
-  /// silent failure here is precisely what let the blue built-in puck leak
-  /// through alongside the red snapped puck (the double-marker bug).
+  /// we never spam the platform channel. Errors are logged, not swallowed.
   Future<void> _setBuiltInPuckEnabled(bool enabled) async {
     if (!_canUseMap) return;
     // Already in the desired state — skip the redundant channel hop.
@@ -1213,7 +1046,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           enabled: enabled,
           pulsingEnabled: enabled,
           puckBearingEnabled: enabled,
-          puckBearing: PuckBearing.HEADING,
+          // Course follows direction of travel and is more useful in a
+          // driving journey than the phone's physical compass orientation.
+          puckBearing: PuckBearing.COURSE,
         ),
       );
       _puckEnabled = enabled;
@@ -1234,14 +1069,13 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         return;
       }
 
-      await _setBuiltInPuckEnabled(false);
+      await _setBuiltInPuckEnabled(true);
       // Bounded: a device with no fix yields null instead of an unresolved
       // future. This used to be an unbounded getCurrentPosition() awaited by
       // _onMapCreated, which meant no fix == no destination pin, no route and
       // no camera fit, forever.
       final position = await _locationService.getCurrentPosition();
       if (!mounted || position == null) return;
-      _lastRawPuckPosition = position;
       await _drawRawPuck(position);
     } catch (e) {
       print('❌ Failed to enable user location: $e');
@@ -1329,6 +1163,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           presentation: _memberPresentation,
           snapshot: convoySnapshot,
           progress: _navigationProvider?.currentProgress,
+          rosterMemberCount: _rosterMemberCount(journey),
         ),
       );
     }
@@ -1393,13 +1228,6 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     } finally {
       _interpolationRenderInFlight = false;
     }
-  }
-
-  String get _currentUserColorHex {
-    final color =
-        _memberPresentation[_convoyUserId]?.color ??
-        ConvoyMemberPresentation.palette.first;
-    return '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
   }
 
   /// Generate a simple hash of the convoy snapshot for change detection
@@ -2084,6 +1912,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
               onLongPress: _showConvoyManagementOptions,
               child: ConvoyStatusBar(
                 snapshot: convoySnapshot,
+                rosterMemberCount: _rosterMemberCount(currentJourney),
                 connectionState: convoyConnectionState,
                 onTap: _showConvoyBottomSheet,
                 // Back collapses chrome; it must never reach the exit path,

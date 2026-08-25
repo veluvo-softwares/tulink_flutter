@@ -199,7 +199,7 @@ class PendingJourneyOverlay extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 isLeader
-                    ? 'Everyone is notified the moment you start.'
+                    ? 'Invited people can join now. Start when everyone is ready.'
                     : "You're in the convoy. This screen becomes live "
                           'navigation automatically.',
                 style: TextStyle(color: colors.silver, fontSize: 13),
