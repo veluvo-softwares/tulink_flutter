@@ -1,10 +1,8 @@
 # Google Play publishing.
 #
-# Firebase App Distribution (alpha-android.yml) is still the day-to-day alpha
-# lane and is unaffected by this workflow. Play publishing on a develop push is
-# OFF unless the PLAY_AUTO_PUBLISH_DEVELOP repo variable is set to "true",
-# because closed testing requires 12 testers opted in continuously for 14 days
-# and every push would otherwise churn releases at them.
+# Every push to develop publishes a new AAB to the Play closed-testing track so
+# enrolled testers receive updates through Google Play. Manual dispatch keeps
+# dry-run/upload controls, while v* tags promote an already-tested build.
 name: Android · Play Store
 
 on:
@@ -56,7 +54,6 @@ jobs:
     outputs:
       mode: ${{ steps.r.outputs.mode }}
       track: ${{ steps.r.outputs.track }}
-      should_run: ${{ steps.r.outputs.should_run }}
       environment: ${{ steps.r.outputs.environment }}
     steps:
       - name: Resolve
@@ -67,24 +64,20 @@ jobs:
           IN_MODE: ${{ inputs.mode }}
           IN_TRACK: ${{ inputs.track }}
           CLOSED_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
-          AUTO_DEVELOP: ${{ vars.PLAY_AUTO_PUBLISH_DEVELOP }}
         run: |
           set -euo pipefail
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             MODE="$IN_MODE"
             TRACK="${IN_TRACK:-$CLOSED_TRACK}"
-            RUN=true
           elif [ "$REF_TYPE" = "tag" ]; then
             # A v* tag promotes what closed testing already vetted; it never
             # builds a fresh artifact.
             MODE="promote"
             TRACK="production"
-            RUN=true
           else
             MODE="upload"
             TRACK="$CLOSED_TRACK"
-            if [ "${AUTO_DEVELOP:-false}" = "true" ]; then RUN=true; else RUN=false; fi
           fi
 
           if [ "$MODE" = "promote" ]; then TRACK="production"; fi
@@ -104,7 +97,6 @@ jobs:
           {
             echo "mode=$MODE"
             echo "track=$TRACK"
-            echo "should_run=$RUN"
             echo "environment=$ENVIRONMENT"
           } >> "$GITHUB_OUTPUT"
 
@@ -113,15 +105,12 @@ jobs:
             echo "- mode: \`$MODE\`"
             echo "- track: \`$TRACK\`"
             echo "- environment: \`$ENVIRONMENT\`"
-            if [ "$RUN" != "true" ]; then
-              echo "- **skipped**: set repo variable \`PLAY_AUTO_PUBLISH_DEVELOP=true\` to publish develop pushes to Play. Firebase App Distribution is unaffected."
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   upload:
-    name: Build & upload (${{ needs.resolve.outputs.mode }} → ${{ needs.resolve.outputs.track }})
+    name: Build & upload to Play
     needs: resolve
-    if: needs.resolve.outputs.should_run == 'true' && needs.resolve.outputs.mode != 'promote'
+    if: needs.resolve.outputs.mode != 'promote'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: ${{ needs.resolve.outputs.environment }}
@@ -212,9 +201,8 @@ jobs:
           echo "GOOGLE_PLAY_JSON_KEY_PATH=$HOME/play-sa.json" >> "$GITHUB_ENV"
 
       # github.run_number is per-workflow-FILE, so it restarts at 1 here and
-      # would collide with numbers alpha-android.yml has already consumed. Take
-      # a disjoint offset, then clamp above whatever Play already holds so the
-      # upload can never be rejected as a duplicate versionCode.
+      # uses a disjoint offset and then clamps above whatever Play already
+      # holds so the upload cannot be rejected as a duplicate versionCode.
       - name: Allocate version code
         env:
           PLAY_CLOSED_TESTING_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
@@ -282,7 +270,7 @@ jobs:
   promote:
     name: Promote closed testing → production
     needs: resolve
-    if: needs.resolve.outputs.should_run == 'true' && needs.resolve.outputs.mode == 'promote'
+    if: needs.resolve.outputs.mode == 'promote'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: ${{ needs.resolve.outputs.environment }}
