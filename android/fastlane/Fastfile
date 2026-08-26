@@ -99,39 +99,6 @@ def resolve_rollout(track)
 end
 
 platform :android do
-  # ---------------------------------------------------------------------------
-  # Firebase App Distribution — RETAINED.
-  #
-  # Play closed testing needs 12 testers opted in continuously for 14 days
-  # before production access is granted, so develop pushes keep shipping here
-  # while the Play lane is brought up. Do not remove until Play is the proven
-  # path for day-to-day alpha builds.
-  # ---------------------------------------------------------------------------
-  desc "Build a release APK and distribute to Firebase App Distribution"
-  lane :beta do
-    firebase_app_id = ENV["FIREBASE_ANDROID_APP_ID"] ||
-      UI.user_error!("FIREBASE_ANDROID_APP_ID not set")
-    service_account_path = ENV["FIREBASE_SERVICE_ACCOUNT_PATH"] ||
-      UI.user_error!("FIREBASE_SERVICE_ACCOUNT_PATH not set")
-    release_notes = ENV["RELEASE_NOTES"] || `git log -1 --pretty=%B`.strip
-    groups = ENV["FAD_GROUPS"] || "tulink-alpha-testers"
-
-    apk_path = ENV["APK_PATH"] || "../build/app/outputs/flutter-apk/app-release.apk"
-    UI.user_error!("APK not found at #{apk_path}") unless File.exist?(apk_path)
-
-    firebase_app_distribution(
-      app: firebase_app_id,
-      android_artifact_type: "APK",
-      android_artifact_path: apk_path,
-      service_credentials_file: service_account_path,
-      groups: groups,
-      release_notes: release_notes,
-    )
-  end
-
-  # ---------------------------------------------------------------------------
-  # Google Play
-  # ---------------------------------------------------------------------------
   desc "Write the highest versionCode currently on Play to $PLAY_VERSION_CODE_OUT"
   lane :max_version_code do
     tracks = PLAY_BUILTIN_TRACKS.dup

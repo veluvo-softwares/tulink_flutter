@@ -8,10 +8,10 @@ the encoding is implicit (matching the existing ci.yml convention).
 
 | Secret | Used by | Source |
 |---|---|---|
-| `MAPBOX_ACCESS_TOKEN` | ci, alpha-android, android-release, alpha-ios | Mapbox account |
-| `GOOGLE_SERVICES_JSON` | ci, alpha-android, android-release | Base64 of `android/app/google-services.json` |
+| `MAPBOX_ACCESS_TOKEN` | ci, android-release, alpha-ios | Mapbox account |
+| `GOOGLE_SERVICES_JSON` | ci, android-release | Base64 of `android/app/google-services.json` |
 | `GOOGLE_SERVICE_INFO_PLIST` | ci, alpha-ios | Base64 of `ios/Runner/GoogleService-Info.plist` |
-| `GOOGLE_SERVER_CLIENT_ID` | ci, alpha-android, android-release, alpha-ios | Firebase **Web** OAuth client id (Google sign-in `serverClientId`). Plain string — written into `.env` as `GOOGLE_SERVER_CLIENT_ID`. Found in `google-services.json` under the `oauth_client` entry with `"client_type": 3`. |
+| `GOOGLE_SERVER_CLIENT_ID` | ci, android-release, alpha-ios | Firebase **Web** OAuth client id (Google sign-in `serverClientId`). Plain string — written into `.env` as `GOOGLE_SERVER_CLIENT_ID`. Found in `google-services.json` under the `oauth_client` entry with `"client_type": 3`. |
 
 > **After enabling Google/Apple in Firebase**, refresh the two file secrets with the
 > newly downloaded configs (they now contain the OAuth clients):
@@ -20,27 +20,17 @@ the encoding is implicit (matching the existing ci.yml convention).
 > base64 -i android/app/google-services.json | pbcopy      # → GOOGLE_SERVICES_JSON
 > ```
 
-## Android distribution — two lanes
+## Android distribution — Google Play
 
-Android ships through **two** pipelines that coexist deliberately:
+Android tester releases now ship exclusively through Google Play:
 
 | Workflow | Trigger | Destination |
 |---|---|---|
-| `alpha-android.yml` | every push to `develop` | Firebase App Distribution (APK) |
-| `android-release.yml` | manual dispatch; `develop` push **only** if `PLAY_AUTO_PUBLISH_DEVELOP=true`; `v*` tag | Google Play (AAB) |
+| `android-release.yml` | every push to `develop`; manual dispatch; `v*` tag | Google Play (AAB) |
 
-Firebase remains the day-to-day alpha lane. Google Play closed testing requires
-12 testers opted in *continuously* for 14 days before production access is
-granted, so publishing every develop push to Play would churn releases at the
-very testers that clock depends on. Flip `PLAY_AUTO_PUBLISH_DEVELOP` to `true`
-once Play is the proven path.
-
-### Firebase App Distribution (retained)
-
-| Secret | Used by | How to produce |
-|---|---|---|
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | alpha-android | GCP Console → IAM & Admin → Service Accounts → `firebase-app-distribution-ci` → Keys → JSON, then `base64 -i firebase-sa.json \| pbcopy` |
-| `FIREBASE_ANDROID_APP_ID` | alpha-android | `1:547231952199:android:2dd41036abf563b1b9b062` |
+Every `develop` push builds a signed AAB and publishes it to the track named by
+`PLAY_CLOSED_TESTING_TRACK`. Enrolled testers receive updates through Google
+Play; Firebase App Distribution is no longer part of Android delivery.
 
 ### Google Play
 
@@ -67,14 +57,14 @@ production identities stay isolated.
 > ideally as a *separate* service account so a testing credential leak can
 > never publish to production.
 
-### Shared Android signing secrets
+### Android signing secrets
 
 | Secret | Used by | How to produce |
 |---|---|---|
-| `ANDROID_KEYSTORE` | alpha-android, android-release | See [Android keystore](#android-keystore) below |
-| `ANDROID_KEYSTORE_PASSWORD` | alpha-android, android-release | Password set during keytool generation |
-| `ANDROID_KEY_ALIAS` | alpha-android, android-release | `tulink-upload` |
-| `ANDROID_KEY_PASSWORD` | alpha-android, android-release | Key password set during keytool generation |
+| `ANDROID_KEYSTORE` | android-release | See [Android keystore](#android-keystore) below |
+| `ANDROID_KEYSTORE_PASSWORD` | android-release | Password set during keytool generation |
+| `ANDROID_KEY_ALIAS` | android-release | `tulink-upload` |
+| `ANDROID_KEY_PASSWORD` | android-release | Key password set during keytool generation |
 
 ### Repo variables
 
@@ -84,7 +74,6 @@ Secrets — none of these are sensitive):
 | Variable | Used by | Value |
 |---|---|---|
 | `PLAY_CLOSED_TESTING_TRACK` | android-release | The exact Play API track identifier. **For this app it is `Tu-link Closed Testing`.** |
-| `PLAY_AUTO_PUBLISH_DEVELOP` | android-release | `true` to publish every `develop` push to the closed track. Unset/`false` = Play uploads are manual only. |
 | `IOS_PRODUCTION_ENABLED` | production | `true` once the iOS App Store lane is implemented. Unset = the job never runs. |
 
 > ### ⚠️ The track identifier contains spaces
@@ -241,9 +230,6 @@ is done manually with the cert and profile above.
 - **Google Play service account** (`play-publisher-ci@tulink-app-1a942`): no
   fixed expiry. Rotate on suspected compromise or offboarding — create a new key
   in GCP first, update the secret, then delete the old key.
-- **Firebase service account** (`firebase-app-distribution-ci`): rotate yearly,
-  on offboarding, or after any suspected leak. Same order — new key, update
-  secret, then delete the old one.
 - **iOS cert:** expires yearly. Generate a new one, re-export `.p12`, update
   `IOS_CERT_P12`. Regenerate the App Store profile if the cert changes.
 - **iOS provisioning profile:** the App Store profile expires 2027-06-15.
