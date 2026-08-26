@@ -1,0 +1,343 @@
+# Google Play publishing.
+#
+# Firebase App Distribution (alpha-android.yml) is still the day-to-day alpha
+# lane and is unaffected by this workflow. Play publishing on a develop push is
+# OFF unless the PLAY_AUTO_PUBLISH_DEVELOP repo variable is set to "true",
+# because closed testing requires 12 testers opted in continuously for 14 days
+# and every push would otherwise churn releases at them.
+name: Android · Play Store
+
+on:
+  push:
+    branches: [develop]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (validate against Play, upload nothing) | upload (build + upload to a testing track) | promote (promote an existing closed-testing build to production)"
+        required: true
+        default: "dry-run"
+        type: choice
+        options: [dry-run, upload, promote]
+      track:
+        description: "Target track. Blank = the PLAY_CLOSED_TESTING_TRACK variable. Ignored by promote (always promotes to production)."
+        required: false
+        type: string
+      version_code:
+        description: "promote only: the versionCode to promote. Blank = the highest on the closed track."
+        required: false
+        type: string
+      rollout_percentage:
+        description: "promote only: staged rollout 1-100. Ignored when production has no previous release (Play forces 100%)."
+        required: false
+        default: "100"
+        type: string
+      release_notes:
+        description: "Release notes (overrides commit message). Truncated to 500 chars — Play's hard limit."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# A single global group, NOT keyed on ref. The Play Edits API serialises per
+# app: two concurrent runs (say a develop push and a v* tag) would collide on
+# the same edit. Never cancel in progress — a cancelled run can strand an open
+# edit.
+concurrency:
+  group: play-publish
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve mode & track
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.r.outputs.mode }}
+      track: ${{ steps.r.outputs.track }}
+      should_run: ${{ steps.r.outputs.should_run }}
+      environment: ${{ steps.r.outputs.environment }}
+    steps:
+      - name: Resolve
+        id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_TRACK: ${{ inputs.track }}
+          CLOSED_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
+          AUTO_DEVELOP: ${{ vars.PLAY_AUTO_PUBLISH_DEVELOP }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            MODE="$IN_MODE"
+            TRACK="${IN_TRACK:-$CLOSED_TRACK}"
+            RUN=true
+          elif [ "$REF_TYPE" = "tag" ]; then
+            # A v* tag promotes what closed testing already vetted; it never
+            # builds a fresh artifact.
+            MODE="promote"
+            TRACK="production"
+            RUN=true
+          else
+            MODE="upload"
+            TRACK="$CLOSED_TRACK"
+            if [ "${AUTO_DEVELOP:-false}" = "true" ]; then RUN=true; else RUN=false; fi
+          fi
+
+          if [ "$MODE" = "promote" ]; then TRACK="production"; fi
+
+          # production is reachable only via promote; nothing else may target it.
+          if [ "$TRACK" = "production" ] && [ "$MODE" != "promote" ]; then
+            echo "::error::Refusing to $MODE directly to production. Use mode=promote so the exact build closed testers vetted is what ships."
+            exit 1
+          fi
+
+          if [ "$TRACK" = "production" ] || [ "$MODE" = "promote" ]; then
+            ENVIRONMENT=production
+          else
+            ENVIRONMENT=play-testing
+          fi
+
+          {
+            echo "mode=$MODE"
+            echo "track=$TRACK"
+            echo "should_run=$RUN"
+            echo "environment=$ENVIRONMENT"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Play release plan"
+            echo "- mode: \`$MODE\`"
+            echo "- track: \`$TRACK\`"
+            echo "- environment: \`$ENVIRONMENT\`"
+            if [ "$RUN" != "true" ]; then
+              echo "- **skipped**: set repo variable \`PLAY_AUTO_PUBLISH_DEVELOP=true\` to publish develop pushes to Play. Firebase App Distribution is unaffected."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  upload:
+    name: Build & upload (${{ needs.resolve.outputs.mode }} → ${{ needs.resolve.outputs.track }})
+    needs: resolve
+    if: needs.resolve.outputs.should_run == 'true' && needs.resolve.outputs.mode != 'promote'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ needs.resolve.outputs.environment }}
+    steps:
+      # Preflight runs before any setup so a missing credential fails in
+      # seconds rather than 20+ minutes into a Flutter build.
+      - name: Preflight — credentials & configuration
+        env:
+          PLAY_SA: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          TRACK: ${{ needs.resolve.outputs.track }}
+        run: |
+          fail=0
+          if [ -z "${PLAY_SA:-}" ]; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not set on the '${{ needs.resolve.outputs.environment }}' environment."
+            fail=1
+          elif ! printf '%s' "$PLAY_SA" | base64 --decode 2>/dev/null | grep -q '"client_email"'; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not valid base64-encoded service account JSON."
+            fail=1
+          fi
+          if [ -z "${KEYSTORE:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE is not set — the AAB could not be signed."
+            fail=1
+          fi
+          if [ -z "${TRACK:-}" ]; then
+            echo "::error::Track is empty. Set the PLAY_CLOSED_TESTING_TRACK repo variable to the exact Play Console track identifier (it may contain spaces, e.g. 'Tu-link Closed Testing')."
+            fail=1
+          fi
+          exit $fail
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          # No dependency caching anywhere in this job: it signs an AAB that
+          # ships to users, and caches can be populated from other refs, which
+          # would make cache contents an input to a released artifact.
+          cache: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: bundle install
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Inject Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" | tr -d '[:space:]' | base64 --decode > android/app/google-services.json
+
+      - name: Write .env
+        env:
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+          GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID }}
+        run: |
+          echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN" > .env
+          echo "GOOGLE_SERVER_CLIENT_ID=$GOOGLE_SERVER_CLIENT_ID" >> .env
+
+      - name: Decode Android keystore
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          mkdir -p "$HOME/keys"
+          echo "$ANDROID_KEYSTORE" | base64 --decode > "$HOME/keys/tulink-upload.jks"
+          echo "ANDROID_KEYSTORE_PATH=$HOME/keys/tulink-upload.jks" >> "$GITHUB_ENV"
+
+      - name: Decode Play service account
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          echo "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | base64 --decode > "$HOME/play-sa.json"
+          echo "GOOGLE_PLAY_JSON_KEY_PATH=$HOME/play-sa.json" >> "$GITHUB_ENV"
+
+      # github.run_number is per-workflow-FILE, so it restarts at 1 here and
+      # would collide with numbers alpha-android.yml has already consumed. Take
+      # a disjoint offset, then clamp above whatever Play already holds so the
+      # upload can never be rejected as a duplicate versionCode.
+      - name: Allocate version code
+        env:
+          PLAY_CLOSED_TESTING_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
+          PLAY_VERSION_CODE_OUT: ${{ github.workspace }}/.play-max-version-code
+          RUN_NUMBER: ${{ github.run_number }}
+        working-directory: android
+        run: |
+          set -euo pipefail
+          BASE=$(( RUN_NUMBER + 10000 ))
+
+          # No `|| true`: if Play cannot be read, the no-collision guarantee
+          # below does not hold, and failing here is far cheaper than failing
+          # at the upload step after a full Flutter build.
+          bundle exec fastlane android max_version_code
+
+          if [ ! -s "$PLAY_VERSION_CODE_OUT" ]; then
+            echo "::error::max_version_code produced no output. Cannot guarantee a non-colliding versionCode."
+            exit 1
+          fi
+          PLAY_MAX=$(tr -dc '0-9' < "$PLAY_VERSION_CODE_OUT")
+          if [ -z "$PLAY_MAX" ]; then
+            echo "::error::max_version_code output was not numeric: $(cat "$PLAY_VERSION_CODE_OUT")"
+            exit 1
+          fi
+
+          NEXT=$(( PLAY_MAX + 1 ))
+          if [ "$BASE" -gt "$NEXT" ]; then BUILD_NUMBER=$BASE; else BUILD_NUMBER=$NEXT; fi
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Play max=$PLAY_MAX, offset base=$BASE, allocated=$BUILD_NUMBER"
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter build appbundle (release, signed)
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build appbundle --release --build-number="$BUILD_NUMBER"
+
+      # TRACK is quoted at every use: the real closed-track identifier is
+      # "Tu-link Closed Testing", and unquoted it word-splits into three
+      # arguments so fastlane would receive track:Tu-link.
+      - name: Upload to Play
+        env:
+          TRACK: ${{ needs.resolve.outputs.track }}
+          PLAY_CLOSED_TESTING_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
+          PLAY_DRY_RUN: ${{ needs.resolve.outputs.mode == 'dry-run' }}
+          RELEASE_NOTES: ${{ inputs.release_notes || github.event.head_commit.message }}
+          AAB_PATH: ${{ github.workspace }}/build/app/outputs/bundle/release/app-release.aab
+        working-directory: android
+        run: bundle exec fastlane android play track:"$TRACK"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "- uploaded versionCode: \`$BUILD_NUMBER\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup secrets
+        if: always()
+        run: |
+          rm -f "$HOME/keys/tulink-upload.jks"
+          rm -f "$HOME/play-sa.json"
+
+  promote:
+    name: Promote closed testing → production
+    needs: resolve
+    if: needs.resolve.outputs.should_run == 'true' && needs.resolve.outputs.mode == 'promote'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ needs.resolve.outputs.environment }}
+    steps:
+      - name: Preflight — credentials & configuration
+        env:
+          PLAY_SA: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          CLOSED_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
+        run: |
+          fail=0
+          if [ -z "${PLAY_SA:-}" ]; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not set on the 'production' environment. Production publishing uses its own credential, separate from play-testing."
+            fail=1
+          elif ! printf '%s' "$PLAY_SA" | base64 --decode 2>/dev/null | grep -q '"client_email"'; then
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not valid base64-encoded service account JSON."
+            fail=1
+          fi
+          if [ -z "${CLOSED_TRACK:-}" ]; then
+            echo "::error::PLAY_CLOSED_TESTING_TRACK is not set — there is no source track to promote from."
+            fail=1
+          fi
+          exit $fail
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: bundle install
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Decode Play service account
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          echo "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | base64 --decode > "$HOME/play-sa.json"
+          echo "GOOGLE_PLAY_JSON_KEY_PATH=$HOME/play-sa.json" >> "$GITHUB_ENV"
+
+      - name: Promote to production
+        env:
+          PLAY_CLOSED_TESTING_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
+          PLAY_VERSION_CODE: ${{ inputs.version_code }}
+          ROLLOUT_PERCENTAGE: ${{ inputs.rollout_percentage || '100' }}
+          PLAY_DRY_RUN: "false"
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        working-directory: android
+        run: bundle exec fastlane android promote
+
+      - name: Cleanup secrets
+        if: always()
+        run: rm -f "$HOME/play-sa.json"

@@ -8,10 +8,10 @@ the encoding is implicit (matching the existing ci.yml convention).
 
 | Secret | Used by | Source |
 |---|---|---|
-| `MAPBOX_ACCESS_TOKEN` | ci, alpha-android, alpha-ios | Mapbox account |
-| `GOOGLE_SERVICES_JSON` | ci, alpha-android | Base64 of `android/app/google-services.json` |
+| `MAPBOX_ACCESS_TOKEN` | ci, alpha-android, android-release, alpha-ios | Mapbox account |
+| `GOOGLE_SERVICES_JSON` | ci, alpha-android, android-release | Base64 of `android/app/google-services.json` |
 | `GOOGLE_SERVICE_INFO_PLIST` | ci, alpha-ios | Base64 of `ios/Runner/GoogleService-Info.plist` |
-| `GOOGLE_SERVER_CLIENT_ID` | ci, alpha-android, alpha-ios | Firebase **Web** OAuth client id (Google sign-in `serverClientId`). Plain string — written into `.env` as `GOOGLE_SERVER_CLIENT_ID`. Found in `google-services.json` under the `oauth_client` entry with `"client_type": 3`. |
+| `GOOGLE_SERVER_CLIENT_ID` | ci, alpha-android, android-release, alpha-ios | Firebase **Web** OAuth client id (Google sign-in `serverClientId`). Plain string — written into `.env` as `GOOGLE_SERVER_CLIENT_ID`. Found in `google-services.json` under the `oauth_client` entry with `"client_type": 3`. |
 
 > **After enabling Google/Apple in Firebase**, refresh the two file secrets with the
 > newly downloaded configs (they now contain the OAuth clients):
@@ -20,16 +20,104 @@ the encoding is implicit (matching the existing ci.yml convention).
 > base64 -i android/app/google-services.json | pbcopy      # → GOOGLE_SERVICES_JSON
 > ```
 
-## New for alpha distribution (Android)
+## Android distribution — two lanes
+
+Android ships through **two** pipelines that coexist deliberately:
+
+| Workflow | Trigger | Destination |
+|---|---|---|
+| `alpha-android.yml` | every push to `develop` | Firebase App Distribution (APK) |
+| `android-release.yml` | manual dispatch; `develop` push **only** if `PLAY_AUTO_PUBLISH_DEVELOP=true`; `v*` tag | Google Play (AAB) |
+
+Firebase remains the day-to-day alpha lane. Google Play closed testing requires
+12 testers opted in *continuously* for 14 days before production access is
+granted, so publishing every develop push to Play would churn releases at the
+very testers that clock depends on. Flip `PLAY_AUTO_PUBLISH_DEVELOP` to `true`
+once Play is the proven path.
+
+### Firebase App Distribution (retained)
 
 | Secret | Used by | How to produce |
 |---|---|---|
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | alpha-android | See [Firebase service account](#firebase-service-account) below |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | alpha-android | GCP Console → IAM & Admin → Service Accounts → `firebase-app-distribution-ci` → Keys → JSON, then `base64 -i firebase-sa.json \| pbcopy` |
 | `FIREBASE_ANDROID_APP_ID` | alpha-android | `1:547231952199:android:2dd41036abf563b1b9b062` |
-| `ANDROID_KEYSTORE` | alpha-android | See [Android keystore](#android-keystore) below |
-| `ANDROID_KEYSTORE_PASSWORD` | alpha-android | Password set during keytool generation |
-| `ANDROID_KEY_ALIAS` | alpha-android | `tulink-upload` |
-| `ANDROID_KEY_PASSWORD` | alpha-android | Key password set during keytool generation |
+
+### Google Play
+
+| Secret | Used by | How to produce |
+|---|---|---|
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | android-release | See [Google Play service account](#google-play-service-account) below |
+
+This is an **environment** secret, not a repo-wide one, so the testing and
+production identities stay isolated.
+
+> **Environment secrets are not shared between environments.** The workflow's
+> two jobs run under different environments, so the secret must be stored
+> **twice**, under the same name:
+>
+> | Environment | Used by | Status |
+> |---|---|---|
+> | `play-testing` | the `upload` job (`dry-run`, `upload`) | set |
+> | `production` | the `promote` job (`v*` tags, `mode: promote`) | **not yet set** |
+>
+> Until a credential exists on the `production` environment, every `promote`
+> run — including any `v*` tag push — fails at preflight with a clear message.
+> That is intentional while production access is pending: nothing can reach the
+> production track by accident. Add it as part of enabling production releases,
+> ideally as a *separate* service account so a testing credential leak can
+> never publish to production.
+
+### Shared Android signing secrets
+
+| Secret | Used by | How to produce |
+|---|---|---|
+| `ANDROID_KEYSTORE` | alpha-android, android-release | See [Android keystore](#android-keystore) below |
+| `ANDROID_KEYSTORE_PASSWORD` | alpha-android, android-release | Password set during keytool generation |
+| `ANDROID_KEY_ALIAS` | alpha-android, android-release | `tulink-upload` |
+| `ANDROID_KEY_PASSWORD` | alpha-android, android-release | Key password set during keytool generation |
+
+### Repo variables
+
+Set under Settings → Secrets and variables → Actions → **Variables** tab (not
+Secrets — none of these are sensitive):
+
+| Variable | Used by | Value |
+|---|---|---|
+| `PLAY_CLOSED_TESTING_TRACK` | android-release | The exact Play API track identifier. **For this app it is `Tu-link Closed Testing`.** |
+| `PLAY_AUTO_PUBLISH_DEVELOP` | android-release | `true` to publish every `develop` push to the closed track. Unset/`false` = Play uploads are manual only. |
+| `IOS_PRODUCTION_ENABLED` | production | `true` once the iOS App Store lane is implemented. Unset = the job never runs. |
+
+> ### ⚠️ The track identifier contains spaces
+>
+> Play's API track id for a custom closed track is its Play Console **display
+> name**, verbatim — here `Tu-link Closed Testing`, capitals and spaces
+> included. It is *not* a slug, and it is not `alpha`.
+>
+> Every shell use must be quoted (`track:"$TRACK"`). Unquoted, bash splits it
+> into three arguments and fastlane silently receives `track:Tu-link`, which
+> fails as an unknown track only after the build has finished.
+>
+> To re-derive the identifier, call `edits.tracks.list` on the Play Developer
+> API with the service account — the Console UI does not display it.
+
+### Release modes
+
+`android-release.yml` takes a `mode` input on manual dispatch:
+
+| Mode | What it does |
+|---|---|
+| `dry-run` (default) | Builds and validates against Play via `validate_only` — uploads nothing. Safe to run any time. |
+| `upload` | Builds a signed AAB and uploads it to the closed testing track. |
+| `promote` | Promotes an **existing** closed-testing versionCode to production. Never rebuilds, so the exact bytes testers vetted are what ship. Also what a `v*` tag triggers. |
+
+Production is reachable *only* through `promote`; the workflow refuses any other
+mode targeting it. The first production release is forced to 100% / `completed`,
+because Play rejects a staged rollout when production has no previous release.
+
+Note that the service account is intentionally granted only "View app
+information" and "Release apps to testing tracks" in Play Console — **not**
+production release permission. Until that is granted, a `promote` run will fail
+at the API, by design.
 
 ## New for TestFlight distribution (iOS)
 
@@ -50,15 +138,34 @@ the encoding is implicit (matching the existing ci.yml convention).
 
 ## How to produce each secret value
 
-### Firebase service account
+### Google Play service account
 
-1. GCP Console → IAM & Admin → Service Accounts → select `firebase-app-distribution-ci`
-2. Keys tab → Add key → JSON → download the file
-3. Base64-encode and copy to clipboard:
+Before this works, the app must already have **one manual release uploaded**
+through the Play Console UI — the Play Developer API refuses uploads for an
+app that has never had a manual release, even to closed testing.
+
+1. Play Console → Setup → API access → link (or create) a Google Cloud
+   project, then create a new service account from that page (or in GCP
+   Console → IAM & Admin → Service Accounts).
+2. In Play Console → **Users and permissions** → Invite user, paste the
+   service account's email and grant it app access to `xyz.tulink.app` with
+   exactly these two permissions:
+   - **View app information (read only)**
+   - **Release apps to testing tracks**
+
+   Deliberately do **not** grant *Release to production, exclude devices and
+   use Play app signing* yet. Withholding it means no workflow, tag, or
+   misconfiguration can publish to production — CI simply cannot. Add it (or
+   better, grant it to a separate production-only service account) at the point
+   you are ready to ship production, which is also when you populate the
+   `production` environment secret above.
+3. In GCP Console, open the service account → Keys tab → Add key → JSON →
+   download the file.
+4. Base64-encode and copy to clipboard:
    ```bash
-   base64 -i firebase-sa.json | pbcopy
+   base64 -i play-sa.json | pbcopy
    ```
-4. Paste as the `FIREBASE_SERVICE_ACCOUNT_JSON` secret value.
+5. Paste as the `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret value.
 
 ### Android keystore
 
@@ -131,9 +238,12 @@ is done manually with the cert and profile above.
 
 ## Rotation
 
-- **Firebase service account:** rotate yearly, on offboarding, or after any
-  suspected leak. Create a new key in GCP first, update the secret, then delete
-  the old key.
+- **Google Play service account** (`play-publisher-ci@tulink-app-1a942`): no
+  fixed expiry. Rotate on suspected compromise or offboarding — create a new key
+  in GCP first, update the secret, then delete the old key.
+- **Firebase service account** (`firebase-app-distribution-ci`): rotate yearly,
+  on offboarding, or after any suspected leak. Same order — new key, update
+  secret, then delete the old one.
 - **iOS cert:** expires yearly. Generate a new one, re-export `.p12`, update
   `IOS_CERT_P12`. Regenerate the App Store profile if the cert changes.
 - **iOS provisioning profile:** the App Store profile expires 2027-06-15.
