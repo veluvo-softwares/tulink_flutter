@@ -169,22 +169,19 @@ jobs:
         with:
           flutter-version: "3.41.9"
           channel: stable
-          cache: true
+          # No dependency caching anywhere in this job: it signs an AAB that
+          # ships to users, and caches can be populated from other refs, which
+          # would make cache contents an input to a released artifact.
+          cache: false
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
         with:
           ruby-version: "3.3"
-          bundler-cache: true
+          bundler-cache: false
 
-      - name: Cache Gradle
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
+      - name: bundle install
+        run: bundle install --jobs 4 --retry 3
 
       - name: Inject Firebase config
         env:
@@ -222,16 +219,27 @@ jobs:
         env:
           PLAY_CLOSED_TESTING_TRACK: ${{ vars.PLAY_CLOSED_TESTING_TRACK }}
           PLAY_VERSION_CODE_OUT: ${{ github.workspace }}/.play-max-version-code
+          RUN_NUMBER: ${{ github.run_number }}
         working-directory: android
         run: |
           set -euo pipefail
-          BASE=$(( ${{ github.run_number }} + 10000 ))
-          bundle exec fastlane android max_version_code || true
-          PLAY_MAX=0
-          if [ -f "$PLAY_VERSION_CODE_OUT" ]; then
-            PLAY_MAX=$(cat "$PLAY_VERSION_CODE_OUT" | tr -dc '0-9')
-            PLAY_MAX=${PLAY_MAX:-0}
+          BASE=$(( RUN_NUMBER + 10000 ))
+
+          # No `|| true`: if Play cannot be read, the no-collision guarantee
+          # below does not hold, and failing here is far cheaper than failing
+          # at the upload step after a full Flutter build.
+          bundle exec fastlane android max_version_code
+
+          if [ ! -s "$PLAY_VERSION_CODE_OUT" ]; then
+            echo "::error::max_version_code produced no output. Cannot guarantee a non-colliding versionCode."
+            exit 1
           fi
+          PLAY_MAX=$(tr -dc '0-9' < "$PLAY_VERSION_CODE_OUT")
+          if [ -z "$PLAY_MAX" ]; then
+            echo "::error::max_version_code output was not numeric: $(cat "$PLAY_VERSION_CODE_OUT")"
+            exit 1
+          fi
+
           NEXT=$(( PLAY_MAX + 1 ))
           if [ "$BASE" -gt "$NEXT" ]; then BUILD_NUMBER=$BASE; else BUILD_NUMBER=$NEXT; fi
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
@@ -308,7 +316,10 @@ jobs:
         uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
         with:
           ruby-version: "3.3"
-          bundler-cache: true
+          bundler-cache: false
+
+      - name: bundle install
+        run: bundle install --jobs 4 --retry 3
 
       - name: Decode Play service account
         env:

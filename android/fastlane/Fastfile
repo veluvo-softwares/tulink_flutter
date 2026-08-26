@@ -41,11 +41,19 @@ def validate_play_track!(track)
   )
 end
 
+# A failed read and an empty track must never look alike. Returning [] on error
+# would let resolve_rollout read "no previous production release" off a network
+# blip and force a 100% completed rollout, and would let the version-code clamp
+# silently degrade. Any read failure is fatal; [] means the track really is empty.
 def play_version_codes(track)
   google_play_track_version_codes(track: track, json_key: play_json_key_path)
 rescue StandardError => e
-  UI.important("Could not read version codes for track #{track.inspect}: #{e.message}")
-  []
+  UI.user_error!(
+    "Failed to read version codes for track #{track.inspect}: #{e.message}. " \
+    "Refusing to continue — a failed Play read cannot be distinguished from " \
+    "an empty track, and guessing wrong risks publishing a full-rollout " \
+    "production release.",
+  )
 end
 
 def play_changelog_text
@@ -73,6 +81,8 @@ end
 def resolve_rollout(track)
   return [nil, "completed"] unless track == "production"
 
+  # play_version_codes raises on a read failure, so an empty list here is a
+  # genuine "production has never shipped", not a swallowed error.
   if play_version_codes("production").empty?
     UI.important(
       "No existing production release — Play rejects a staged rollout for a " \

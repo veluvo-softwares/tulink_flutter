@@ -48,10 +48,24 @@ once Play is the proven path.
 |---|---|---|
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | android-release | See [Google Play service account](#google-play-service-account) below |
 
-Stored as an **environment** secret on the `play-testing` environment, not a
-repo-wide secret, so that a future production-only credential can be scoped to
-the `production` environment without either lane being able to reach the other's
-key.
+This is an **environment** secret, not a repo-wide one, so the testing and
+production identities stay isolated.
+
+> **Environment secrets are not shared between environments.** The workflow's
+> two jobs run under different environments, so the secret must be stored
+> **twice**, under the same name:
+>
+> | Environment | Used by | Status |
+> |---|---|---|
+> | `play-testing` | the `upload` job (`dry-run`, `upload`) | set |
+> | `production` | the `promote` job (`v*` tags, `mode: promote`) | **not yet set** |
+>
+> Until a credential exists on the `production` environment, every `promote`
+> run — including any `v*` tag push — fails at preflight with a clear message.
+> That is intentional while production access is pending: nothing can reach the
+> production track by accident. Add it as part of enabling production releases,
+> ideally as a *separate* service account so a testing credential leak can
+> never publish to production.
 
 ### Shared Android signing secrets
 
@@ -133,9 +147,18 @@ app that has never had a manual release, even to closed testing.
 1. Play Console → Setup → API access → link (or create) a Google Cloud
    project, then create a new service account from that page (or in GCP
    Console → IAM & Admin → Service Accounts).
-2. Back in Play Console API access, grant the service account **App
-   permissions** for this app — at minimum the ability to manage production,
-   closed, and open testing releases.
+2. In Play Console → **Users and permissions** → Invite user, paste the
+   service account's email and grant it app access to `xyz.tulink.app` with
+   exactly these two permissions:
+   - **View app information (read only)**
+   - **Release apps to testing tracks**
+
+   Deliberately do **not** grant *Release to production, exclude devices and
+   use Play app signing* yet. Withholding it means no workflow, tag, or
+   misconfiguration can publish to production — CI simply cannot. Add it (or
+   better, grant it to a separate production-only service account) at the point
+   you are ready to ship production, which is also when you populate the
+   `production` environment secret above.
 3. In GCP Console, open the service account → Keys tab → Add key → JSON →
    download the file.
 4. Base64-encode and copy to clipboard:

@@ -2,8 +2,13 @@
 #
 # Android production is NOT here: it lives in android-release.yml, which
 # promotes an existing closed-testing build to the production track. This file
-# is kept only so the iOS App Store lane has somewhere to land when it is
-# built. Every job below is gated off, so this workflow is inert.
+# is kept only so the iOS App Store lane has somewhere to land when it is built.
+#
+# Manual dispatch runs the `guard` job, which only prints an explanation and
+# exits 0. The `ios-production` job below is gated behind the
+# IOS_PRODUCTION_ENABLED repo variable and never runs while it is unset, so
+# nothing here can publish. Set that variable only AFTER replacing the
+# placeholder step with a real production lane.
 name: Production · App Store (iOS)
 
 on:
@@ -32,9 +37,11 @@ jobs:
           echo "Android production is handled by android-release.yml"
           echo "(mode: promote — promotes a closed-testing build to production)."
           echo ""
-          echo "To implement iOS production: remove the 'if: false' gate below,"
-          echo "add a production lane to ios/fastlane/Fastfile using deliver,"
-          echo "and reuse the signing setup from alpha-ios.yml."
+          echo "To implement iOS production:"
+          echo "  1. Add a production lane to ios/fastlane/Fastfile using deliver,"
+          echo "     reusing the signing setup from alpha-ios.yml."
+          echo "  2. Replace the placeholder step in the ios-production job."
+          echo "  3. Only then set the IOS_PRODUCTION_ENABLED repo variable to 'true'."
           exit 0
 
   ios-production:
