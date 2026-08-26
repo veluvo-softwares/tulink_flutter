@@ -27,9 +27,10 @@ import 'package:tulink_flutter/features/home/presentation/widgets/live_journey_b
 import 'package:tulink_flutter/features/home/presentation/widgets/pending_journey_staging.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
 import 'package:tulink_flutter/features/maps/domain/entities/place_search_result.dart';
-import 'package:tulink_flutter/features/home/presentation/state/map_experience_state.dart';
+import 'package:tulink_flutter/features/home/presentation/state/history_preview_selection.dart';
 import 'package:tulink_flutter/features/home/presentation/state/journey_adoption_sequence.dart';
 import 'package:tulink_flutter/features/home/presentation/state/live_artifact_coordinator.dart';
+import 'package:tulink_flutter/features/home/presentation/state/map_experience_state.dart';
 import 'package:tulink_flutter/features/home/presentation/state/roster_refresh_coalescer.dart';
 import 'package:tulink_flutter/features/home/presentation/state/staged_invite_dispatcher.dart';
 import 'package:tulink_flutter/features/maps/presentation/controllers/live_artifact_cleaner.dart';
@@ -184,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Journey-scoped claim on the invite flow, taken before the picker opens.
   final StagedInviteDispatcher _inviteDispatcher = StagedInviteDispatcher();
   String? _previewedJourneyId;
+  String? _previewRouteErrorJourneyId;
 
   /// The live Mapbox handle, or null while no surface is attached.
   MapboxMap? get _map => _mapController.map;
@@ -570,6 +572,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (widget.selectedTab == 0) {
       if (_destination == null) {
         _previewedJourneyId = null;
+        _previewRouteErrorJourneyId = null;
         unawaited(_clearPreviewRoute());
         unawaited(_clearDestinationAnnotations());
         unawaited(_recenter());
@@ -578,6 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } else if (widget.selectedTab == 2) {
       _previewedJourneyId = null;
+      _previewRouteErrorJourneyId = null;
       unawaited(_clearPreviewRoute());
       unawaited(_clearDestinationAnnotations());
     }
@@ -755,13 +759,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// draft teardown, and the route it fetches is what the live layer later
   /// reuses as its cached route — which is what makes the geometry survive
   /// pending → starting → live without a refetch or a visible reset.
-  Future<void> _showDestinationOnMap(
+  Future<bool> _showDestinationOnMap(
     PlaceSearchResult place, {
     bool asDraft = true,
   }) async {
     final manager = _destinationAnnotations;
     final map = _map;
-    if (manager == null || map == null) return;
+    if (manager == null || map == null) return false;
+    final mapProvider = context.read<MapProvider>();
+    final userId = context.read<AuthProvider>().user?.id ?? 'map-preview';
     if (!asDraft) _journeyDestinationPlaceId = place.placeId;
 
     // Capture what this draw is for. A slow route for place A must not draw
@@ -773,8 +779,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         mounted &&
         _destinationDrawSeq == drawToken &&
         _mapController.generation == generation;
+
+    // A newly selected destination owns the map immediately. Abandon the old
+    // request and remove its line before waiting for GPS or the replacement
+    // route, otherwise the old geometry is presented as the new journey.
+    mapProvider.invalidateRouteRequests();
+    await _clearPreviewRoute();
+    if (!isCurrentDraw()) return false;
     await manager.deleteAll();
-    if (!isCurrentDraw()) return;
+    if (!isCurrentDraw()) return false;
     await manager.create(
       CircleAnnotationOptions(
         geometry: Point(coordinates: Position(place.lng, place.lat)),
@@ -786,8 +799,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
 
     final origin = await _resolveOrigin();
-    final userId = context.read<AuthProvider>().user?.id ?? 'map-preview';
-    final route = await context.read<MapProvider>().fetchRoute(
+    final route = await mapProvider.fetchRoute(
       userId: userId,
       journeyId: 'draft-${place.placeId}',
       surfaceGeneration: generation,
@@ -799,15 +811,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       destLat: place.lat,
       destLng: place.lng,
     );
-    if (!isCurrentDraw()) return;
+    if (!isCurrentDraw()) return false;
     if (route != null && route.coordinates.length > 1) {
       await _drawPreviewRoute(route.coordinates);
-      if (!isCurrentDraw()) return;
+      if (!isCurrentDraw()) return false;
       await _fitPreviewCamera(route.coordinates);
-      return;
+      return true;
     }
 
-    if (!isCurrentDraw()) return;
+    if (!isCurrentDraw()) return false;
     await map.flyTo(
       CameraOptions(
         center: Point(coordinates: Position(place.lng, place.lat)),
@@ -815,6 +827,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       MapAnimationOptions(duration: 800),
     );
+    return false;
   }
 
   Future<geo.Position?> _resolveOrigin() async {
@@ -926,7 +939,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _previewJourney(Journey journey) async {
-    _previewedJourneyId = journey.id;
+    setState(() {
+      _previewedJourneyId = journey.id;
+      _previewRouteErrorJourneyId = null;
+    });
     final place = PlaceSearchResult(
       placeId: 'preview-${journey.id}',
       displayName: journey.destinationLabel,
@@ -935,7 +951,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lng: journey.destination.longitude,
       types: const ['journey'],
     );
-    await _showDestinationOnMap(place);
+    var routeRendered = false;
+    try {
+      routeRendered = await _showDestinationOnMap(place);
+    } catch (error) {
+      debugPrint('Could not preview journey ${journey.id}: $error');
+    }
+    if (!mounted) return;
+    final errorJourneyId = resolveHistoryPreviewErrorId(
+      attemptedJourneyId: journey.id,
+      selectedJourneyId: _previewedJourneyId,
+      routeRendered: routeRendered,
+    );
+    if (errorJourneyId != null) {
+      setState(() => _previewRouteErrorJourneyId = errorJourneyId);
+    }
   }
 
   /// Open the profile, honouring a request to land on the Journeys overlay.
@@ -1670,6 +1700,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final activeJourney = context.watch<JourneyProvider>().currentJourney;
     final isRouteLoading = context.watch<MapProvider>().isFetchingRoute;
     final firstHistoryJourney = analytics.journeyHistory.firstOrNull;
+    final resolvedHistoryPreviewId = resolveHistoryPreviewId(
+      availableJourneyIds: analytics.journeyHistory
+          .map((journey) => journey.id)
+          .toList(growable: false),
+      selectedJourneyId: _previewedJourneyId,
+    );
     final convoy = context.watch<ConvoyProvider>();
 
     // One derived value decides what the map is doing, so the map layer and
@@ -1711,10 +1747,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (widget.selectedTab == 1 &&
         !liveOwnsMap &&
         firstHistoryJourney != null &&
-        _previewedJourneyId != firstHistoryJourney.id) {
+        _previewedJourneyId != resolvedHistoryPreviewId) {
+      final journeyToPreview = analytics.journeyHistory.firstWhere(
+        (journey) => journey.id == resolvedHistoryPreviewId,
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && widget.selectedTab == 1) {
-          unawaited(_previewJourney(firstHistoryJourney));
+          unawaited(_previewJourney(journeyToPreview));
         }
       });
     }
@@ -1725,6 +1764,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         isLoading: analytics.isLoading,
         error: analytics.error,
         selectedJourneyId: _previewedJourneyId,
+        isPreviewLoading: isRouteLoading && _previewedJourneyId != null,
+        previewErrorJourneyId: _previewRouteErrorJourneyId,
         currentUserId: user?.id,
         onRefresh: () => analytics.loadJourneyHistory(),
         onPreview: _previewJourney,
@@ -2690,6 +2731,8 @@ class _JourneyHistoryMapSheet extends StatelessWidget {
     required this.isLoading,
     required this.error,
     required this.selectedJourneyId,
+    required this.isPreviewLoading,
+    required this.previewErrorJourneyId,
     required this.currentUserId,
     required this.onRefresh,
     required this.onPreview,
@@ -2701,6 +2744,8 @@ class _JourneyHistoryMapSheet extends StatelessWidget {
   final bool isLoading;
   final String? error;
   final String? selectedJourneyId;
+  final bool isPreviewLoading;
+  final String? previewErrorJourneyId;
   final String? currentUserId;
   final Future<void> Function() onRefresh;
   final ValueChanged<Journey> onPreview;
@@ -2768,6 +2813,10 @@ class _JourneyHistoryMapSheet extends StatelessWidget {
                         return _JourneyOverlayRow(
                           journey: journey,
                           isSelected: selectedJourneyId == journey.id,
+                          isLoading:
+                              isPreviewLoading &&
+                              selectedJourneyId == journey.id,
+                          hasError: previewErrorJourneyId == journey.id,
                           isPrimary: index == 0,
                           currentUserId: currentUserId,
                           onPreview: () => onPreview(journey),
@@ -2791,6 +2840,8 @@ class _JourneyOverlayRow extends StatelessWidget {
   const _JourneyOverlayRow({
     required this.journey,
     required this.isSelected,
+    required this.isLoading,
+    required this.hasError,
     required this.isPrimary,
     required this.currentUserId,
     required this.onPreview,
@@ -2800,6 +2851,8 @@ class _JourneyOverlayRow extends StatelessWidget {
 
   final Journey journey;
   final bool isSelected;
+  final bool isLoading;
+  final bool hasError;
   final bool isPrimary;
   final String? currentUserId;
   final VoidCallback onPreview;
@@ -2816,7 +2869,9 @@ class _JourneyOverlayRow extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${journey.name}, ${journey.destinationLabel}',
-      hint: 'Tap to preview on the map, long press for journey details',
+      hint: hasError
+          ? 'Route unavailable. Tap to retry, long press for journey details'
+          : 'Tap to preview on the map, long press for journey details',
       onLongPress: onOpen,
       child: InkWell(
         onTap: onPreview,
@@ -2843,7 +2898,22 @@ class _JourneyOverlayRow extends StatelessWidget {
                   color: colors.routeTeal.withValues(alpha: .1),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(Icons.route_rounded, color: colors.routeTeal),
+                child: isLoading
+                    ? Padding(
+                        padding: const EdgeInsets.all(13),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: colors.routeTeal,
+                        ),
+                      )
+                    : Icon(
+                        hasError
+                            ? Icons.cloud_off_rounded
+                            : Icons.route_rounded,
+                        color: hasError
+                            ? colors.sunsetOrange
+                            : colors.routeTeal,
+                      ),
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -2882,6 +2952,16 @@ class _JourneyOverlayRow extends StatelessWidget {
                         context,
                       ).textTheme.bodyMedium?.copyWith(fontSize: 12),
                     ),
+                    if (hasError) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Route unavailable · Tap to retry',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.sunsetOrange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
