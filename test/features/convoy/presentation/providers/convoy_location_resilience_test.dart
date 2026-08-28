@@ -8,6 +8,7 @@ import 'package:tulink_flutter/core/services/location_permission_service.dart';
 import 'package:tulink_flutter/core/services/location_service.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/member_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 
@@ -474,6 +475,92 @@ void main() {
       for (var i = 1; i < seen.length; i++) {
         expect(seen[i], greaterThan(seen[i - 1]));
       }
+    });
+  });
+
+  group('foreground recovery', () {
+    ConvoySnapshot snapshotAt(double latitude, {int? timestamp}) =>
+        ConvoySnapshot(
+          journeyId: journeyId,
+          members: {
+            'peer': MemberPosition(
+              userId: 'peer',
+              latitude: latitude,
+              longitude: 36.8219,
+              timestamp: timestamp ?? DateTime.now().millisecondsSinceEpoch,
+            ),
+          },
+          destination: const ConvoyDestination(
+            latitude: -0.7172,
+            longitude: 36.4310,
+          ),
+          destinationAddress: 'Enashipai Resort & Spa',
+        );
+
+    test(
+      'resume replaces a stale peer marker with the latest snapshot',
+      () async {
+        when(repository.ensureLiveConnection()).thenAnswer((_) async {});
+        when(repository.joinJourneyRoom(journeyId)).thenAnswer((_) async {});
+        final fresh = snapshotAt(-0.9, timestamp: 200);
+        when(
+          fetchLatestSnapshot(journeyId),
+        ).thenAnswer((_) async => (snapshot: fresh, failure: null));
+        final provider = buildProvider();
+        await provider.startCoordination(journeyId);
+        provider.setSnapshotForTesting(snapshotAt(-1.2921, timestamp: 100));
+
+        await provider.onAppResumed();
+
+        expect(provider.snapshot, fresh);
+        verify(repository.ensureLiveConnection()).called(1);
+        verify(repository.joinJourneyRoom(journeyId)).called(1);
+        verify(fetchLatestSnapshot(journeyId)).called(1);
+      },
+    );
+
+    test('duplicate resume signals share one recovery transaction', () async {
+      final reconnectGate = Completer<void>();
+      when(
+        repository.ensureLiveConnection(),
+      ).thenAnswer((_) => reconnectGate.future);
+      when(repository.joinJourneyRoom(journeyId)).thenAnswer((_) async {});
+      when(
+        fetchLatestSnapshot(journeyId),
+      ).thenAnswer((_) async => (snapshot: snapshotAt(-0.9), failure: null));
+      final provider = buildProvider();
+      await provider.startCoordination(journeyId);
+
+      final first = provider.onAppResumed();
+      final second = provider.onAppResumed();
+      reconnectGate.complete();
+      await Future.wait([first, second]);
+
+      verify(repository.ensureLiveConnection()).called(1);
+      verify(fetchLatestSnapshot(journeyId)).called(1);
+    });
+
+    test('REST rehydration cannot overwrite a newer socket position', () async {
+      when(repository.ensureLiveConnection()).thenAnswer((_) async {});
+      when(repository.joinJourneyRoom(journeyId)).thenAnswer((_) async {});
+      final fetchGate =
+          Completer<({ConvoySnapshot? snapshot, Failure? failure})>();
+      when(fetchLatestSnapshot(journeyId)).thenAnswer((_) => fetchGate.future);
+      final provider = buildProvider();
+      await provider.startCoordination(journeyId);
+
+      final recovery = provider.onAppResumed();
+      await Future<void>.delayed(Duration.zero);
+      final socketPosition = snapshotAt(-0.8, timestamp: 200);
+      provider.setSnapshotForTesting(socketPosition);
+      final olderRestPosition = snapshotAt(-1, timestamp: 100);
+      fetchGate.complete((snapshot: olderRestPosition, failure: null));
+      await recovery;
+
+      expect(
+        provider.snapshot?.members['peer']?.latitude,
+        socketPosition.members['peer']?.latitude,
+      );
     });
   });
 

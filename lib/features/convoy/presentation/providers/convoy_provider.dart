@@ -8,6 +8,7 @@ import 'package:battery_plus/battery_plus.dart';
 
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
+import '../../domain/entities/member_position.dart';
 import '../../domain/entities/participant_arrived_event.dart';
 import '../../domain/usecases/stream_convoy_positions.dart';
 import '../../domain/usecases/publish_my_position.dart';
@@ -71,6 +72,9 @@ class ConvoyProvider extends ChangeNotifier {
   /// same in-progress Future instead of racing it.
   Future<void>? _coordinationStartFuture;
   String? _coordinationStartJourneyId;
+
+  /// Coalesces duplicate app-resume notifications into one recovery pass.
+  Future<void>? _resumeRecoveryFuture;
 
   /// Tracks consecutive publish failures — used to bail out on a backend
   /// that's permanently refusing publishes (journey ended, auth dead, etc.)
@@ -258,6 +262,75 @@ class ConvoyProvider extends ChangeNotifier {
     return _isPublishing && _locationFailure == null;
   }
 
+  /// Called when the app returns to the foreground.
+  ///
+  /// Reconnects the transport, confirms room membership, and replaces the
+  /// retained snapshot with the server's latest positions. Reconnecting alone
+  /// cannot recover broadcasts missed while Dart was suspended, which left
+  /// peer markers frozen at their pre-background coordinates.
+  Future<void> onAppResumed() {
+    final existing = _resumeRecoveryFuture;
+    if (existing != null) return existing;
+
+    final recovery = _recoverAfterResume();
+    _resumeRecoveryFuture = recovery;
+    return recovery.whenComplete(() {
+      if (identical(_resumeRecoveryFuture, recovery)) {
+        _resumeRecoveryFuture = null;
+      }
+    });
+  }
+
+  Future<void> _recoverAfterResume() async {
+    await _repository.ensureLiveConnection();
+
+    final journeyId = _currentJourneyId;
+    if (journeyId == null || !_isSubscribed) return;
+
+    try {
+      await _repository.joinJourneyRoom(journeyId);
+      final result = await _fetchLatestSnapshot(journeyId);
+
+      // A journey switch or stop may complete while recovery is in flight.
+      // Never apply an old room's snapshot to the new active journey.
+      if (_currentJourneyId != journeyId || !_isSubscribed) return;
+
+      final freshSnapshot = result.snapshot;
+      if (freshSnapshot != null && freshSnapshot.journeyId == journeyId) {
+        _snapshot = _mergeResumeSnapshot(freshSnapshot, _snapshot);
+        _clearError();
+        notifyListeners();
+      }
+    } catch (error) {
+      // Keep the retained snapshot visible. The live stream can still recover
+      // after a transient REST or room-join failure.
+      debugPrint('Convoy resume recovery failed: $error');
+    }
+  }
+
+  /// Keeps socket positions received during the REST request when they are
+  /// newer than the corresponding rehydrated member. Members absent from the
+  /// server response stay absent so a participant removed while suspended is
+  /// not resurrected from retained client state.
+  ConvoySnapshot _mergeResumeSnapshot(
+    ConvoySnapshot serverSnapshot,
+    ConvoySnapshot? retainedSnapshot,
+  ) {
+    if (retainedSnapshot == null ||
+        retainedSnapshot.journeyId != serverSnapshot.journeyId) {
+      return serverSnapshot;
+    }
+
+    final members = Map<String, MemberPosition>.from(serverSnapshot.members);
+    for (final entry in members.entries.toList(growable: false)) {
+      final retained = retainedSnapshot.members[entry.key];
+      if (retained != null && retained.timestamp > entry.value.timestamp) {
+        members[entry.key] = retained;
+      }
+    }
+    return serverSnapshot.copyWith(members: members);
+  }
+
   /// Start convoy coordination for a journey.
   /// Begins both GPS publishing and real-time position streaming.
   ///
@@ -265,24 +338,10 @@ class ConvoyProvider extends ChangeNotifier {
   /// no-op. If we're coordinating a *different* journey, that one is stopped
   /// first to avoid leaking subscriptions / GPS streams across journeys.
   ///
-  /// Concurrency-safe: multiple call sites can (and do) call this for the same
-  /// journey within the same navigation transition — e.g. journey_preview_screen
-  /// right before pushing the map route, and the map screen's own
-  /// _onMapCreated right after it mounts. A second call for the same journey
-  /// that arrives while the first is still starting up awaits the SAME
-  /// in-flight Future instead of independently re-running the permission
-  /// request, which would otherwise call Geolocator.requestPermission() twice
-  /// and stack two native OS permission dialogs.
-  /// Called by UI lifecycle observers when the app returns to the foreground.
-  ///
-  /// While the app is suspended Dart timers freeze, so the server's heartbeat
-  /// monitor evicts the socket (~30s), and the client's reconnect budget or
-  /// backoff may have lapsed by the time it resumes. Force the socket back up
-  /// immediately — with a fresh auth token — instead of waiting for the next
-  /// failed publish to notice. Safe to call anytime: no-op when connected or
-  /// when no socket was ever opened.
-  Future<void> onAppResumed() => _repository.ensureLiveConnection();
-
+  /// Concurrency-safe: multiple call sites can invoke this for the same
+  /// journey within one navigation transition. A second call for the same
+  /// journey while the first is starting awaits the same in-flight future
+  /// instead of independently requesting native permissions again.
   Future<void> startCoordination(String journeyId) async {
     // Already fully coordinating (subscribed + publishing GPS) — nothing to do.
     if (_currentJourneyId == journeyId && _isSubscribed && _isPublishing) {
