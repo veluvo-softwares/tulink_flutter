@@ -1,8 +1,17 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/annotations.dart';
+import 'package:mockito/mockito.dart';
 import 'package:tulink_flutter/features/convoy/presentation/services/journey_status_formatter.dart';
 import 'package:tulink_flutter/features/convoy/presentation/services/journey_status_notifier.dart';
-import 'package:tulink_flutter/features/convoy/presentation/utils/convoy_member_presentation.dart';
 
+import 'journey_status_notifier_test.mocks.dart';
+
+@GenerateNiceMocks([MockSpec<FlutterLocalNotificationsPlugin>()])
 MemberStatusEntry _member(String name, double meters) => (
   userId: 'user-${name.toLowerCase()}',
   name: name,
@@ -14,6 +23,8 @@ void main() {
   late JourneyStatusNotifier notifier;
 
   setUp(() => notifier = JourneyStatusNotifier());
+
+  tearDown(() => debugDefaultTargetPlatformOverride = null);
 
   Map<String, dynamic> build(
     List<MemberStatusEntry> entries, {
@@ -98,5 +109,53 @@ void main() {
 
     expect(row.split('|').length, greaterThanOrEqualTo(4));
     expect(''.split('|').length, lessThan(4));
+  });
+
+  group('Android notification safety', () {
+    test('uses the launcher resource shipped by the Android app', () {
+      expect(
+        JourneyStatusNotifier.androidNotificationIcon,
+        '@mipmap/launcher_icon',
+      );
+    });
+
+    test('launcher resource exists in every Android density', () {
+      final resourceFiles = Directory('android/app/src/main/res')
+          .listSync()
+          .whereType<Directory>()
+          .where((directory) => directory.path.contains('mipmap-'))
+          .map((directory) => File('${directory.path}/launcher_icon.png'));
+
+      expect(resourceFiles, isNotEmpty);
+      expect(resourceFiles.every((file) => file.existsSync()), isTrue);
+    });
+
+    test('a native notification failure never escapes the journey', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final plugin = MockFlutterLocalNotificationsPlugin();
+      when(
+        plugin.initialize(settings: anyNamed('settings')),
+      ).thenThrow(PlatformException(code: 'invalid_icon'));
+      notifier = JourneyStatusNotifier(plugin: plugin);
+
+      await expectLater(
+        notifier.update(
+          journeyName: 'Trip to Enashipai',
+          selfUserId: 'driver',
+          presentation: const {},
+        ),
+        completes,
+      );
+
+      final settings =
+          verify(
+                plugin.initialize(settings: captureAnyNamed('settings')),
+              ).captured.single
+              as InitializationSettings;
+      expect(
+        settings.android?.defaultIcon,
+        JourneyStatusNotifier.androidNotificationIcon,
+      );
+    });
   });
 }
