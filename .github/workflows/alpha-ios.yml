@@ -30,6 +30,25 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Resolve release notes
+        env:
+          INPUT_RELEASE_NOTES: ${{ inputs.release_notes }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_RELEASE_NOTES:-}" ]; then
+            NOTES="$INPUT_RELEASE_NOTES"
+          elif [ -s RELEASE_NOTES.md ]; then
+            NOTES="$(cat RELEASE_NOTES.md)"
+          else
+            NOTES="$COMMIT_MESSAGE"
+          fi
+          {
+            echo 'RELEASE_NOTES<<TULINK_RELEASE_NOTES'
+            echo "$NOTES"
+            echo 'TULINK_RELEASE_NOTES'
+          } >> "$GITHUB_ENV"
+
       # Apple requires the iOS 26 SDK (Xcode 26+) for App Store Connect uploads.
       # The runner defaults to an older Xcode (16.x / iOS 18.5 SDK), so select the
       # newest installed Xcode 26.x explicitly before building.
