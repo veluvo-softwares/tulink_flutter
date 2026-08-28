@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/core/utils/journey_stats_calculator.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
@@ -166,7 +167,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (shouldSignOut != true || !mounted) return;
     await context.read<ConvoyProvider>().stopUserChannel();
     if (!mounted) return;
-    await context.read<AuthProvider>().signOut();
+    final signedOut = await context.read<AuthProvider>().signOut();
+    if (!mounted || !signedOut) return;
+
+    // Profile is pushed above HomePage. AuthProvider has already rebuilt that
+    // root to AuthScreen; remove the stale authenticated routes so the user
+    // sees it immediately instead of having to press Back manually.
+    await NavigationHelper.toHomeAndClearStack(context);
   }
 }
 
