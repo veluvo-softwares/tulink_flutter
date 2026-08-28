@@ -702,12 +702,12 @@ class ConvoyProvider extends ChangeNotifier {
 
       // Fixed-cadence beacon: republish the last known position on a steady
       // interval even while stationary, so parked / just-joined members stay
-      // visible to the rest of the convoy.
+      // visible to the rest of the convoy. Refreshing first is important for
+      // arrival detection: the cached position may still carry the speed and
+      // timestamp from the last moving GPS tick.
       _publishTimer?.cancel();
       _publishTimer = Timer.periodic(_publishInterval, (_) {
-        final position = _lastKnownPosition;
-        if (position == null) return;
-        _publishLocation(journeyId, position, (position.speed ?? 0.0) > 0.5);
+        unawaited(_publishBeacon(journeyId));
       });
 
       _isPublishing = true;
@@ -719,6 +719,27 @@ class ConvoyProvider extends ChangeNotifier {
       _isPublishing = false;
       _setLocationFailure(ConvoyFailure.locationServiceDisabled);
     }
+  }
+
+  /// Publish a fresh stationary beacon when possible.
+  ///
+  /// The backend only marks a participant arrived when the point is near the
+  /// destination and the reported speed is low. Replaying the previous moving
+  /// [Position] forever can therefore prevent an arrival event after the
+  /// driver parks before the platform emits another stream tick.
+  Future<void> _publishBeacon(String journeyId) async {
+    if (_currentJourneyId != journeyId) return;
+
+    final fresh = await _locationService.getCurrentPosition(
+      timeout: const Duration(seconds: 3),
+    );
+    if (_currentJourneyId != journeyId) return;
+
+    final position = fresh ?? _lastKnownPosition;
+    if (position == null) return;
+    if (fresh != null) _lastKnownPosition = fresh;
+
+    await _publishLocation(journeyId, position, (position.speed ?? 0.0) > 0.5);
   }
 
   /// Handle a new GPS location from the movement stream. Caches the position
