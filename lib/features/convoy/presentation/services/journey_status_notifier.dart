@@ -1,14 +1,12 @@
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:live_activities/live_activities.dart';
-
-import '../../../maps/domain/entities/route_progress.dart';
-import '../../domain/entities/convoy_snapshot.dart';
-import '../utils/convoy_member_presentation.dart';
-import 'journey_status_formatter.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
+import 'package:tulink_flutter/features/convoy/presentation/services/journey_status_formatter.dart';
+import 'package:tulink_flutter/features/convoy/presentation/utils/convoy_member_presentation.dart';
+import 'package:tulink_flutter/features/maps/domain/entities/route_progress.dart';
 
 /// Glanceable journey-status surface while a journey is running — the
 /// "Uber trip" view when the app is backgrounded (the location foreground
@@ -21,6 +19,7 @@ import 'journey_status_formatter.dart';
 /// TulinkJourneyWidget extension; data crosses via the app-group
 /// UserDefaults contract of the live_activities plugin.
 class JourneyStatusNotifier {
+  /// Creates the platform journey-status surface coordinator.
   JourneyStatusNotifier({
     FlutterLocalNotificationsPlugin? plugin,
     LiveActivities? liveActivities,
@@ -30,6 +29,14 @@ class JourneyStatusNotifier {
   static const int _notificationId = 8801;
   static const String _channelId = 'journey_status';
   static const String _appGroupId = 'group.xyz.tulink.app';
+
+  /// Qualified Android resource used as the notification's default icon.
+  ///
+  /// Keep this aligned with `android:icon` in AndroidManifest.xml. A missing
+  /// resource makes flutter_local_notifications throw during initialization;
+  /// this previously terminated the journey-start flow on Android.
+  @visibleForTesting
+  static const String androidNotificationIcon = '@mipmap/launcher_icon';
 
   /// Member rows rendered on the iOS lock-screen activity (height budget).
   static const int _maxLiveActivityMembers = 3;
@@ -57,7 +64,10 @@ class JourneyStatusNotifier {
     RouteProgress? progress,
     int rosterMemberCount = 0,
   }) async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
+    final platform = defaultTargetPlatform;
+    if (platform != TargetPlatform.android && platform != TargetPlatform.iOS) {
+      return;
+    }
 
     final memberCount = math.max(
       snapshot?.members.length ?? 0,
@@ -95,10 +105,18 @@ class JourneyStatusNotifier {
             selfUserId: selfUserId,
           );
 
-    if (Platform.isAndroid) {
-      await _updateAndroid(title, entries, memberCount);
-    } else {
-      await _updateIos(title, entries, presentation, progress, memberCount);
+    try {
+      if (platform == TargetPlatform.android) {
+        await _updateAndroid(title, entries, memberCount);
+      } else {
+        await _updateIos(title, entries, presentation, progress, memberCount);
+      }
+    } catch (error, stackTrace) {
+      // Journey status is an optional secondary surface. A missing native
+      // notification resource, denied notification capability, or Live
+      // Activity failure must never escape into the active journey lifecycle.
+      debugPrint('Could not update journey status surface: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -109,7 +127,7 @@ class JourneyStatusNotifier {
   ) async {
     if (!_androidInitialized) {
       const settings = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings(androidNotificationIcon),
       );
       await _plugin.initialize(settings: settings);
       _androidInitialized = true;
@@ -221,7 +239,8 @@ class JourneyStatusNotifier {
     final hex =
         '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
     final line = memberLine(entry).replaceAll('|', '/');
-    return '${initials.replaceAll('|', '/')}|$line|$hex|${entry.arrived ? 1 : 0}';
+    final safeInitials = initials.replaceAll('|', '/');
+    return '$safeInitials|$line|$hex|${entry.arrived ? 1 : 0}';
   }
 
   /// Remove the surface (journey ended / coordination stopped).
@@ -229,10 +248,11 @@ class JourneyStatusNotifier {
     _lastPostedAt = null;
     _lastMemberCount = -1;
     _lastArrivedCount = -1;
-    if (Platform.isAndroid && _androidInitialized) {
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        _androidInitialized) {
       await _plugin.cancel(id: _notificationId);
     }
-    if (Platform.isIOS && _iosInitialized) {
+    if (defaultTargetPlatform == TargetPlatform.iOS && _iosInitialized) {
       _activityId = null;
       await _liveActivities.endAllActivities();
     }

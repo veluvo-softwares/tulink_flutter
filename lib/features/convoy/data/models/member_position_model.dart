@@ -23,6 +23,8 @@ class MemberPositionModel extends MemberPosition {
 
   /// Create from JSON (REST API response format)
   factory MemberPositionModel.fromJson(Map<String, dynamic> json) {
+    final metadata = (json['metadata'] as Map?)?.cast<String, dynamic>();
+
     return MemberPositionModel(
       userId: json['userId'] as String,
       latitude: (json['latitude'] as num).toDouble(),
@@ -40,9 +42,15 @@ class MemberPositionModel extends MemberPosition {
       altitude: json['altitude'] != null
           ? (json['altitude'] as num).toDouble()
           : null,
-      batteryLevel: json['batteryLevel'] as int?,
-      isMoving: json['isMoving'] as bool? ?? false,
-      statusChange: json['statusChange'] as String?,
+      batteryLevel:
+          json['batteryLevel'] as int? ?? metadata?['batteryLevel'] as int?,
+      // WebSocket location-update payloads carry these fields in metadata;
+      // retain top-level support for REST and older socket payloads.
+      isMoving:
+          json['isMoving'] as bool? ?? metadata?['isMoving'] as bool? ?? false,
+      statusChange:
+          json['statusChange'] as String? ??
+          metadata?['statusChange'] as String?,
       sequenceNumber: json['sequenceNumber'] as int?,
       priority: json['priority'] as String?,
       connectionState: json['connectionState']?.toString(),

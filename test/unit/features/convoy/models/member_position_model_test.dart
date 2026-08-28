@@ -92,6 +92,21 @@ void main() {
       expect(model.isMoving, false); // Default value
     });
 
+    test('should read movement state from WebSocket metadata', () {
+      final model = MemberPositionModel.fromJson({
+        'userId': 'user123',
+        'latitude': -1.2921,
+        'longitude': 36.8219,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'speed': 12.0,
+        'metadata': {'isMoving': true, 'batteryLevel': 82},
+      });
+
+      expect(model.isMoving, true);
+      expect(model.batteryLevel, 82);
+      expect(model.memberStatus, 'MOVING');
+    });
+
     test('should convert to entity correctly', () {
       // Arrange
       const model = MemberPositionModel(
