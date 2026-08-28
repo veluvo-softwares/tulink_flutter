@@ -118,6 +118,16 @@ class NavigationProvider with ChangeNotifier {
   /// Whether voice instructions are enabled.
   bool get isVoiceEnabled => _voiceService.isEnabled;
 
+  /// The restored route cursor, exposed for state-transition tests.
+  @visibleForTesting
+  int? get restoredSegmentIndexForTesting => _restoredSegmentIndex;
+
+  /// Seeds a restored cursor for state-transition tests.
+  @visibleForTesting
+  void setRestoredSegmentIndexForTesting(int? segmentIndex) {
+    _restoredSegmentIndex = segmentIndex;
+  }
+
   /// Restores the device-level voice guidance preference before app startup.
   Future<void> initializePreferences() async {
     final loadVoiceEnabled = _loadVoiceEnabled;
@@ -178,8 +188,11 @@ class NavigationProvider with ChangeNotifier {
   void loadRoute(RouteResultModel route) {
     print('🧭 NavigationProvider: loading new route');
     _activeRoute = route;
-    _currentProgress =
-        null; // stale segment index from old route must not seed the new snap window
+    // A reroute is a new geometry. Neither the live progress nor the cursor
+    // restored from the previous route may constrain matching on this route.
+    _currentProgress = null;
+    _restoredSegmentIndex = null;
+    _lastKnownProgress = null;
     _maneuverTracker.loadRoute(route);
     _offRouteDetector.reset();
     _offlineReroutePending = false;
