@@ -1712,6 +1712,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // the overlays can never disagree about the same journey.
     final isCurrentUserLeader =
         activeJourney != null && activeJourney.leaderId == user?.id;
+    final isPendingJourney = activeJourney?.status == JourneyStatus.PENDING;
     final experience = resolveMapExperienceState(
       currentJourney: activeJourney,
       completedJourney: _completedJourney,
@@ -1826,7 +1827,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // navigation shell uses for the tab bar: when they disagreed, a
             // finished journey left a stale draft sheet — with a live "Start
             // journey" button — sitting under the completion summary.
-            if (!experience.hidesNavigationTabs) ...[
+            if (!experience.hidesNavigationTabs && !isPendingJourney) ...[
               SafeArea(
                 bottom: false,
                 child: Padding(
