@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- TuLink splash screen with dark background and centered logo -->
+<!-- TuLink splash: orange top quarter, teal lower three quarters. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Dark background -->
-    <item android:drawable="@color/tulink_dark_background" />
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="90"
+                android:startColor="@color/tulink_sunset_orange"
+                android:centerColor="@color/tulink_sunset_orange"
+                android:centerY="0.25"
+                android:endColor="@color/tulink_deep_teal" />
+        </shape>
+    </item>
 
-    <!-- Centered TuLink logo -->
     <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launcher_icon" />
+            android:src="@drawable/tulink_splash_logo" />
     </item>
 </layer-list>

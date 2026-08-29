@@ -16,13 +16,29 @@
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" image="LaunchImage" translatesAutoresizingMaskIntoConstraints="NO" id="YRO-k0-Ey4">
+                            <view translatesAutoresizingMaskIntoConstraints="NO" id="orange-quarter">
+                                <color key="backgroundColor" red="0.9529411764705882" green="0.36470588235294116" blue="0.19607843137254902" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                            <view translatesAutoresizingMaskIntoConstraints="NO" id="teal-three-quarters">
+                                <color key="backgroundColor" red="0.027450980392156862" green="0.3215686274509804" blue="0.3803921568627451" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                            <imageView opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleAspectFit" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="launch-logo">
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" red="0.10196078431372549" green="0.10196078431372549" blue="0.10196078431372549" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" red="0.027450980392156862" green="0.3215686274509804" blue="0.3803921568627451" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="1a2-6s-vTC"/>
-                            <constraint firstItem="YRO-k0-Ey4" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="4X2-HB-R7a"/>
+                            <constraint firstItem="orange-quarter" firstAttribute="top" secondItem="Ze5-6b-2t3" secondAttribute="top" id="orange-top"/>
+                            <constraint firstItem="orange-quarter" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="orange-leading"/>
+                            <constraint firstItem="orange-quarter" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="orange-trailing"/>
+                            <constraint firstItem="orange-quarter" firstAttribute="height" secondItem="Ze5-6b-2t3" secondAttribute="height" multiplier="0.25" id="orange-height"/>
+                            <constraint firstItem="teal-three-quarters" firstAttribute="top" secondItem="orange-quarter" secondAttribute="bottom" id="teal-top"/>
+                            <constraint firstItem="teal-three-quarters" firstAttribute="leading" secondItem="Ze5-6b-2t3" secondAttribute="leading" id="teal-leading"/>
+                            <constraint firstItem="teal-three-quarters" firstAttribute="trailing" secondItem="Ze5-6b-2t3" secondAttribute="trailing" id="teal-trailing"/>
+                            <constraint firstItem="teal-three-quarters" firstAttribute="bottom" secondItem="Ze5-6b-2t3" secondAttribute="bottom" id="teal-bottom"/>
+                            <constraint firstItem="launch-logo" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="logo-center-x"/>
+                            <constraint firstItem="launch-logo" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="logo-center-y"/>
+                            <constraint firstItem="launch-logo" firstAttribute="width" constant="260" id="logo-width"/>
+                            <constraint firstItem="launch-logo" firstAttribute="height" constant="80" id="logo-height"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -32,6 +48,6 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchImage" width="168" height="185"/>
+        <image name="LaunchLogo" width="320" height="80"/>
     </resources>
 </document>

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- TuLink brand colors for dark theme -->
-    <color name="tulink_dark_background">#1A1A1A</color>
-    <color name="tulink_primary">#E53E3E</color>
+    <!-- Keep the launch palette consistent in dark mode. -->
+    <color name="tulink_sunset_orange">#F35D32</color>
+    <color name="tulink_deep_teal">#075261</color>
+    <color name="tulink_dark_background">#075261</color>
+    <color name="tulink_primary">#F35D32</color>
 </resources>
