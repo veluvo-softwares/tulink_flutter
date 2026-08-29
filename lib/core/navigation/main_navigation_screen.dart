@@ -4,6 +4,8 @@ import 'package:tulink_flutter/core/navigation/widgets/app_navbar.dart';
 import 'package:tulink_flutter/features/home/presentation/screens/home_screen.dart';
 import 'package:tulink_flutter/features/home/presentation/state/map_experience_state.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
+import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
+import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -37,6 +39,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return ValueListenableBuilder<MapExperienceState>(
       valueListenable: _experience,
       builder: (context, experience, _) {
+        final isPendingJourney =
+            context.watch<JourneyProvider>().currentJourney?.status ==
+            JourneyStatus.PENDING;
         return Scaffold(
           // A single HomeScreen owns Mapbox for every tab. Journeys and Invites
           // are map overlays instead of separate pages, so switching tabs keeps
@@ -50,7 +55,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             onTabSelected: (index) => setState(() => _currentIndex = index),
             experience: _experience,
           ),
-          bottomNavigationBar: experience.hidesNavigationTabs
+          bottomNavigationBar:
+              experience.hidesNavigationTabs || isPendingJourney
               ? null
               : AppNavbar(
                   currentIndex: _currentIndex,

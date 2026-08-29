@@ -5,3 +5,5 @@ Tu-Link 1.0.2
 - Improved route rendering after resume and rerouting.
 - Clearer convoy movement status and more reliable arrival updates.
 - Signing out now returns you to the authentication screen.
+- Pending journeys keep the route visible with an expandable bottom sheet for journey details.
+- Refreshed Tu-Link app icons and native splash screens across Android and iOS.

@@ -109,49 +109,61 @@ class PendingJourneyOverlay extends StatelessWidget {
 
     return Align(
       alignment: Alignment.bottomCenter,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.72,
-            ),
-            decoration: BoxDecoration(
-              color: colors.cardDark,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: colors.brushedSteel.withValues(alpha: 0.3),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.42,
+        minChildSize: 0.22,
+        maxChildSize: 0.78,
+        snap: true,
+        snapSizes: const [0.42, 0.78],
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(color: colors.divider),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 20,
+                offset: const Offset(0, -6),
               ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              4 + MediaQuery.paddingOf(context).bottom * 0.35,
             ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _grabber(colors),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _grabber(colors),
+                const SizedBox(height: 14),
+                _header(colors),
+                const SizedBox(height: 16),
+                _destination(colors),
+                const SizedBox(height: 12),
+                _swipeHint(colors),
+                if (journey.isScheduled) ...[
                   const SizedBox(height: 12),
-                  _header(colors),
-                  const SizedBox(height: 14),
-                  _destination(colors),
-                  if (journey.isScheduled) ...[
-                    const SizedBox(height: 10),
-                    _scheduled(colors),
-                  ],
-                  const SizedBox(height: 16),
-                  _participantsSection(colors),
-                  if (hasRoomFailure) ...[
-                    const SizedBox(height: 14),
-                    _roomFailure(colors),
-                  ],
-                  if (locationFailure != null) ...[
-                    const SizedBox(height: 14),
-                    _locationFailure(colors),
-                  ],
-                  const SizedBox(height: 18),
-                  _actions(context, colors),
+                  _scheduled(colors),
                 ],
-              ),
+                const SizedBox(height: 18),
+                _participantsSection(colors),
+                if (hasRoomFailure) ...[
+                  const SizedBox(height: 14),
+                  _roomFailure(colors),
+                ],
+                if (locationFailure != null) ...[
+                  const SizedBox(height: 14),
+                  _locationFailure(colors),
+                ],
+                const SizedBox(height: 18),
+                _actions(context, colors),
+              ],
             ),
           ),
         ),
@@ -166,7 +178,7 @@ class PendingJourneyOverlay extends StatelessWidget {
         width: 42,
         height: 4,
         decoration: BoxDecoration(
-          color: colors.brushedSteel,
+          color: colors.divider,
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -191,7 +203,7 @@ class PendingJourneyOverlay extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  color: colors.white,
+                  color: colors.ink,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -202,7 +214,7 @@ class PendingJourneyOverlay extends StatelessWidget {
                     ? 'Invited people can join now. Start when everyone is ready.'
                     : "You're in the convoy. This screen becomes live "
                           'navigation automatically.',
-                style: TextStyle(color: colors.silver, fontSize: 13),
+                style: TextStyle(color: colors.muted, fontSize: 13),
               ),
             ],
           ),
@@ -234,6 +246,22 @@ class PendingJourneyOverlay extends StatelessWidget {
     );
   }
 
+  Widget _swipeHint(TulinkColors colors) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(Icons.swipe_up_rounded, color: colors.muted, size: 17),
+      const SizedBox(width: 6),
+      Text(
+        'Swipe up for convoy details',
+        style: TextStyle(
+          color: colors.muted,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+
   Widget _destination(TulinkColors colors) {
     final subtitle = journey.destinationSubtitle;
     return Row(
@@ -248,7 +276,7 @@ class PendingJourneyOverlay extends StatelessWidget {
               Text(
                 'DESTINATION',
                 style: TextStyle(
-                  color: colors.silver,
+                  color: colors.muted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
@@ -260,7 +288,7 @@ class PendingJourneyOverlay extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: colors.white,
+                  color: colors.ink,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
@@ -270,7 +298,7 @@ class PendingJourneyOverlay extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: colors.silver, fontSize: 12),
+                  style: TextStyle(color: colors.muted, fontSize: 12),
                 ),
             ],
           ),
@@ -296,7 +324,7 @@ class PendingJourneyOverlay extends StatelessWidget {
             'Scheduled for '
             '${DateFormat('EEE, MMM d • HH:mm').format(journey.scheduledFor!.toLocal())}'
             '${journey.autoStart ? ' — starts automatically' : ''}',
-            style: TextStyle(color: colors.white, fontSize: 12),
+            style: TextStyle(color: colors.ink, fontSize: 12),
           ),
         ),
       ],
@@ -314,7 +342,7 @@ class PendingJourneyOverlay extends StatelessWidget {
             Text(
               'CONVOY',
               style: TextStyle(
-                color: colors.silver,
+                color: colors.muted,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
@@ -324,7 +352,7 @@ class PendingJourneyOverlay extends StatelessWidget {
             Text(
               '${people.length}',
               style: TextStyle(
-                color: colors.white,
+                color: colors.ink,
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
               ),
@@ -342,7 +370,7 @@ class PendingJourneyOverlay extends StatelessWidget {
         if (people.isEmpty)
           Text(
             'No one else yet — share the code to bring people along.',
-            style: TextStyle(color: colors.silver, fontSize: 12),
+            style: TextStyle(color: colors.muted, fontSize: 12),
           )
         else
           ...people.map((person) => _participantRow(person, colors)),
@@ -363,7 +391,7 @@ class PendingJourneyOverlay extends StatelessWidget {
           Icon(
             confirmed ? Icons.check_circle : Icons.schedule,
             size: 16,
-            color: confirmed ? colors.electricRed : colors.silver,
+            color: confirmed ? colors.electricRed : colors.muted,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -371,14 +399,14 @@ class PendingJourneyOverlay extends StatelessWidget {
               person.displayName ?? 'Traveller',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: colors.white, fontSize: 13),
+              style: TextStyle(color: colors.ink, fontSize: 13),
             ),
           ),
           if (isJourneyLeader)
             Text(
               'LEADER',
               style: TextStyle(
-                color: colors.silver,
+                color: colors.muted,
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.5,
@@ -387,7 +415,7 @@ class PendingJourneyOverlay extends StatelessWidget {
           else
             Text(
               confirmed ? 'IN' : status,
-              style: TextStyle(color: colors.silver, fontSize: 10),
+              style: TextStyle(color: colors.muted, fontSize: 10),
             ),
         ],
       ),
@@ -409,7 +437,7 @@ class PendingJourneyOverlay extends StatelessWidget {
           child: Text(
             roomFailureMessage ??
                 'Not receiving live updates — you may miss the start.',
-            style: TextStyle(color: colors.white, fontSize: 12),
+            style: TextStyle(color: colors.ink, fontSize: 12),
           ),
         ),
         if (onReconnectRoom != null) ...[
@@ -462,7 +490,7 @@ class PendingJourneyOverlay extends StatelessWidget {
         Expanded(
           child: Text(
             locationFailure!.message,
-            style: TextStyle(color: colors.white, fontSize: 12),
+            style: TextStyle(color: colors.ink, fontSize: 12),
           ),
         ),
         if (onRetryLocation != null)
