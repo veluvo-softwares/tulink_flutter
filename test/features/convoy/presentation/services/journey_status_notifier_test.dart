@@ -157,5 +157,35 @@ void main() {
         JourneyStatusNotifier.androidNotificationIcon,
       );
     });
+
+    test('a native notification teardown failure never escapes', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final plugin = MockFlutterLocalNotificationsPlugin();
+      when(
+        plugin.initialize(settings: anyNamed('settings')),
+      ).thenAnswer((_) async => true);
+      when(
+        plugin.show(
+          id: anyNamed('id'),
+          title: anyNamed('title'),
+          body: anyNamed('body'),
+          notificationDetails: anyNamed('notificationDetails'),
+          payload: anyNamed('payload'),
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        plugin.cancel(id: anyNamed('id')),
+      ).thenThrow(PlatformException(code: 'notification_cancel_failed'));
+      notifier = JourneyStatusNotifier(plugin: plugin);
+
+      await notifier.update(
+        journeyName: 'Solo drive',
+        selfUserId: 'driver',
+        presentation: const {},
+      );
+
+      await expectLater(notifier.clear(), completes);
+      verify(plugin.cancel(id: 8801)).called(1);
+    });
   });
 }

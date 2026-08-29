@@ -248,13 +248,21 @@ class JourneyStatusNotifier {
     _lastPostedAt = null;
     _lastMemberCount = -1;
     _lastArrivedCount = -1;
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        _androidInitialized) {
-      await _plugin.cancel(id: _notificationId);
-    }
-    if (defaultTargetPlatform == TargetPlatform.iOS && _iosInitialized) {
-      _activityId = null;
-      await _liveActivities.endAllActivities();
+    try {
+      if (defaultTargetPlatform == TargetPlatform.android &&
+          _androidInitialized) {
+        await _plugin.cancel(id: _notificationId);
+      }
+      if (defaultTargetPlatform == TargetPlatform.iOS && _iosInitialized) {
+        _activityId = null;
+        await _liveActivities.endAllActivities();
+      }
+    } catch (error, stackTrace) {
+      // This is invoked unawaited from widget disposal. Native notification
+      // teardown is best-effort and must not become an uncaught zone error
+      // after a journey has already completed successfully.
+      debugPrint('Could not clear journey status surface: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 }
