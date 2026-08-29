@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/journey_location_service.dart';
 import '../../../../core/services/offline_storage_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../data/models/route_result_model.dart';
 import '../../domain/entities/last_known_progress.dart';
 import '../../domain/entities/maneuver.dart';
@@ -176,11 +177,14 @@ class NavigationProvider with ChangeNotifier {
     await _positionSubscription?.cancel();
     _positionSubscription = _journeyLocationService.positions.listen(
       _onPositionUpdate,
-      onError: (Object e) => print('⚠️ Navigation GPS stream error: $e'),
+      onError: (Object error, StackTrace stackTrace) =>
+          AppLogger.warning('Navigation GPS stream error', error, stackTrace),
     );
 
     final latest = _journeyLocationService.latestPosition;
-    if (latest != null) await _onPositionUpdate(latest);
+    if (latest != null && _journeyLocationService.journeyId == _journeyId) {
+      await _onPositionUpdate(latest);
+    }
 
     notifyListeners();
   }

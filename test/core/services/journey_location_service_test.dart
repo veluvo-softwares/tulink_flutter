@@ -98,6 +98,32 @@ void main() {
     await service.dispose();
     await source.dispose();
   });
+
+  test('a stale refresh cannot overwrite a replacement session', () async {
+    final source = _FakeLocationService()..nextPosition = position(-1.2, 36.7);
+    final service = JourneyLocationService(source);
+    await service.start('journey-1');
+
+    final oldRefresh = Completer<Position?>();
+    source.positionGate = oldRefresh;
+    final refreshing = service.refreshPosition(broadcast: true);
+    await Future<void>.delayed(Duration.zero);
+
+    await service.stop(journeyId: 'journey-1');
+    source
+      ..positionGate = null
+      ..nextPosition = position(-1.3, 36.8);
+    await service.start('journey-1');
+
+    oldRefresh.complete(position(-1.1, 36.6));
+
+    expect(await refreshing, isNull);
+    expect(service.latestPosition?.latitude, -1.3);
+    expect(service.latestPosition?.longitude, 36.8);
+
+    await service.dispose();
+    await source.dispose();
+  });
 }
 
 class _FakeLocationService implements LocationService {

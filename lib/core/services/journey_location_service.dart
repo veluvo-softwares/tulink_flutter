@@ -85,11 +85,16 @@ class JourneyLocationService {
     bool broadcast = false,
   }) async {
     final journeyId = _journeyId;
+    final generation = _generation;
     if (journeyId == null) return null;
     final position = await _locationService.getCurrentPosition(
       timeout: timeout,
     );
-    if (_journeyId != journeyId || position == null) return null;
+    if (generation != _generation ||
+        _journeyId != journeyId ||
+        position == null) {
+      return null;
+    }
     _latestPosition = position;
     if (broadcast) _positions.add(position);
     return position;
