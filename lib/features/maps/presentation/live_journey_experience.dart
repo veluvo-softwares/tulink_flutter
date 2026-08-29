@@ -28,13 +28,13 @@ import '../../convoy/presentation/utils/convoy_member_presentation.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/journey_ended_event.dart';
 import '../../convoy/domain/entities/member_position.dart';
+import '../../convoy/domain/entities/route_updated_event.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
 import '../../home/presentation/state/journey_ended_event_scope.dart';
 import 'widgets/turn_instruction_card.dart';
 import 'providers/navigation_provider.dart';
 import '../domain/entities/route_progress.dart';
 import 'utils/route_rendering.dart';
-import 'utils/route_source_resolver.dart';
 import 'controllers/persistent_map_controller.dart';
 
 /// The live convoy layer, drawn over the application's single persistent map.
@@ -121,6 +121,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// [PersistentMapController.userPanTick] value last observed, used to notice
   /// a hand pan without the layer having to own the gesture listener.
   int _lastUserPanTick = 0;
+  int _lastRouteUpdatedTick = 0;
 
   /// Bounded location access shared with [ConvoyProvider]; see [LocationService].
   final LocationService _locationService = ServiceLocator().locationService;
@@ -609,54 +610,44 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     // rebuilt cannot paint the new one.
     final generation = _mapGeneration;
 
-    // Cached route first — see [resolveRouteSource]. A cached route already
-    // ends at this destination and needs no origin, so it must be chosen
-    // before any GPS work.
-    //
-    // Read through [MapProvider.routeFor], never `currentRoute`: the held
-    // route must belong to *this* user, journey, destination and surface
-    // generation before it may be adopted as this journey's geometry.
-    final source = await resolveRouteSource(
-      cachedRoute: mapProvider.routeFor(
-        userId: userId,
-        journeyId: journey.id,
-        destLat: journey.destination.latitude,
-        destLng: journey.destination.longitude,
-        surfaceGeneration: generation,
-      ),
-      destinationLat: journey.destination.latitude,
-      destinationLng: journey.destination.longitude,
-      locationService: _locationService,
-      knownLat: knownLat,
-      knownLng: knownLng,
+    RouteResultModel? route = await mapProvider.fetchCanonicalRoute(
+      userId: userId,
+      journeyId: journey.id,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+      surfaceGeneration: generation,
     );
     if (!mounted || _mapboxMap == null || generation != _mapGeneration) return;
 
-    final RouteResultModel? route;
-    switch (source) {
-      case CachedRouteSource(route: final cached):
-        print('✅ Using prefetched route — skipping fetch');
-        // Nothing is pending on location any more.
-        _cancelRouteLocationRetry();
-        route = cached;
-      case FetchRouteSource(:final originLat, :final originLng):
-        print('🌐 No prefetched route — fetching now');
-        route = await mapProvider.fetchRoute(
-          userId: userId,
-          journeyId: journey.id,
-          originLat: originLat,
-          originLng: originLng,
-          destLat: journey.destination.latitude,
-          destLng: journey.destination.longitude,
-          surfaceGeneration: generation,
-        );
-      case AwaitingLocationRouteSource():
-        // No cached route and no origin. Keep the destination visible and
-        // recover as soon as a position arrives, instead of leaving the map on
-        // a default regional camera with nothing drawn.
+    // Every member reads the same committed route. Only the leader may create
+    // the first version when none exists; followers wait for the server event
+    // instead of calculating a divergent polyline on their own device.
+    if (route == null) {
+      final currentUserId = context.read<AuthProvider>().user?.id;
+      if (currentUserId != journey.leaderId) {
+        await _centerOnDestination(journey);
+        return;
+      }
+
+      final latest = _journeyLocationService.latestPosition;
+      final originLat = knownLat ?? latest?.latitude;
+      final originLng = knownLng ?? latest?.longitude;
+      if (originLat == null || originLng == null) {
         await _centerOnDestination(journey);
         _scheduleRouteRetryOnNextFix(journey);
         return;
+      }
+      route = await mapProvider.replaceCanonicalRoute(
+        userId: userId,
+        journeyId: journey.id,
+        originLat: originLat,
+        originLng: originLng,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+        baseVersion: 0,
+        reason: 'INITIAL',
+        surfaceGeneration: generation,
+      );
     }
 
     if (route == null || !mounted || _mapboxMap == null) return;
@@ -748,6 +739,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// cleanly.
   Future<void> _handleReroute(Journey journey) async {
     if (!mounted) return;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || journey.leaderId != userId) return;
     print('🧭 Handling reroute for journey ${journey.id}');
 
     // Grab the current position from the live navigation stream before clearing
@@ -759,21 +752,54 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     final knownLat = progress?.snappedLatitude;
     final knownLng = progress?.snappedLongitude;
 
-    // Clear the cached route so _drawActualRoute fetches a fresh one.
-    context.read<MapProvider>().clearRoute();
-    // Reset throttle state so trim and puck start immediately on the new route.
-    _lastTrimAt = null;
+    final latest = _journeyLocationService.latestPosition;
+    final originLat = knownLat ?? latest?.latitude;
+    final originLng = knownLng ?? latest?.longitude;
+    if (originLat == null || originLng == null) return;
 
-    await _drawActualRoute(journey, knownLat: knownLat, knownLng: knownLng);
-
-    final newRoute = context.read<MapProvider>().routeFor(
-      userId: context.read<AuthProvider>().user?.id ?? '',
+    final mapProvider = context.read<MapProvider>();
+    var baseVersion = mapProvider.canonicalVersionFor(
+      userId: userId,
       journeyId: journey.id,
       destLat: journey.destination.latitude,
       destLng: journey.destination.longitude,
     );
-    print('🧭 reroute fetched: ${newRoute?.coordinates.length ?? 0} coords');
-    if (newRoute != null && mounted) {
+    if (baseVersion == null) {
+      await mapProvider.fetchCanonicalRoute(
+        userId: userId,
+        journeyId: journey.id,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+        surfaceGeneration: _mapGeneration,
+      );
+      baseVersion = mapProvider.canonicalVersionFor(
+        userId: userId,
+        journeyId: journey.id,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+      );
+    }
+    if (baseVersion == null) return;
+
+    final newRoute = await mapProvider.replaceCanonicalRoute(
+      userId: userId,
+      journeyId: journey.id,
+      originLat: originLat,
+      originLng: originLng,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+      baseVersion: baseVersion,
+      reason: 'LEADER_REROUTE',
+      surfaceGeneration: _mapGeneration,
+    );
+    if (newRoute == null || !mounted) return;
+
+    // Reset throttle state so trim and puck start immediately on the new route.
+    _lastTrimAt = null;
+
+    await _drawActualRoute(journey, knownLat: originLat, knownLng: originLng);
+    print('🧭 reroute fetched: ${newRoute.coordinates.length} coords');
+    if (mounted) {
       context.read<NavigationProvider>().loadRoute(newRoute);
     }
   }
@@ -859,6 +885,16 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       _navigationProvider = nav;
       _navigationProvider?.addListener(_onNavigationProgress);
     }
+    final convoy = context.watch<ConvoyProvider>();
+    if (convoy.routeUpdatedTick != _lastRouteUpdatedTick) {
+      _lastRouteUpdatedTick = convoy.routeUpdatedTick;
+      final event = convoy.lastRouteUpdatedEvent;
+      if (event != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_applyCanonicalRouteUpdate(event));
+        });
+      }
+    }
     // Refresh markers only when provider dependencies actually change,
     // rather than on every build().
     if (_mapboxMap != null) {
@@ -866,6 +902,28 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         if (mounted) _updateMarkers();
       });
     }
+  }
+
+  Future<void> _applyCanonicalRouteUpdate(RouteUpdatedEvent event) async {
+    final pending = _routeSetupFuture;
+    if (pending != null) await pending;
+    if (!mounted) return;
+    final journey = context.read<JourneyProvider>().currentJourney;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (journey == null ||
+        userId == null ||
+        journey.id != event.journeyId ||
+        journey.status != JourneyStatus.ACTIVE) {
+      return;
+    }
+    final heldVersion = context.read<MapProvider>().canonicalVersionFor(
+      userId: userId,
+      journeyId: journey.id,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+    );
+    if ((heldVersion ?? 0) >= event.routeVersion) return;
+    await _drawActualRoute(journey);
   }
 
   /// Called by [NavigationProvider] on every GPS tick while navigating.

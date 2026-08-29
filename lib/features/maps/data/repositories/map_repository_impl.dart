@@ -91,6 +91,72 @@ class MapRepositoryImpl implements MapRepository {
   }
 
   @override
+  Future<RouteResultModel?> getCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  }) async {
+    final cached = await localDataSource.loadRoute(
+      userId: userId,
+      journeyId: journeyId,
+      destinationLat: destinationLat,
+      destinationLng: destinationLng,
+    );
+    if (!connectivityService.isOnline.value) {
+      return cached?.canonicalVersion == null ? null : cached;
+    }
+
+    final remote = await routeRemoteDataSource.getCanonicalRoute(journeyId);
+    if (remote != null) {
+      final origin = remote.coordinates.first;
+      await localDataSource.saveRoute(
+        userId: userId,
+        journeyId: journeyId,
+        originLat: origin[1],
+        originLng: origin[0],
+        destinationLat: destinationLat,
+        destinationLng: destinationLng,
+        route: remote,
+      );
+      return remote;
+    }
+    return cached?.canonicalVersion == null ? null : cached;
+  }
+
+  @override
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+    required String reason,
+  }) async {
+    if (!connectivityService.isOnline.value) return null;
+    final route = await routeRemoteDataSource.replaceCanonicalRoute(
+      journeyId: journeyId,
+      originLat: originLat,
+      originLng: originLng,
+      baseVersion: baseVersion,
+      reason: reason,
+    );
+    if (route == null) return null;
+    await localDataSource.saveRoute(
+      userId: userId,
+      journeyId: journeyId,
+      originLat: originLat,
+      originLng: originLng,
+      destinationLat: destinationLat,
+      destinationLng: destinationLng,
+      route: route,
+    );
+    return route;
+  }
+
+  @override
   Future<RaceRoute?> getMarathonRoute() async {
     return await localDataSource.loadMarathonRoute();
   }

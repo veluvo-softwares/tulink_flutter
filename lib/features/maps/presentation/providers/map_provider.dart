@@ -60,6 +60,19 @@ class MapProvider with ChangeNotifier {
     return _currentRoute;
   }
 
+  /// Canonical version held for this exact live journey route.
+  int? canonicalVersionFor({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+  }) => routeFor(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+  )?.canonicalVersion;
+
   bool _isFetchingRoute = false;
   bool get isFetchingRoute => _isFetchingRoute;
 
@@ -205,6 +218,100 @@ class MapProvider with ChangeNotifier {
     } finally {
       // Only the newest request owns the loading flag; an older one finishing
       // must not signal "done" while the current request is still running.
+      if (isCurrent()) {
+        _isFetchingRoute = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Loads the server-owned route shared by every live convoy member.
+  Future<RouteResultModel?> fetchCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    int? surfaceGeneration,
+  }) => _runCanonicalRequest(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+    surfaceGeneration: surfaceGeneration,
+    request: () => _repository.getCanonicalRoute(
+      userId: userId,
+      journeyId: journeyId,
+      destinationLat: destLat,
+      destinationLng: destLng,
+    ),
+  );
+
+  /// Commits the next canonical version. Only the journey leader is accepted
+  /// by the server; a version conflict resolves to the committed winner.
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+    required int baseVersion,
+    required String reason,
+    int? surfaceGeneration,
+  }) => _runCanonicalRequest(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+    surfaceGeneration: surfaceGeneration,
+    request: () => _repository.replaceCanonicalRoute(
+      userId: userId,
+      journeyId: journeyId,
+      originLat: originLat,
+      originLng: originLng,
+      destinationLat: destLat,
+      destinationLng: destLng,
+      baseVersion: baseVersion,
+      reason: reason,
+    ),
+  );
+
+  Future<RouteResultModel?> _runCanonicalRequest({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    required Future<RouteResultModel?> Function() request,
+    int? surfaceGeneration,
+  }) async {
+    final token = ++_routeRequestSeq;
+    final key = _routeKey(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    final surface = surfaceGeneration ?? _surfaceGeneration;
+    _latestRouteRequest = token;
+    _latestRouteKey = key;
+    bool isCurrent() =>
+        _latestRouteRequest == token &&
+        _latestRouteKey == key &&
+        _surfaceGeneration == surface;
+
+    _isFetchingRoute = true;
+    notifyListeners();
+    try {
+      final route = await request();
+      if (!isCurrent()) return null;
+      if (route != null) {
+        _install(route, key, surface);
+        notifyListeners();
+        return route;
+      }
+      final held = _currentRouteKey == key ? _currentRoute : null;
+      return held?.canonicalVersion == null ? null : held;
+    } finally {
       if (isCurrent()) {
         _isFetchingRoute = false;
         notifyListeners();

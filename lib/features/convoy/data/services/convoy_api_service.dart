@@ -95,7 +95,12 @@ class ConvoyApiService {
         );
       }
 
-      return response.data!;
+      final body = response.data!;
+      final data = body['data'];
+      if (data is Map) {
+        return data.map((key, value) => MapEntry(key.toString(), value));
+      }
+      return body;
     } on DioException catch (e) {
       // Handle journey not found specifically
       if (e.response?.statusCode == 404) {
@@ -119,5 +124,31 @@ class ConvoyApiService {
         error: 'Unexpected error fetching convoy positions: $e',
       );
     }
+  }
+
+  /// Fetch the authoritative state used to recover a live journey after a
+  /// cold start, reconnect, or foreground resume.
+  /// GET /journeys/{journeyId}/live
+  Future<Map<String, dynamic>> fetchLiveJourneySnapshot(
+    String journeyId,
+  ) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/journeys/$journeyId/live',
+    );
+    final body = response.data;
+    if (body == null) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        type: DioExceptionType.badResponse,
+        error: 'Empty live journey response from server',
+      );
+    }
+
+    final data = body['data'];
+    if (data is Map) {
+      return data.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return body;
   }
 }

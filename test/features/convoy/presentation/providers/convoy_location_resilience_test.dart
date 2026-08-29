@@ -10,6 +10,7 @@ import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.d
 import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/member_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 
 import 'convoy_provider_test.mocks.dart';
@@ -84,6 +85,9 @@ void main() {
       repository.participantAcceptedStream,
     ).thenAnswer((_) => const Stream<String>.empty());
     when(
+      repository.routeUpdatedStream,
+    ).thenAnswer((_) => const Stream<RouteUpdatedEvent>.empty());
+    when(
       publishMyPosition(
         journeyId: anyNamed('journeyId'),
         latitude: anyNamed('latitude'),
@@ -142,6 +146,46 @@ void main() {
       },
     );
   });
+
+  test(
+    'route update signals are journey-scoped and version-deduplicated',
+    () async {
+      final routeUpdates = StreamController<RouteUpdatedEvent>.broadcast();
+      when(
+        repository.routeUpdatedStream,
+      ).thenAnswer((_) => routeUpdates.stream);
+      location.hangs = true;
+      final provider = buildProvider();
+      await provider.startCoordination(journeyId);
+
+      void emit(String eventJourneyId, int version) {
+        routeUpdates.add(
+          RouteUpdatedEvent(
+            journeyId: eventJourneyId,
+            routeVersion: version,
+            reason: 'LEADER_REROUTE',
+            updatedAt: null,
+          ),
+        );
+      }
+
+      emit(otherJourneyId, 9);
+      emit(journeyId, 3);
+      emit(journeyId, 3);
+      emit(journeyId, 2);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.routeUpdatedTick, 1);
+      expect(provider.lastRouteUpdatedEvent?.routeVersion, 3);
+
+      emit(journeyId, 4);
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.routeUpdatedTick, 2);
+      expect(provider.lastRouteUpdatedEvent?.routeVersion, 4);
+
+      await routeUpdates.close();
+    },
+  );
 
   group('retrying location without recreating the journey', () {
     test('a later fix clears the failure and starts publishing', () async {

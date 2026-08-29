@@ -9,6 +9,7 @@ import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/member_position.dart';
 import '../../domain/entities/participant_arrived_event.dart';
+import '../../domain/entities/route_updated_event.dart';
 import '../../domain/usecases/stream_convoy_positions.dart';
 import '../../domain/usecases/publish_my_position.dart';
 import '../../domain/usecases/fetch_latest_snapshot.dart';
@@ -149,6 +150,13 @@ class ConvoyProvider extends ChangeNotifier {
   int get arrivedCount => _arrivedCount;
   int get totalMemberCount => _totalMemberCount;
   ParticipantArrivedEvent? get lastArrivalEvent => _lastArrivalEvent;
+
+  int _routeUpdatedTick = 0;
+  RouteUpdatedEvent? _lastRouteUpdatedEvent;
+
+  /// Monotonic signal and payload for canonical route replacement.
+  int get routeUpdatedTick => _routeUpdatedTick;
+  RouteUpdatedEvent? get lastRouteUpdatedEvent => _lastRouteUpdatedEvent;
 
   /// Increments every time an invited member accepts (server `participant-accepted`
   /// event) for the journey we're currently in. Screens showing the participant
@@ -1055,6 +1063,23 @@ class ConvoyProvider extends ChangeNotifier {
           },
         );
 
+    final routeUpdatedSubscription = _repository.routeUpdatedStream.listen(
+      (event) {
+        if (!owns() || event.journeyId != journeyId) return;
+        final previousVersion =
+            _lastRouteUpdatedEvent?.journeyId == event.journeyId
+            ? _lastRouteUpdatedEvent!.routeVersion
+            : 0;
+        if (event.routeVersion <= previousVersion) return;
+        _lastRouteUpdatedEvent = event;
+        _routeUpdatedTick++;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        print('❌ route-updated stream error: $error');
+      },
+    );
+
     _roomSubscriptions = _RoomSubscriptions(
       convoy: convoySubscription,
       connection: connectionSubscription,
@@ -1062,6 +1087,7 @@ class ConvoyProvider extends ChangeNotifier {
       participantArrived: participantArrivedSubscription,
       journeyStarted: journeyStartedSubscription,
       participantAccepted: participantAcceptedSubscription,
+      routeUpdated: routeUpdatedSubscription,
     );
     return true;
   }
@@ -1180,6 +1206,7 @@ class _RoomSubscriptions {
     required this.participantArrived,
     required this.journeyStarted,
     required this.participantAccepted,
+    required this.routeUpdated,
   });
 
   final StreamSubscription<({ConvoySnapshot? snapshot, Failure? failure})>
@@ -1189,6 +1216,7 @@ class _RoomSubscriptions {
   final StreamSubscription<ParticipantArrivedEvent> participantArrived;
   final StreamSubscription<String> journeyStarted;
   final StreamSubscription<String> participantAccepted;
+  final StreamSubscription<RouteUpdatedEvent> routeUpdated;
 
   Future<void> cancel() => Future.wait<void>([
     convoy.cancel(),
@@ -1197,5 +1225,6 @@ class _RoomSubscriptions {
     participantArrived.cancel(),
     journeyStarted.cancel(),
     participantAccepted.cancel(),
+    routeUpdated.cancel(),
   ]);
 }

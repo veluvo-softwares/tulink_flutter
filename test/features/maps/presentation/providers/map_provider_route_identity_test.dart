@@ -23,7 +23,7 @@ void main() {
 
   /// A route whose identity is carried in a synthetic step, so two otherwise
   /// identical routes can be told apart.
-  RouteResultModel tagged(String tag) => RouteResultModel(
+  RouteResultModel tagged(String tag, {int? version}) => RouteResultModel(
     coordinates: [
       [36.0, -1.0],
       [36.1, -1.1],
@@ -33,6 +33,8 @@ void main() {
     steps: [
       RouteStepModel(instruction: tag, distanceMetres: 1, maneuver: 'depart'),
     ],
+    canonicalVersion: version,
+    canonicalReason: version == null ? null : 'INITIAL',
   );
 
   String? tagOf(RouteResultModel? r) =>
@@ -247,11 +249,83 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(provider.currentRoute, isNull);
   });
+
+  test('canonical route version is installed for the exact journey', () async {
+    repository.canonicalFor['A'] = Future.value(
+      tagged('canonical', version: 3),
+    );
+
+    final route = await provider.fetchCanonicalRoute(
+      userId: 'u1',
+      journeyId: 'A',
+      destLat: -1,
+      destLng: 36,
+    );
+
+    expect(route?.canonicalVersion, 3);
+    expect(
+      provider.canonicalVersionFor(
+        userId: 'u1',
+        journeyId: 'A',
+        destLat: -1,
+        destLng: 36,
+      ),
+      3,
+    );
+  });
+
+  test('a stale canonical response cannot overwrite a newer journey', () async {
+    final a = Completer<RouteResultModel?>();
+    repository.canonicalFor['A'] = a.future;
+    repository.canonicalFor['B'] = Future.value(tagged('B', version: 2));
+
+    final first = provider.fetchCanonicalRoute(
+      userId: 'u1',
+      journeyId: 'A',
+      destLat: -1,
+      destLng: 36,
+    );
+    await provider.fetchCanonicalRoute(
+      userId: 'u1',
+      journeyId: 'B',
+      destLat: -2,
+      destLng: 37,
+    );
+    a.complete(tagged('A', version: 1));
+
+    expect(await first, isNull);
+    expect(tagOf(provider.currentRoute), 'B');
+  });
+
+  test('leader replacement forwards compare-and-swap metadata', () async {
+    repository.replacementFor['A'] = Future.value(
+      tagged('reroute', version: 4),
+    );
+
+    await provider.replaceCanonicalRoute(
+      userId: 'u1',
+      journeyId: 'A',
+      originLat: -1.2,
+      originLng: 36.8,
+      destLat: -1,
+      destLng: 36,
+      baseVersion: 3,
+      reason: 'LEADER_REROUTE',
+    );
+
+    expect(repository.lastBaseVersion, 3);
+    expect(repository.lastReason, 'LEADER_REROUTE');
+    expect(provider.currentRoute?.canonicalVersion, 4);
+  });
 }
 
 class _FakeMapRepository implements MapRepository {
   final Map<String, Future<RouteResultModel?>> routeFor = {};
   final Map<String, Future<RouteResultModel?>> cachedFor = {};
+  final Map<String, Future<RouteResultModel?>> canonicalFor = {};
+  final Map<String, Future<RouteResultModel?>> replacementFor = {};
+  int? lastBaseVersion;
+  String? lastReason;
 
   @override
   Future<RouteResultModel?> getRoute({
@@ -270,6 +344,30 @@ class _FakeMapRepository implements MapRepository {
     required double destinationLat,
     required double destinationLng,
   }) => cachedFor[journeyId] ?? Future.value(null);
+
+  @override
+  Future<RouteResultModel?> getCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  }) => canonicalFor[journeyId] ?? Future.value(null);
+
+  @override
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+    required String reason,
+  }) {
+    lastBaseVersion = baseVersion;
+    lastReason = reason;
+    return replacementFor[journeyId] ?? Future.value(null);
+  }
 
   @override
   Future<RaceRoute?> getMarathonRoute() async => null;

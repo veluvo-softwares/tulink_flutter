@@ -84,7 +84,19 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
   @override
   Future<ConvoySnapshot> fetchLatestSnapshot(String journeyId) async {
     try {
-      final responseData = await _apiService.fetchLatestPositions(journeyId);
+      Map<String, dynamic> responseData;
+      try {
+        final liveSnapshot = await _apiService.fetchLiveJourneySnapshot(
+          journeyId,
+        );
+        responseData = _normalizeLiveSnapshot(liveSnapshot);
+      } on DioException catch (error) {
+        // Allows the mobile release to be deployed before every environment
+        // has the new recovery endpoint. Once available, /live is always the
+        // authoritative source for roster, locations, route, and cursor.
+        if (error.response?.statusCode != 404) rethrow;
+        responseData = await _apiService.fetchLatestPositions(journeyId);
+      }
 
       // Parse the response according to API contract
       final snapshotDto = ConvoySnapshotDto.fromJson(responseData);
@@ -172,5 +184,38 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
         timestamp: DateTime.now(),
       );
     }
+  }
+
+  Map<String, dynamic> _normalizeLiveSnapshot(Map<String, dynamic> snapshot) {
+    final journey = snapshot['journey'];
+    final journeyData = journey is Map
+        ? journey.map((key, value) => MapEntry(key.toString(), value))
+        : const <String, dynamic>{};
+    final participants = <String, dynamic>{};
+    final members = snapshot['members'];
+
+    if (members is List) {
+      for (final rawMember in members) {
+        if (rawMember is! Map) continue;
+        final member = rawMember.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+        final userId = member['userId']?.toString();
+        final rawLocation = member['location'];
+        if (userId == null || rawLocation is! Map) continue;
+        final location = rawLocation.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+        participants[userId] = <String, dynamic>{...location, 'userId': userId};
+      }
+    }
+
+    return <String, dynamic>{
+      'participants': participants,
+      'destination': journeyData['destination'],
+      'destinationAddress':
+          journeyData['destinationAddress'] ?? journeyData['destinationName'],
+      'generatedAt': snapshot['generatedAt'],
+    };
   }
 }
