@@ -7,6 +7,7 @@ import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/core/widgets/location_access_sheet.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/journey_invitation.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
+import 'package:tulink_flutter/features/convoy/presentation/services/live_journey_coordinator.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/presentation/providers/journey_provider.dart';
@@ -62,9 +63,7 @@ class _InvitationsScreenState extends State<InvitationsScreen> {
         // location: the member must be able to observe the convoy and recover
         // even with permission denied. ConvoyProvider joins the room first and
         // reports any location failure separately.
-        await context.read<ConvoyProvider>().startCoordination(
-          invitation.journeyId,
-        );
+        await context.read<LiveJourneyCoordinator>().reconcile();
         if (!mounted) return;
         await NavigationHelper.toHomeAndClearStack(context);
       } else {

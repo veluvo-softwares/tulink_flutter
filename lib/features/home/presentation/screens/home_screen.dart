@@ -1371,10 +1371,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       enterLive: () {
         if (!mounted) return;
         _liveJourneyId = journey.id;
-        // Do not await permission, GPS, or native map staging before exposing
-        // the live experience. ConvoyProvider installs room listeners first;
-        // LiveJourneyExperience owns restoration of live map geometry.
-        unawaited(context.read<ConvoyProvider>().startCoordination(journey.id));
+        // The app-scoped coordinator owns room and location lifecycle. This
+        // screen only exposes the live map state selected by JourneyProvider.
         _enterLiveJourney();
       },
       stagePending: () async {
