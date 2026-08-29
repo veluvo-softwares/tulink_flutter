@@ -51,6 +51,14 @@ void main() {
     ),
   );
 
+  Future<void> expandSheet(WidgetTester tester) async {
+    await tester.drag(
+      find.byType(DraggableScrollableSheet),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+  }
+
   group('an invited member waiting for the leader', () {
     testWidgets('names who the convoy is waiting on', (tester) async {
       await pump(
@@ -132,6 +140,7 @@ void main() {
         ),
       );
 
+      await expandSheet(tester);
       await tester.tap(find.text('Leave'));
       await tester.pump();
       expect(left, 1);
@@ -159,6 +168,7 @@ void main() {
         ),
       );
 
+      await expandSheet(tester);
       // Denial is reported, and the member is still in the convoy: the waiting
       // chrome and Leave action remain, exactly per the Phase 1 invariant.
       expect(find.text('Location permission denied'), findsOneWidget);
@@ -187,6 +197,7 @@ void main() {
         ),
       );
 
+      await expandSheet(tester);
       await tester.tap(find.text('Start journey'));
       await tester.pump();
       await tester.tap(find.text('Share code'));

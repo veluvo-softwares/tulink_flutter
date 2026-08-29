@@ -36,6 +36,14 @@ void main() {
     ),
   );
 
+  Future<void> expandSheet(WidgetTester tester) async {
+    await tester.drag(
+      find.byType(DraggableScrollableSheet),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+  }
+
   // Addressed by key, not by label: the control swaps its child for a spinner
   // while a retry is running.
   final reconnect = find.byKey(PendingJourneyOverlay.reconnectRoomKey);
@@ -77,6 +85,7 @@ void main() {
       );
 
       // Only once they are exhausted does the explicit control appear.
+      await expandSheet(tester);
       expect(
         find.text('Not receiving live updates — you may miss the start.'),
         findsOneWidget,
@@ -133,6 +142,7 @@ void main() {
 
     // Retries are exhausted: the control must be enabled and must not read as
     // in-progress. The shipped copy said "Retrying…" with nothing scheduled.
+    await expandSheet(tester);
     expect(find.text('Reconnect'), findsOneWidget);
     expect(find.text('Reconnecting…'), findsNothing);
     expect(
@@ -167,6 +177,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(attempts, 3);
 
+    await expandSheet(tester);
     await tester.tap(reconnect);
     await tester.pump();
 
@@ -217,6 +228,7 @@ void main() {
 
     // Truthful copy naming what actually failed, plus a control that does
     // something — instead of a toast promising a retry that is not scheduled.
+    await expandSheet(tester);
     expect(
       find.textContaining('could not be loaded on this device'),
       findsOneWidget,
