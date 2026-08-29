@@ -278,7 +278,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Pipeline is down — rebuild it, replacing any half-built subscription.
     await _locationSubscription?.cancel();
     _locationSubscription = null;
-    await _journeyLocationService.stop(journeyId: _currentJourneyId);
+    await _journeyLocationService.stop(journeyId: journeyId);
     _publishTimer?.cancel();
     _publishTimer = null;
 
@@ -586,6 +586,7 @@ class ConvoyProvider extends ChangeNotifier {
   /// Cancels GPS publishing and real-time streaming
   Future<void> stopCoordination({bool invalidateRoomOwner = true}) async {
     print('🛑 ConvoyProvider: Stopping coordination...');
+    final journeyId = _currentJourneyId;
 
     // Explicit stops supersede any start/cancel/install work already awaiting
     // an async boundary. A handoff has already claimed its newer generation,
@@ -595,6 +596,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Stop location publishing
     await _locationSubscription?.cancel();
     _locationSubscription = null;
+    await _journeyLocationService.stop(journeyId: journeyId);
     _isPublishing = false;
 
     // Stop the fixed-cadence beacon timer
@@ -1019,7 +1021,7 @@ class ConvoyProvider extends ChangeNotifier {
               print(
                 '🏁 ConvoyProvider: all participants arrived — stopping publishing',
               );
-              await _stopLocationPublishing();
+              await _stopLocationPublishing(journeyId);
             }
 
             notifyListeners();
@@ -1108,10 +1110,10 @@ class ConvoyProvider extends ChangeNotifier {
   /// leaving snapshot/connection subscriptions intact. Used when the backend
   /// signals allArrived: we want to silence the publish loop but stay in the
   /// room long enough to receive the journey-ended event that follows.
-  Future<void> _stopLocationPublishing() async {
+  Future<void> _stopLocationPublishing(String journeyId) async {
     await _locationSubscription?.cancel();
     _locationSubscription = null;
-    await _journeyLocationService.stop(journeyId: _currentJourneyId);
+    await _journeyLocationService.stop(journeyId: journeyId);
     _isPublishing = false;
 
     _publishTimer?.cancel();

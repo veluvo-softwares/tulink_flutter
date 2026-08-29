@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mockito/mockito.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
+import 'package:tulink_flutter/core/services/journey_location_service.dart';
 import 'package:tulink_flutter/core/services/location_permission_service.dart';
 import 'package:tulink_flutter/core/services/location_service.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
@@ -47,14 +48,16 @@ void main() {
     speedAccuracy: 0,
   );
 
-  ConvoyProvider buildProvider() => ConvoyProvider(
-    streamConvoyPositions: streamConvoyPositions,
-    publishMyPosition: publishMyPosition,
-    fetchLatestSnapshot: fetchLatestSnapshot,
-    repository: repository,
-    locationService: location,
-    permissionGate: permission,
-  );
+  ConvoyProvider buildProvider({JourneyLocationService? journeyLocation}) =>
+      ConvoyProvider(
+        streamConvoyPositions: streamConvoyPositions,
+        publishMyPosition: publishMyPosition,
+        fetchLatestSnapshot: fetchLatestSnapshot,
+        repository: repository,
+        locationService: location,
+        journeyLocationService: journeyLocation,
+        permissionGate: permission,
+      );
 
   setUp(() {
     streamConvoyPositions = MockStreamConvoyPositions();
@@ -340,6 +343,24 @@ void main() {
 
       expect(provider.locationFailure, isNull);
     });
+
+    test(
+      'stopCoordination releases the native journey location owner',
+      () async {
+        location.nextPosition = position();
+        final journeyLocation = JourneyLocationService(location);
+        final provider = buildProvider(journeyLocation: journeyLocation);
+
+        await provider.startCoordination(journeyId);
+        expect(journeyLocation.isRunning, isTrue);
+
+        await provider.stopCoordination();
+
+        expect(journeyLocation.isRunning, isFalse);
+        expect(journeyLocation.journeyId, isNull);
+        await journeyLocation.dispose();
+      },
+    );
   });
 
   group('room membership does not wait on the permission dialog', () {
