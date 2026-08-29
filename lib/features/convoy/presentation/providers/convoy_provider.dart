@@ -36,6 +36,16 @@ class ConvoyProvider extends ChangeNotifier {
        _permissionGate =
            permissionGate ?? const DefaultLocationPermissionGate();
 
+  /// Android icon used by geolocator's foreground location service.
+  ///
+  /// Geolocator defaults to `mipmap/ic_launcher`. TuLink's launcher resource
+  /// is named `launcher_icon`, and the plugin's native fallback leaves the
+  /// icon id at zero. Android then rejects the foreground notification and
+  /// terminates the process as soon as convoy publishing starts.
+  @visibleForTesting
+  static const AndroidResource androidForegroundNotificationIcon =
+      AndroidResource(name: 'launcher_icon', defType: 'mipmap');
+
   final StreamConvoyPositions _streamConvoyPositions;
   final PublishMyPosition _publishMyPosition;
   final FetchLatestSnapshot _fetchLatestSnapshot;
@@ -634,6 +644,7 @@ class ConvoyProvider extends ChangeNotifier {
           notificationTitle: 'Journey in progress',
           notificationText:
               'Tu-Link is sharing your location with your convoy.',
+          notificationIcon: androidForegroundNotificationIcon,
           enableWakeLock: true,
           setOngoing: true,
         ),
