@@ -48,6 +48,7 @@ import '../../features/maps/presentation/providers/navigation_provider.dart';
 import '../constants/app_constants.dart';
 import '../constants/storage_keys.dart';
 import '../network/dio_client.dart';
+import '../services/journey_location_service.dart';
 import '../services/location_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/connectivity_service.dart';
@@ -120,6 +121,7 @@ class ServiceLocator {
   /// Shared, bounded location access. Injected wherever a fix is needed so a
   /// stalled GPS can never deadlock a caller (see [LocationService]).
   final LocationService _locationService = const GeolocatorLocationService();
+  late final JourneyLocationService _journeyLocationService;
 
   // Push notifications (FCM)
   late PushNotificationService _pushNotificationService;
@@ -178,6 +180,7 @@ class ServiceLocator {
     }
 
     _connectivityService = ConnectivityService();
+    _journeyLocationService = JourneyLocationService(_locationService);
     await _connectivityService.init();
     _offlineStorageService = OfflineStorageService();
     await _offlineStorageService.init();
@@ -287,6 +290,7 @@ class ServiceLocator {
     _themeProvider = ThemeProvider();
     _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
     _navigationProvider = NavigationProvider(
+      journeyLocationService: _journeyLocationService,
       connectivityService: _connectivityService,
       offlineStorage: _offlineStorageService,
       currentUserId: () async =>
@@ -323,7 +327,7 @@ class ServiceLocator {
       publishMyPosition: _publishMyPosition,
       fetchLatestSnapshot: _fetchLatestSnapshot,
       repository: _convoyRepository,
-      locationService: _locationService,
+      journeyLocationService: _journeyLocationService,
     );
 
     // On sign-out / unrecoverable auth loss, tear down live convoy coordination
@@ -347,6 +351,7 @@ class ServiceLocator {
 
   /// Dispose resources when app is closing
   Future<void> dispose() async {
+    await _journeyLocationService.dispose();
     await _convoyRepository.dispose();
     await _connectivityService.dispose();
     await _offlineStorageService.close();

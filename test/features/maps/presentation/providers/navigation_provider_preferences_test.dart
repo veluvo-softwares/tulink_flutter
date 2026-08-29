@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tulink_flutter/core/services/journey_location_service.dart';
+import 'package:tulink_flutter/core/services/location_service.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/navigation_provider.dart';
 import 'package:tulink_flutter/features/maps/presentation/services/voice_instruction_service.dart';
 
@@ -16,6 +18,9 @@ void main() {
   test('voice navigation preference is restored and saved', () async {
     bool? savedValue;
     final provider = NavigationProvider(
+      journeyLocationService: JourneyLocationService(
+        const GeolocatorLocationService(),
+      ),
       voiceService: _TestVoiceInstructionService(),
       loadVoiceEnabled: () async => false,
       saveVoiceEnabled: (enabled) async => savedValue = enabled,
