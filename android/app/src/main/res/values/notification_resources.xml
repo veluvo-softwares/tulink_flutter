@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Native SDKs and remotely-authored FCM payloads commonly request the
+         conventional ic_launcher name. Keep it as an alias to TuLink's
+         generated launcher_icon so those notification paths never resolve 0. -->
+    <item name="ic_launcher" type="mipmap">@mipmap/launcher_icon</item>
+</resources>
