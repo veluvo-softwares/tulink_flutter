@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 
+import '../../../../core/services/connectivity_service.dart';
+import '../../../../core/services/journey_location_service.dart';
+import '../../../../core/services/offline_storage_service.dart';
 import '../../data/models/route_result_model.dart';
 import '../../domain/entities/last_known_progress.dart';
 import '../../domain/entities/maneuver.dart';
@@ -11,8 +14,6 @@ import '../services/maneuver_tracker_service.dart';
 import '../services/map_matching_service.dart';
 import '../services/off_route_detection_service.dart';
 import '../services/voice_instruction_service.dart';
-import '../../../../core/services/connectivity_service.dart';
-import '../../../../core/services/offline_storage_service.dart';
 
 /// Orchestrates the turn-by-turn navigation experience for an active journey.
 ///
@@ -35,6 +36,7 @@ class NavigationProvider with ChangeNotifier {
   final Future<String?> Function()? _currentUserId;
   final Future<bool?> Function()? _loadVoiceEnabled;
   final Future<void> Function(bool enabled)? _saveVoiceEnabled;
+  final JourneyLocationService _journeyLocationService;
   late final OffRouteDetectionService _offRouteDetector;
 
   StreamSubscription<geo.Position>? _positionSubscription;
@@ -50,6 +52,7 @@ class NavigationProvider with ChangeNotifier {
   DateTime? _lastProgressPersistedAt;
 
   NavigationProvider({
+    required JourneyLocationService journeyLocationService,
     ManeuverTrackerService? maneuverTracker,
     VoiceInstructionService? voiceService,
     ConnectivityService? connectivityService,
@@ -63,7 +66,8 @@ class NavigationProvider with ChangeNotifier {
        _offlineStorage = offlineStorage,
        _currentUserId = currentUserId,
        _loadVoiceEnabled = loadVoiceEnabled,
-       _saveVoiceEnabled = saveVoiceEnabled {
+       _saveVoiceEnabled = saveVoiceEnabled,
+       _journeyLocationService = journeyLocationService {
     _offRouteDetector = OffRouteDetectionService(
       onRerouteNeeded: () async {
         if (_onRerouteCallback != null) {
@@ -170,16 +174,13 @@ class NavigationProvider with ChangeNotifier {
     );
 
     await _positionSubscription?.cancel();
-    _positionSubscription =
-        geo.Geolocator.getPositionStream(
-          locationSettings: const geo.LocationSettings(
-            accuracy: geo.LocationAccuracy.bestForNavigation,
-            distanceFilter: 5,
-          ),
-        ).listen(
-          _onPositionUpdate,
-          onError: (Object e) => print('⚠️ Navigation GPS stream error: $e'),
-        );
+    _positionSubscription = _journeyLocationService.positions.listen(
+      _onPositionUpdate,
+      onError: (Object e) => print('⚠️ Navigation GPS stream error: $e'),
+    );
+
+    final latest = _journeyLocationService.latestPosition;
+    if (latest != null) await _onPositionUpdate(latest);
 
     notifyListeners();
   }

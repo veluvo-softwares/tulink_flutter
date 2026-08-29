@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show visibleForTesting;
@@ -17,6 +16,7 @@ import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/journey_location_service.dart';
 
 /// Provider for convoy coordination state management
 /// Handles real-time position sharing and convoy member tracking
@@ -27,12 +27,17 @@ class ConvoyProvider extends ChangeNotifier {
     required FetchLatestSnapshot fetchLatestSnapshot,
     required ConvoyRepository repository,
     LocationService? locationService,
+    JourneyLocationService? journeyLocationService,
     LocationPermissionGate? permissionGate,
   }) : _streamConvoyPositions = streamConvoyPositions,
        _publishMyPosition = publishMyPosition,
        _fetchLatestSnapshot = fetchLatestSnapshot,
        _repository = repository,
-       _locationService = locationService ?? const GeolocatorLocationService(),
+       _journeyLocationService =
+           journeyLocationService ??
+           JourneyLocationService(
+             locationService ?? const GeolocatorLocationService(),
+           ),
        _permissionGate =
            permissionGate ?? const DefaultLocationPermissionGate();
 
@@ -44,13 +49,13 @@ class ConvoyProvider extends ChangeNotifier {
   /// terminates the process as soon as convoy publishing starts.
   @visibleForTesting
   static const AndroidResource androidForegroundNotificationIcon =
-      AndroidResource(name: 'launcher_icon', defType: 'mipmap');
+      JourneyLocationService.androidForegroundNotificationIcon;
 
   final StreamConvoyPositions _streamConvoyPositions;
   final PublishMyPosition _publishMyPosition;
   final FetchLatestSnapshot _fetchLatestSnapshot;
   final ConvoyRepository _repository;
-  final LocationService _locationService;
+  final JourneyLocationService _journeyLocationService;
   final LocationPermissionGate _permissionGate;
 
   // State
@@ -252,7 +257,7 @@ class ConvoyProvider extends ChangeNotifier {
     // The pipeline may already be running but starved of a fix. Ask for a
     // fresh one rather than reporting success off a stale flag.
     if (_isPublishing) {
-      final position = await _locationService.getCurrentPosition();
+      final position = await _journeyLocationService.refreshPosition();
       if (_currentJourneyId != journeyId) return false;
       if (position == null) {
         _setLocationFailure(ConvoyFailure.locationUnavailable);
@@ -265,6 +270,7 @@ class ConvoyProvider extends ChangeNotifier {
     // Pipeline is down — rebuild it, replacing any half-built subscription.
     await _locationSubscription?.cancel();
     _locationSubscription = null;
+    await _journeyLocationService.stop(journeyId: _currentJourneyId);
     _publishTimer?.cancel();
     _publishTimer = null;
 
@@ -618,67 +624,30 @@ class ConvoyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Build platform-specific location settings that keep GPS alive while the
-  /// app is backgrounded or the screen is off during a journey.
-  ///
-  /// - Android: runs the position stream inside a foreground service with a
-  ///   persistent notification (required by the OS to track in the background)
-  ///   and a wake lock so sampling continues with the screen off.
-  /// - iOS: enables background location updates with the blue status-bar
-  ///   indicator. "While Using" permission is sufficient with this flag set;
-  ///   we do not require "Always". Auto-pause is disabled so a stationary
-  ///   device doesn't silently stop the convoy beacon.
-  LocationSettings _buildLocationSettings() {
-    // Ask the OS for its navigation-grade fused GNSS/course stream while a
-    // journey is active. Both platforms may combine satellite, Wi-Fi, cell,
-    // and inertial signals behind this API without exposing raw sensor drift.
-    const accuracy = LocationAccuracy.bestForNavigation;
-    const distanceFilter = 5; // metres
-
-    if (Platform.isAndroid) {
-      return AndroidSettings(
-        accuracy: accuracy,
-        distanceFilter: distanceFilter,
-        forceLocationManager: false,
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Journey in progress',
-          notificationText:
-              'Tu-Link is sharing your location with your convoy.',
-          notificationIcon: androidForegroundNotificationIcon,
-          enableWakeLock: true,
-          setOngoing: true,
-        ),
-      );
-    }
-
-    if (Platform.isIOS) {
-      return AppleSettings(
-        accuracy: accuracy,
-        distanceFilter: distanceFilter,
-        activityType: ActivityType.automotiveNavigation,
-        allowBackgroundLocationUpdates: true,
-        showBackgroundLocationIndicator: true,
-        pauseLocationUpdatesAutomatically: false,
-      );
-    }
-
-    return const LocationSettings(
-      accuracy: accuracy,
-      distanceFilter: distanceFilter,
-    );
-  }
-
   /// Start GPS location publishing with throttling
   Future<void> _startLocationPublishing(String journeyId) async {
-    final locationSettings = _buildLocationSettings();
-
     try {
+      await _locationSubscription?.cancel();
+      _locationSubscription = _journeyLocationService.positions.listen(
+        (Position position) => _handleLocationUpdate(journeyId, position),
+        onError: (Object error) {
+          _setLocationFailure(
+            ConvoyFailure(
+              message: 'Location updates stopped',
+              details: error.toString(),
+              timestamp: DateTime.now(),
+              isRetryable: true,
+            ),
+          );
+        },
+      );
+
       // Seed an initial position so we beacon before the first movement event
       // arrives (a still device emits nothing on its own). Bounded by
       // [LocationService]: a device that cannot produce a fix yields null
       // rather than hanging this method — and therefore the whole coordination
       // start — forever.
-      final initial = await _locationService.getCurrentPosition();
+      final initial = await _journeyLocationService.start(journeyId);
 
       // The journey may have been switched or stopped while we waited for the
       // fix; a late position must never publish against the wrong room.
@@ -691,25 +660,10 @@ class ConvoyProvider extends ChangeNotifier {
         _setLocationFailure(null);
         await _publishLocation(journeyId, initial, false);
         if (_currentJourneyId != journeyId) return;
+        _journeyLocationService.broadcastLatest();
       } else {
         _setLocationFailure(ConvoyFailure.locationUnavailable);
       }
-
-      _locationSubscription = _locationService
-          .getPositionStream(locationSettings: locationSettings)
-          .listen(
-            (Position position) => _handleLocationUpdate(journeyId, position),
-            onError: (Object error) {
-              _setLocationFailure(
-                ConvoyFailure(
-                  message: 'Location updates stopped',
-                  details: error.toString(),
-                  timestamp: DateTime.now(),
-                  isRetryable: true,
-                ),
-              );
-            },
-          );
 
       // Fixed-cadence beacon: republish the last known position on a steady
       // interval even while stationary, so parked / just-joined members stay
@@ -741,7 +695,7 @@ class ConvoyProvider extends ChangeNotifier {
   Future<void> _publishBeacon(String journeyId) async {
     if (_currentJourneyId != journeyId) return;
 
-    final fresh = await _locationService.getCurrentPosition(
+    final fresh = await _journeyLocationService.refreshPosition(
       timeout: const Duration(seconds: 3),
     );
     if (_currentJourneyId != journeyId) return;
@@ -750,7 +704,7 @@ class ConvoyProvider extends ChangeNotifier {
     if (position == null) return;
     if (fresh != null) _lastKnownPosition = fresh;
 
-    await _publishLocation(journeyId, position, (position.speed ?? 0.0) > 0.5);
+    await _publishLocation(journeyId, position, position.speed > 0.5);
   }
 
   /// Handle a new GPS location from the movement stream. Caches the position
@@ -770,7 +724,7 @@ class ConvoyProvider extends ChangeNotifier {
     if (_locationFailure != null) _setLocationFailure(null);
 
     final now = DateTime.now();
-    final isMoving = (position.speed ?? 0.0) > 0.5; // Moving if speed > 0.5 m/s
+    final isMoving = position.speed > 0.5; // Moving if speed > 0.5 m/s
 
     // Throttle movement-driven publishes to max 1/sec; the periodic beacon
     // guarantees a baseline cadence regardless of movement.
@@ -819,9 +773,7 @@ class ConvoyProvider extends ChangeNotifier {
         journeyId: journeyId,
         latitude: position.latitude,
         longitude: position.longitude,
-        timestamp:
-            position.timestamp?.millisecondsSinceEpoch ??
-            DateTime.now().millisecondsSinceEpoch,
+        timestamp: position.timestamp.millisecondsSinceEpoch,
         accuracy: position.accuracy,
         altitude: position.altitude,
         heading: position.heading,
@@ -1133,6 +1085,7 @@ class ConvoyProvider extends ChangeNotifier {
   Future<void> _stopLocationPublishing() async {
     await _locationSubscription?.cancel();
     _locationSubscription = null;
+    await _journeyLocationService.stop(journeyId: _currentJourneyId);
     _isPublishing = false;
 
     _publishTimer?.cancel();
