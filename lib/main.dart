@@ -42,6 +42,10 @@ void main() {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Keep the native branded launch screen visible until Flutter has
+      // finished bootstrapping. This avoids showing a second, mismatched
+      // in-app splash while Firebase, Hive, Mapbox, and services initialize.
+      WidgetsBinding.instance.deferFirstFrame();
       await Firebase.initializeApp();
 
       FirebaseMessaging.onBackgroundMessage(
@@ -106,6 +110,10 @@ class _AppBootstrapState extends State<AppBootstrap> {
       if (mounted) setState(() => _serviceLocator = sl);
     } catch (e) {
       if (mounted) setState(() => _bootError = e);
+    } finally {
+      // A startup failure still needs to release the native launch screen so
+      // the fallback can report the problem instead of leaving the app frozen.
+      WidgetsBinding.instance.allowFirstFrame();
     }
   }
 
@@ -121,54 +129,25 @@ class _AppBootstrapState extends State<AppBootstrap> {
       theme: AppTheme.tulinkTheme,
       darkTheme: AppTheme.tulinkTheme,
       themeMode: ThemeMode.dark,
-      home: _SplashScreen(error: _bootError),
+      home: _StartupFallback(error: _bootError),
     );
   }
 }
 
-class _SplashScreen extends StatelessWidget {
+class _StartupFallback extends StatelessWidget {
   final Object? error;
-  const _SplashScreen({this.error});
+  const _StartupFallback({this.error});
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).tulinkColors;
+    if (error == null) return const SizedBox.shrink();
 
     return Scaffold(
-      backgroundColor: colors.carbonBlack,
+      backgroundColor: Theme.of(context).tulinkColors.warmSand,
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'TULINK',
-              style: TextStyle(
-                color: colors.electricRed,
-                fontSize: 40,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 6,
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (error == null)
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(colors.electricRed),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  'Startup failed: $error',
-                  style: TextStyle(color: colors.silver, fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Text('Startup failed: $error', textAlign: TextAlign.center),
         ),
       ),
     );
