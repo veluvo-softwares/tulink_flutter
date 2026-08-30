@@ -7,6 +7,7 @@ import '../models/location_update_dto.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/participant_arrived_event.dart';
+import '../../domain/entities/route_updated_event.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/auth/token_manager.dart';
@@ -543,6 +544,10 @@ class ConvoyRepositoryImpl implements ConvoyRepository {
   @override
   Stream<String> get participantAcceptedStream =>
       _webSocketDataSource.participantAcceptedStream;
+
+  @override
+  Stream<RouteUpdatedEvent> get routeUpdatedStream =>
+      _webSocketDataSource.routeUpdatedStream;
 
   @override
   Stream<Map<String, dynamic>> get journeyInviteStream =>

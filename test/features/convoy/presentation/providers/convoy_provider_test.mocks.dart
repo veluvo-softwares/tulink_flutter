@@ -13,6 +13,8 @@ import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_eve
     as _i9;
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart'
     as _i10;
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart'
+    as _i11;
 import 'package:tulink_flutter/features/convoy/domain/repositories/convoy_repository.dart'
     as _i8;
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart'
@@ -165,6 +167,13 @@ class MockConvoyRepository extends _i1.Mock implements _i8.ConvoyRepository {
         Invocation.getter(#participantAcceptedStream),
         returnValue: _i3.Stream<String>.empty(),
       ) as _i3.Stream<String>);
+
+  @override
+  _i3.Stream<_i11.RouteUpdatedEvent> get routeUpdatedStream =>
+      (super.noSuchMethod(
+        Invocation.getter(#routeUpdatedStream),
+        returnValue: _i3.Stream<_i11.RouteUpdatedEvent>.empty(),
+      ) as _i3.Stream<_i11.RouteUpdatedEvent>);
 
   @override
   _i3.Stream<Map<String, dynamic>> get journeyInviteStream =>

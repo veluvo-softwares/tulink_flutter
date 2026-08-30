@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tulink_flutter/features/convoy/data/datasources/convoy_websocket_data_source.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart';
 
 void main() {
   group('socket options', () {
@@ -99,6 +100,54 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('canonical route update payload', () {
+    test('parses a versioned journey event', () {
+      final event = RouteUpdatedEvent.fromPayload({
+        'journeyId': 'journey-1',
+        'routeVersion': 4,
+        'reason': 'LEADER_REROUTE',
+        'updatedAt': '2026-08-30T10:00:00.000Z',
+      });
+
+      expect(event?.journeyId, 'journey-1');
+      expect(event?.routeVersion, 4);
+      expect(event?.reason, 'LEADER_REROUTE');
+    });
+
+    test('drops malformed or identity-free events', () {
+      expect(RouteUpdatedEvent.fromPayload({'routeVersion': 2}), isNull);
+      expect(RouteUpdatedEvent.fromPayload({'journeyId': 'A'}), isNull);
+      expect(
+        RouteUpdatedEvent.fromPayload({'journeyId': 'A', 'routeVersion': 2.5}),
+        isNull,
+      );
+      expect(
+        RouteUpdatedEvent.fromPayload({
+          'journeyId': 'A',
+          'routeVersion': double.infinity,
+        }),
+        isNull,
+      );
+    });
+
+    test('uses value equality for valid integral route versions', () {
+      final first = RouteUpdatedEvent.fromPayload({
+        'journeyId': 'journey-1',
+        'routeVersion': 4.0,
+        'reason': 'LEADER_REROUTE',
+        'updatedAt': '2026-08-30T10:00:00.000Z',
+      });
+      final second = RouteUpdatedEvent.fromPayload({
+        'journeyId': 'journey-1',
+        'routeVersion': 4,
+        'reason': 'LEADER_REROUTE',
+        'updatedAt': '2026-08-30T10:00:00.000Z',
+      });
+
+      expect(first, second);
     });
   });
 }

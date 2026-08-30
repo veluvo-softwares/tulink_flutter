@@ -10,6 +10,7 @@ import '../datasources/place_search_remote_data_source.dart';
 import '../datasources/route_remote_data_source.dart';
 import '../models/route_result_model.dart';
 import '../../../../core/services/connectivity_service.dart';
+import '../../../../core/utils/logger.dart';
 
 class MapRepositoryImpl implements MapRepository {
   final MapLocalDataSource localDataSource;
@@ -88,6 +89,93 @@ class MapRepositoryImpl implements MapRepository {
       destinationLat: destinationLat,
       destinationLng: destinationLng,
     );
+  }
+
+  @override
+  Future<RouteResultModel?> getCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  }) async {
+    RouteResultModel? cached;
+    try {
+      cached = await localDataSource.loadRoute(
+        userId: userId,
+        journeyId: journeyId,
+        destinationLat: destinationLat,
+        destinationLng: destinationLng,
+      );
+      if (!connectivityService.isOnline.value) {
+        return cached?.canonicalVersion == null ? null : cached;
+      }
+
+      final remote = await routeRemoteDataSource.getCanonicalRoute(journeyId);
+      if (remote != null) {
+        if (remote.coordinates.isNotEmpty) {
+          final origin = remote.coordinates.first;
+          await localDataSource.saveRoute(
+            userId: userId,
+            journeyId: journeyId,
+            originLat: origin[1],
+            originLng: origin[0],
+            destinationLat: destinationLat,
+            destinationLng: destinationLng,
+            route: remote,
+          );
+        }
+        return remote;
+      }
+      return cached?.canonicalVersion == null ? null : cached;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to load canonical route for $journeyId',
+        error,
+        stackTrace,
+      );
+      return cached?.canonicalVersion == null ? null : cached;
+    }
+  }
+
+  @override
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+    required String reason,
+  }) async {
+    if (!connectivityService.isOnline.value) return null;
+    try {
+      final route = await routeRemoteDataSource.replaceCanonicalRoute(
+        journeyId: journeyId,
+        originLat: originLat,
+        originLng: originLng,
+        baseVersion: baseVersion,
+        reason: reason,
+      );
+      if (route == null) return null;
+      await localDataSource.saveRoute(
+        userId: userId,
+        journeyId: journeyId,
+        originLat: originLat,
+        originLng: originLng,
+        destinationLat: destinationLat,
+        destinationLng: destinationLng,
+        route: route,
+      );
+      return route;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Failed to replace canonical route for $journeyId',
+        error,
+        stackTrace,
+      );
+      return null;
+    }
   }
 
   @override
