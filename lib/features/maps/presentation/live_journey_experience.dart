@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/di/service_locator.dart';
 import '../../../core/services/car_toast_service.dart';
+import '../../../core/services/journey_location_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/tulink_colors.dart';
 import '../data/models/route_result_model.dart';
@@ -91,7 +92,6 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     with WidgetsBindingObserver {
   PointAnnotationManager? _pointAnnotationManager;
   String? _activeJourneyId;
-  bool _isConvoyCoordinationActive = false;
   ConvoySnapshot? _lastSnapshot;
   int _lastUpdateHash = 0;
   bool _disposed = false;
@@ -124,6 +124,11 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
   /// Bounded location access shared with [ConvoyProvider]; see [LocationService].
   final LocationService _locationService = ServiceLocator().locationService;
+
+  /// Shared continuous journey stream. Map camera-follow never opens another
+  /// native GPS session of its own.
+  final JourneyLocationService _journeyLocationService =
+      ServiceLocator().journeyLocationService;
 
   /// Pending "draw the route once we finally get a fix" listener, armed only
   /// when there is neither a cached route nor an origin. See
@@ -349,7 +354,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     await _updateMarkers();
-    _checkAndStartConvoyCoordination();
+    _syncActiveJourneyLayer();
   }
 
   /// Draw the destination pin from static [Journey] data.
@@ -437,23 +442,24 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
     _cancelRouteLocationRetry();
     _routeRetryJourneyId = journey.id;
-    _routeRetrySubscription = _locationService
-        .getPositionStream(
-          locationSettings: const geo.LocationSettings(
-            accuracy: geo.LocationAccuracy.high,
-          ),
-        )
-        .listen((position) {
-          if (!mounted || _routeRetryJourneyId != journey.id) return;
-          _cancelRouteLocationRetry();
-          unawaited(
-            _drawActualRoute(
-              journey,
-              knownLat: position.latitude,
-              knownLng: position.longitude,
-            ),
-          );
-        }, onError: (Object e) => print('⚠️ Route retry stream error: $e'));
+    void retry(geo.Position position) {
+      if (!mounted || _routeRetryJourneyId != journey.id) return;
+      _cancelRouteLocationRetry();
+      unawaited(
+        _drawActualRoute(
+          journey,
+          knownLat: position.latitude,
+          knownLng: position.longitude,
+        ),
+      );
+    }
+
+    _routeRetrySubscription = _journeyLocationService.positions.listen(
+      retry,
+      onError: (Object e) => print('⚠️ Route retry stream error: $e'),
+    );
+    final latest = _journeyLocationService.latestPosition;
+    if (latest != null) retry(latest);
   }
 
   void _cancelRouteLocationRetry() {
@@ -1283,59 +1289,43 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
   }
 
-  /// Check if convoy coordination should be started
-  void _checkAndStartConvoyCoordination() {
+  /// Keeps map-only journey state aligned with the app-owned live session.
+  void _syncActiveJourneyLayer() {
     if (!mounted) return;
     final journeyProvider = context.read<JourneyProvider>();
-    final convoyProvider = context.read<ConvoyProvider>();
     final currentJourney = journeyProvider.currentJourney;
 
-    // Start convoy coordination if there's an active journey
     if (currentJourney != null &&
-        currentJourney.status == JourneyStatus.ACTIVE &&
-        !_isConvoyCoordinationActive) {
+        currentJourney.status == JourneyStatus.ACTIVE) {
+      final isNewJourney = _activeJourneyId != currentJourney.id;
       _activeJourneyId = currentJourney.id;
-      _isConvoyCoordinationActive = true;
 
       // Note: do NOT disable the built-in puck here. It stays on until the
       // snapped puck actually starts drawing (see _drawSnappedPuck), otherwise
       // the user has no puck during the journey overview / pre-driving window.
 
-      // Start convoy coordination. Errors are surfaced on the provider's own
-      // state (error / locationFailure), which the status bar renders — so this
-      // deliberately-unawaited call has an observable failure representation.
-      unawaited(convoyProvider.startCoordination(currentJourney.id));
-
       // Ensure the destination pin and route are drawn from static journey
       // data even when the map screen is reached without _onMapCreated firing.
-      if (_mapboxMap != null) {
+      if (isNewJourney && _mapboxMap != null) {
         _drawDestinationPin(currentJourney);
         _drawActualRoute(currentJourney);
       }
 
-      // Track the user's position so the camera follows during driving.
-      // This is a separate stream from ConvoyProvider's publishing stream.
-      _cameraFollowSubscription ??= _locationService
-          .getPositionStream(
-            locationSettings: const geo.LocationSettings(
-              accuracy: geo.LocationAccuracy.high,
-              distanceFilter: 10, // Update camera every 10m
-            ),
-          )
-          .listen((position) {
-            _updateCameraFollow(position);
-          });
+      // Presentation subscribes to the app-owned journey stream. Disposing this
+      // widget detaches camera follow without stopping screen-off publishing.
+      if (_cameraFollowSubscription == null) {
+        _cameraFollowSubscription = _journeyLocationService.positions.listen(
+          _updateCameraFollow,
+        );
+        final latest = _journeyLocationService.latestPosition;
+        if (latest != null) unawaited(_updateCameraFollow(latest));
+      }
+      return;
     }
-  }
 
-  /// Stop convoy coordination when leaving the map
-  void _stopConvoyCoordination() {
-    if (_isConvoyCoordinationActive) {
-      final convoyProvider = context.read<ConvoyProvider>();
-      convoyProvider.stopCoordination();
-      _isConvoyCoordinationActive = false;
-      _activeJourneyId = null;
-    }
+    _activeJourneyId = null;
+    unawaited(_cameraFollowSubscription?.cancel());
+    _cameraFollowSubscription = null;
   }
 
   /// Show convoy bottom sheet with member list
@@ -1464,9 +1454,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
               onTap: () {
                 Navigator.pop(context);
                 if (currentJourney != null) {
-                  convoyProvider.stopCoordination().then((_) {
-                    convoyProvider.startCoordination(currentJourney.id);
-                  });
+                  unawaited(_reconnectConvoy(currentJourney.id));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Reconnecting to convoy...')),
                   );
@@ -1891,10 +1879,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     // Marker updates are driven by didChangeDependencies(), not build().
 
-    // Post-frame: check convoy start + handle server-driven events.
+    // Post-frame: align map-only state and handle server-driven events.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _checkAndStartConvoyCoordination();
+      _syncActiveJourneyLayer();
       _handleArrivalEvent();
       _handleJourneyEndedEvent();
     });

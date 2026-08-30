@@ -239,6 +239,27 @@ void main() {
       );
       expect(home.contains('_mapController.recreate()'), isTrue);
     });
+
+    test('live transport and native location each have one app owner', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+      final invites = File(
+        'lib/features/invites/presentation/pages/invitations_screen.dart',
+      ).readAsStringSync();
+
+      expect(live.contains('startCoordination('), isFalse);
+      expect(home.contains('startCoordination('), isFalse);
+      expect(invites.contains('startCoordination('), isFalse);
+      expect(
+        live.contains('.getPositionStream('),
+        isFalse,
+        reason: 'map consumers must share JourneyLocationService',
+      );
+    });
   });
 
   group('cleanup owns every live drawing', () {

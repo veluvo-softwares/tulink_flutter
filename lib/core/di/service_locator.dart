@@ -21,6 +21,7 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/stream_convoy_pos
 import 'package:tulink_flutter/features/convoy/domain/usecases/publish_my_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
+import 'package:tulink_flutter/features/convoy/presentation/services/live_journey_coordinator.dart';
 import 'package:tulink_flutter/features/convoy/data/services/location_outbox_service.dart';
 
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
@@ -116,7 +117,9 @@ class ServiceLocator {
   late PublishMyPosition _publishMyPosition;
   late FetchLatestSnapshot _fetchLatestSnapshot;
   late ConvoyProvider _convoyProvider;
+  late LiveJourneyCoordinator _liveJourneyCoordinator;
   late LocationOutboxService _locationOutboxService;
+  void Function()? _liveJourneyStateListener;
 
   /// Shared, bounded location access. Injected wherever a fix is needed so a
   /// stalled GPS can never deadlock a caller (see [LocationService]).
@@ -159,9 +162,13 @@ class ServiceLocator {
 
   // Convoy Feature Getters
   ConvoyProvider get convoyProvider => _convoyProvider;
+  LiveJourneyCoordinator get liveJourneyCoordinator => _liveJourneyCoordinator;
 
   /// Bounded device-location access shared by providers and map screens.
   LocationService get locationService => _locationService;
+
+  /// The single native journey-location owner shared by live map consumers.
+  JourneyLocationService get journeyLocationService => _journeyLocationService;
 
   /// Initialize all dependencies
   /// Call this once in main.dart before runApp
@@ -329,6 +336,23 @@ class ServiceLocator {
       repository: _convoyRepository,
       journeyLocationService: _journeyLocationService,
     );
+    _liveJourneyCoordinator = LiveJourneyCoordinator(
+      canCoordinate: () =>
+          _authProvider.isSignedIn && _authProvider.isEmailVerified,
+      currentJourney: () => _journeyProvider.currentJourney,
+      coordinatingJourneyId: () => _convoyProvider.currentJourneyId,
+      isSubscribed: () => _convoyProvider.isSubscribed,
+      startCoordination: _convoyProvider.startCoordination,
+      stopCoordination: _convoyProvider.stopCoordination,
+      refreshActiveJourneys: _journeyProvider.fetchActiveJourneys,
+      recoverAfterResume: _convoyProvider.onAppResumed,
+    );
+    _liveJourneyStateListener = () {
+      unawaited(_liveJourneyCoordinator.reconcile());
+    };
+    _authProvider.addListener(_liveJourneyStateListener!);
+    _journeyProvider.addListener(_liveJourneyStateListener!);
+    unawaited(_liveJourneyCoordinator.reconcile());
 
     // On sign-out / unrecoverable auth loss, tear down live convoy coordination
     // and the user WebSocket channel so a signed-out client stops publishing GPS
@@ -351,6 +375,11 @@ class ServiceLocator {
 
   /// Dispose resources when app is closing
   Future<void> dispose() async {
+    final liveJourneyStateListener = _liveJourneyStateListener;
+    if (liveJourneyStateListener != null) {
+      _authProvider.removeListener(liveJourneyStateListener);
+      _journeyProvider.removeListener(liveJourneyStateListener);
+    }
     await _journeyLocationService.dispose();
     await _convoyRepository.dispose();
     await _connectivityService.dispose();
