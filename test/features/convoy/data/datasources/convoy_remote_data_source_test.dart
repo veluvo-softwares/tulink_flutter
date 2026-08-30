@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tulink_flutter/core/errors/failure.dart';
 import 'package:tulink_flutter/features/convoy/data/datasources/convoy_remote_data_source.dart';
 import 'package:tulink_flutter/features/convoy/data/services/convoy_api_service.dart';
 
@@ -45,9 +46,14 @@ void main() {
     final api = _FakeConvoyApiService(
       liveError: DioException(
         requestOptions: RequestOptions(path: '/journeys/$journeyId/live'),
-        response: Response<void>(
+        response: Response<Map<String, dynamic>>(
           requestOptions: RequestOptions(path: '/journeys/$journeyId/live'),
           statusCode: 404,
+          data: {
+            'statusCode': 404,
+            'message': 'Cannot GET /journeys/$journeyId/live',
+            'error': 'Not Found',
+          },
         ),
         type: DioExceptionType.badResponse,
       ),
@@ -70,6 +76,32 @@ void main() {
     expect(api.liveCalls, 1);
     expect(api.legacyCalls, 1);
     expect(snapshot.members.keys, ['follower-1']);
+  });
+
+  test('a missing journey does not fall back to legacy locations', () async {
+    final request = RequestOptions(path: '/journeys/$journeyId/live');
+    final api = _FakeConvoyApiService(
+      liveError: DioException(
+        requestOptions: request,
+        response: Response<Map<String, dynamic>>(
+          requestOptions: request,
+          statusCode: 404,
+          data: {
+            'statusCode': 404,
+            'message': 'Journey not found',
+            'error': 'Not Found',
+          },
+        ),
+        type: DioExceptionType.badResponse,
+      ),
+    );
+    final source = ConvoyRemoteDataSourceImpl(api);
+
+    await expectLater(
+      source.fetchLatestSnapshot(journeyId),
+      throwsA(same(ConvoyFailure.journeyNotActive)),
+    );
+    expect(api.legacyCalls, 0);
   });
 }
 

@@ -94,7 +94,7 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
         // Allows the mobile release to be deployed before every environment
         // has the new recovery endpoint. Once available, /live is always the
         // authoritative source for roster, locations, route, and cursor.
-        if (error.response?.statusCode != 404) rethrow;
+        if (!_isUnsupportedLiveSnapshotEndpoint(error)) rethrow;
         responseData = await _apiService.fetchLatestPositions(journeyId);
       }
 
@@ -184,6 +184,16 @@ class ConvoyRemoteDataSourceImpl implements ConvoyRemoteDataSource {
         timestamp: DateTime.now(),
       );
     }
+  }
+
+  bool _isUnsupportedLiveSnapshotEndpoint(DioException error) {
+    if (error.response?.statusCode != 404) return false;
+    final body = error.response?.data;
+    if (body is! Map) return false;
+    final message = body['message']?.toString() ?? '';
+    // Nest reports an unregistered route as "Cannot GET /.../live". A real
+    // journey lookup returns "Journey not found" and must remain terminal.
+    return message.startsWith('Cannot GET ') && message.contains('/live');
   }
 
   Map<String, dynamic> _normalizeLiveSnapshot(Map<String, dynamic> snapshot) {
