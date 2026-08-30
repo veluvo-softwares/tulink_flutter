@@ -18,6 +18,7 @@ import '../../../../core/errors/failure.dart';
 import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/journey_location_service.dart';
+import '../../../../core/utils/logger.dart';
 
 /// Provider for convoy coordination state management
 /// Handles real-time position sharing and convoy member tracking
@@ -1078,7 +1079,7 @@ class ConvoyProvider extends ChangeNotifier {
         notifyListeners();
       },
       onError: (Object error) {
-        print('❌ route-updated stream error: $error');
+        AppLogger.error('route-updated stream error', error);
       },
     );
 

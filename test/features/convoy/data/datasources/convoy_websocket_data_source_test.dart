@@ -120,6 +120,34 @@ void main() {
     test('drops malformed or identity-free events', () {
       expect(RouteUpdatedEvent.fromPayload({'routeVersion': 2}), isNull);
       expect(RouteUpdatedEvent.fromPayload({'journeyId': 'A'}), isNull);
+      expect(
+        RouteUpdatedEvent.fromPayload({'journeyId': 'A', 'routeVersion': 2.5}),
+        isNull,
+      );
+      expect(
+        RouteUpdatedEvent.fromPayload({
+          'journeyId': 'A',
+          'routeVersion': double.infinity,
+        }),
+        isNull,
+      );
+    });
+
+    test('uses value equality for valid integral route versions', () {
+      final first = RouteUpdatedEvent.fromPayload({
+        'journeyId': 'journey-1',
+        'routeVersion': 4.0,
+        'reason': 'LEADER_REROUTE',
+        'updatedAt': '2026-08-30T10:00:00.000Z',
+      });
+      final second = RouteUpdatedEvent.fromPayload({
+        'journeyId': 'journey-1',
+        'routeVersion': 4,
+        'reason': 'LEADER_REROUTE',
+        'updatedAt': '2026-08-30T10:00:00.000Z',
+      });
+
+      expect(first, second);
     });
   });
 }

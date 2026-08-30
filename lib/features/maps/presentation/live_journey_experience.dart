@@ -11,6 +11,7 @@ import '../../../core/services/car_toast_service.dart';
 import '../../../core/services/journey_location_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/tulink_colors.dart';
+import '../../../core/utils/logger.dart';
 import '../data/models/route_result_model.dart';
 import 'providers/map_provider.dart';
 import 'services/convoy_interpolation_service.dart';
@@ -150,6 +151,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// startup. Both lifecycle paths run during the same navigation transition.
   Future<void>? _routeSetupFuture;
   String? _routeSetupJourneyId;
+  Timer? _canonicalRouteRetryTimer;
+  String? _canonicalRouteRetryJourneyId;
+  int _canonicalRouteRetryAttempt = 0;
+  static const int _maxCanonicalRouteRetryAttempts = 5;
 
   // Follow by default, but yield permanently to an explicit user pan until
   // they tap recenter. This lets drivers inspect the road ahead or the wider
@@ -626,6 +631,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       final currentUserId = context.read<AuthProvider>().user?.id;
       if (currentUserId != journey.leaderId) {
         await _centerOnDestination(journey);
+        _scheduleCanonicalRouteRetry(journey);
         return;
       }
 
@@ -651,6 +657,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     if (route == null || !mounted || _mapboxMap == null) return;
+    _cancelCanonicalRouteRetry();
     // The surface was rebuilt while the route was being resolved: these layer
     // ids belong to a style that no longer exists, and whichever layer owns the
     // new surface redraws its own geometry.
@@ -798,10 +805,42 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _lastTrimAt = null;
 
     await _drawActualRoute(journey, knownLat: originLat, knownLng: originLng);
-    print('🧭 reroute fetched: ${newRoute.coordinates.length} coords');
+    AppLogger.info(
+      'Reroute fetched for ${journey.id}: '
+      '${newRoute.coordinates.length} coordinates',
+    );
     if (mounted) {
       context.read<NavigationProvider>().loadRoute(newRoute);
     }
+  }
+
+  void _scheduleCanonicalRouteRetry(Journey journey) {
+    if (_canonicalRouteRetryJourneyId != journey.id) {
+      _canonicalRouteRetryTimer?.cancel();
+      _canonicalRouteRetryJourneyId = journey.id;
+      _canonicalRouteRetryAttempt = 0;
+    }
+    if (_canonicalRouteRetryAttempt >= _maxCanonicalRouteRetryAttempts) return;
+
+    _canonicalRouteRetryTimer?.cancel();
+    _canonicalRouteRetryAttempt++;
+    _canonicalRouteRetryTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      final current = context.read<JourneyProvider>().currentJourney;
+      if (current?.id != journey.id ||
+          current?.status != JourneyStatus.ACTIVE) {
+        _cancelCanonicalRouteRetry();
+        return;
+      }
+      unawaited(_drawActualRoute(journey));
+    });
+  }
+
+  void _cancelCanonicalRouteRetry() {
+    _canonicalRouteRetryTimer?.cancel();
+    _canonicalRouteRetryTimer = null;
+    _canonicalRouteRetryJourneyId = null;
+    _canonicalRouteRetryAttempt = 0;
   }
 
   /// True if a route's last coordinate is within ~110 m of the given target.
@@ -1356,6 +1395,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     if (currentJourney != null &&
         currentJourney.status == JourneyStatus.ACTIVE) {
       final isNewJourney = _activeJourneyId != currentJourney.id;
+      if (isNewJourney) _cancelCanonicalRouteRetry();
       _activeJourneyId = currentJourney.id;
 
       // Note: do NOT disable the built-in puck here. It stays on until the
@@ -1382,6 +1422,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     _activeJourneyId = null;
+    _cancelCanonicalRouteRetry();
     unawaited(_cameraFollowSubscription?.cancel());
     _cameraFollowSubscription = null;
   }
@@ -1899,6 +1940,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _cameraFollowSubscription = null;
     // Drop any pending "retry the route when a fix arrives" listener.
     _cancelRouteLocationRetry();
+    _cancelCanonicalRouteRetry();
     // Detach the polyline-trim listener before releasing the provider reference.
     _navigationProvider?.removeListener(_onNavigationProgress);
     // Stop the navigation layer — independent of convoy coordination.
