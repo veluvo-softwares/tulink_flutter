@@ -226,23 +226,29 @@ void main() {
       );
     });
 
-    test('surface recreation has exactly one owner', () {
-      // Two owners produced two generation bumps and two restore passes for a
-      // single resume.
-      final live = File(
-        'lib/features/maps/presentation/live_journey_experience.dart',
-      ).readAsStringSync();
-      final home = File(
-        'lib/features/home/presentation/screens/home_screen.dart',
-      ).readAsStringSync();
+    test(
+      'resume probes the retained surface before exceptional recreation',
+      () {
+        final live = File(
+          'lib/features/maps/presentation/live_journey_experience.dart',
+        ).readAsStringSync();
+        final home = File(
+          'lib/features/home/presentation/screens/home_screen.dart',
+        ).readAsStringSync();
 
-      expect(
-        live.contains('controller.recreate()'),
-        isFalse,
-        reason: 'the live layer must react to rebuilds, not trigger them',
-      );
-      expect(home.contains('_mapController.recreate()'), isTrue);
-    });
+        expect(
+          live.contains('controller.recreate()'),
+          isFalse,
+          reason: 'the live layer must react to rebuilds, not trigger them',
+        );
+        expect(home.contains('_mapController.ensureResponsive()'), isTrue);
+        expect(
+          home.contains('_mapController.recreate()'),
+          isFalse,
+          reason: 'healthy resume must retain route, camera and native style',
+        );
+      },
+    );
 
     test('live transport and native location each have one app owner', () {
       final live = File(
@@ -324,17 +330,21 @@ void main() {
   });
 
   group('native directional location puck', () {
-    test('live journeys keep Mapbox course-bearing location enabled', () {
+    test('live journeys use hybrid heading/course puck bearing', () {
       final live = File(
         'lib/features/maps/presentation/live_journey_experience.dart',
       ).readAsStringSync();
 
       expect(
-        live.contains('puckBearing: PuckBearing.COURSE'),
+        live.contains('PuckBearing.HEADING when position.speed >= 2.5'),
         isTrue,
         reason:
-            'the journey puck must point in the direction of travel, rather '
-            'than using a non-directional custom circle',
+            'stationary rotation must use device heading before switching to '
+            'course at driving speed',
+      );
+      expect(
+        live.contains('PuckBearing.COURSE when position.speed <= 1.0'),
+        isTrue,
       );
       expect(
         live.contains('await _setBuiltInPuckEnabled(true);'),

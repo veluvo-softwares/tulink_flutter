@@ -91,6 +91,36 @@ class SocketHandshakeError implements Exception {
   String toString() => 'SocketHandshakeError($code: $message)';
 }
 
+@visibleForTesting
+class JoinRecoveryEnvelope {
+  const JoinRecoveryEnvelope({
+    required this.mode,
+    this.updates = const [],
+    this.nextSequence,
+    this.hasMore = false,
+  });
+
+  final String mode;
+  final List<dynamic> updates;
+  final int? nextSequence;
+  final bool hasMore;
+
+  static JoinRecoveryEnvelope? fromAcknowledgement(
+    Map<String, dynamic> acknowledgement,
+  ) {
+    final raw = acknowledgement['recovery'];
+    if (raw is! Map) return null;
+    final mode = raw['mode']?.toString();
+    if (mode != 'DELTA' && mode != 'SNAPSHOT_REQUIRED') return null;
+    return JoinRecoveryEnvelope(
+      mode: mode!,
+      updates: raw['updates'] is List ? raw['updates'] as List : const [],
+      nextSequence: (raw['nextSequence'] as num?)?.toInt(),
+      hasMore: raw['hasMore'] == true,
+    );
+  }
+}
+
 /// Abstract interface for convoy WebSocket operations
 abstract class ConvoyWebSocketDataSource {
   /// Connect to convoy coordination WebSocket
@@ -461,16 +491,22 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     // overwrote it mid-flight.
     final epoch = ++_roomEpoch;
 
+    final durableCursor = await _loadSequenceCursor(journeyId);
+
     // Await joined-journey confirmation so we know whether the server actually
     // added us to the room (vs silently rejecting with an error event).
-    final completer = Completer<void>();
+    final completer = Completer<Map<String, dynamic>>();
 
     late void Function(dynamic) onJoined;
     onJoined = (data) {
       // The backend's ack carries the room it joined
       // (location.gateway.ts handleJoinJourney → `joined-journey`).
       // An ack for a *different* journey must not complete this attempt.
-      final ackJourneyId = data is Map ? data['journeyId']?.toString() : null;
+      if (data is! Map<dynamic, dynamic>) {
+        _roomDebug('⚠️ joined-journey ACK without journeyId ignored');
+        return;
+      }
+      final ackJourneyId = data['journeyId']?.toString();
       if (ackJourneyId != null && ackJourneyId != journeyId) {
         _roomDebug(
           '⚠️ joined-journey ACK for $ackJourneyId ignored while joining '
@@ -484,19 +520,29 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
       _socket!.off('joined-journey', onJoined);
       _roomDebug('✅ joined-journey ACK for $journeyId');
-      if (!completer.isCompleted) completer.complete();
+      if (!completer.isCompleted) {
+        final acknowledgement = <String, dynamic>{};
+        data.forEach((dynamic key, dynamic value) {
+          acknowledgement[key.toString()] = value;
+        });
+        completer.complete(acknowledgement);
+      }
     };
 
     _socket!.on('joined-journey', onJoined);
-    _socket!.emit('join-journey', {'journeyId': journeyId});
+    _socket!.emit('join-journey', {
+      'journeyId': journeyId,
+      if (durableCursor > 0) 'lastLocationSequence': durableCursor,
+    });
 
     _roomDebug('🔌 emit join-journey $journeyId');
 
     // A missing acknowledgement means room membership is unknown. Treat it as
     // a retryable failure instead of reporting listener mode as ready and then
     // silently missing journey-started events.
+    late final Map<String, dynamic> acknowledgement;
     try {
-      await completer.future.timeout(
+      acknowledgement = await completer.future.timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           throw ConvoyFailure(
@@ -528,9 +574,11 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       );
     }
 
-    // Only now is this room genuinely ours.
+    // Only now is this room genuinely ours. Older servers do not include a
+    // recovery envelope, so retain the original request-resync fallback while
+    // deployments roll forward independently.
     _currentJourneyId = journeyId;
-    await _restoreCursorAndResync(journeyId);
+    await _applyJoinRecovery(acknowledgement, durableCursor);
   }
 
   @override
@@ -1117,7 +1165,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
     }
   }
 
-  Future<void> _restoreCursorAndResync(String journeyId) async {
+  Future<int> _loadSequenceCursor(String journeyId) async {
+    var cursor = 0;
     final storage = offlineStorage;
     final userProvider = currentUserId;
     if (storage != null && userProvider != null) {
@@ -1125,12 +1174,43 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       final session = userId == null
           ? null
           : storage.loadSession(userId, journeyId);
-      _lastAppliedSequence =
-          (session?['lastAppliedSequence'] as num?)?.toInt() ??
-          _lastAppliedSequence;
+      cursor = (session?['lastAppliedSequence'] as num?)?.toInt() ?? 0;
     }
-    if (_lastAppliedSequence > 0) {
-      await _performResync(_lastAppliedSequence);
+    _lastAppliedSequence = cursor;
+    return cursor;
+  }
+
+  Future<void> _applyJoinRecovery(
+    Map<String, dynamic> acknowledgement,
+    int durableCursor,
+  ) async {
+    final recovery = JoinRecoveryEnvelope.fromAcknowledgement(acknowledgement);
+    if (recovery == null) {
+      if (durableCursor > 0) await _performResync(durableCursor);
+      return;
+    }
+    if (recovery.mode != 'DELTA') {
+      // The repository starts a canonical REST snapshot in parallel with the
+      // join. It repairs route, membership and current positions for missing
+      // or excessively old cursors without delaying room readiness.
+      return;
+    }
+
+    for (final raw in recovery.updates) {
+      if (raw is! Map) continue;
+      _handleLocationUpdate(
+        raw.map<String, dynamic>(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+      );
+    }
+    final next = recovery.nextSequence ?? durableCursor;
+    if (next > _lastAppliedSequence) {
+      _lastAppliedSequence = next;
+      await _persistSequenceCursor();
+    }
+    if (recovery.hasMore) {
+      await _performResync(next);
     }
   }
 
