@@ -248,13 +248,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (!_wasBackgrounded) return;
     _wasBackgrounded = false;
-    // Some devices resume with a black native surface while Flutter keeps
-    // rendering. The shell owns the surface, so it is the one that rebuilds it;
-    // every layer restores its own geometry off the resulting generation bump.
+    // Keep the existing native surface, route, camera and annotations whenever
+    // it is responsive. A bounded health probe owns the exceptional black/
+    // detached-surface recovery instead of turning every resume into a cold
+    // map rebuild.
+    unawaited(_recoverMapSurfaceAfterResume());
+  }
+
+  Future<void> _recoverMapSurfaceAfterResume() async {
+    final healthy = await _mapController.ensureResponsive();
+    if (!mounted || healthy) return;
+    // ensureResponsive already bumps the generation when a retained native
+    // surface fails. Its handles belong to that discarded surface.
     _destinationAnnotations = null;
-    // `recreate()` bumps the generation, which is what re-arms the surface's
-    // one-restoration-per-generation claim.
-    _mapController.recreate();
   }
 
   @override

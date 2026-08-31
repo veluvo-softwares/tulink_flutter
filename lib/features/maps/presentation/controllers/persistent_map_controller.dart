@@ -58,6 +58,34 @@ class PersistentMapController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Verify that the retained native surface still answers platform calls.
+  ///
+  /// Most resumes are healthy and must keep their route, camera and style
+  /// intact. Only rebuild when the native renderer fails this bounded probe;
+  /// unconditional recreation made every resume look like a cold reload.
+  Future<bool> ensureResponsive({
+    Duration timeout = const Duration(milliseconds: 1200),
+  }) async {
+    final candidate = _map;
+    final candidateGeneration = _generation;
+    if (_disposed || candidate == null) return false;
+
+    try {
+      await candidate.triggerRepaint().timeout(timeout);
+      await candidate.getCameraState().timeout(timeout);
+      return !_disposed &&
+          identical(_map, candidate) &&
+          _generation == candidateGeneration;
+    } catch (_) {
+      if (!_disposed &&
+          identical(_map, candidate) &&
+          _generation == candidateGeneration) {
+        recreate();
+      }
+      return false;
+    }
+  }
+
   /// Claim the restoration pass for the current surface.
   ///
   /// Returns true at most once per generation, and only while a surface is

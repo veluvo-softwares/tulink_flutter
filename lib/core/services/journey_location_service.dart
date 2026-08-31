@@ -51,10 +51,10 @@ class JourneyLocationService {
     _journeyId = journeyId;
     _latestPosition = null;
 
-    final initial = await _locationService.getCurrentPosition();
-    if (generation != _generation || _journeyId != journeyId) return null;
-    if (initial != null) _latestPosition = initial;
-
+    // Attach the continuous native session before asking for a one-shot fix.
+    // A cold GPS lookup can take several seconds; making the stream wait behind
+    // it delayed the first real moving fix and made journey startup appear
+    // frozen even though the platform was already capable of tracking.
     _nativeSubscription = _locationService
         .getPositionStream(locationSettings: buildLocationSettings())
         .listen(
@@ -68,7 +68,16 @@ class JourneyLocationService {
           },
         );
 
-    return initial;
+    final initial = await _locationService.getCurrentPosition();
+    if (generation != _generation || _journeyId != journeyId) return null;
+    if (initial != null) {
+      final held = _latestPosition;
+      if (held == null || !initial.timestamp.isBefore(held.timestamp)) {
+        _latestPosition = initial;
+      }
+    }
+
+    return _latestPosition;
   }
 
   /// Replays the held fix after the journey owner has completed its own

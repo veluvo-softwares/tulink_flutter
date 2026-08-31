@@ -92,7 +92,8 @@ void main() {
     gate.complete(position(-1.2, 36.7));
 
     expect(await starting, isNull);
-    expect(source.streamRequests, 0);
+    expect(source.streamRequests, 1);
+    expect(source.nativeCancelCount, 1);
     expect(service.latestPosition, isNull);
 
     await service.dispose();
