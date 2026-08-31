@@ -5,9 +5,10 @@ import '../../domain/entities/journey.dart';
 
 /// Completion summary shown over the map the journey was driven on.
 ///
-/// This replaces pushing a details screen when a journey ends. The route just
-/// travelled stays visible behind the card, so arriving reads as the end of the
-/// same continuous experience rather than a jump to an unrelated screen.
+/// This replaces pushing a details screen when a journey ends. The shell
+/// clears live route artifacts as soon as completion is confirmed, so the
+/// summary remains over the same map without leaking finished geometry back
+/// into the exploring state.
 class CompletedJourneyOverlay extends StatelessWidget {
   const CompletedJourneyOverlay({
     super.key,
@@ -25,7 +26,7 @@ class CompletedJourneyOverlay extends StatelessWidget {
   /// Open the full record. Optional — the summary stands on its own.
   final VoidCallback? onViewDetails;
 
-  /// True while Done is clearing the finished journey off the shared map.
+  /// True while the finished journey is being cleared off the shared map.
   ///
   /// The summary deliberately stays up for the whole cleanup: returning to
   /// "exploring" before the route, destination, peers and puck are actually

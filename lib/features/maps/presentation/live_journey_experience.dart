@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/di/service_locator.dart';
 import '../../../core/services/car_toast_service.dart';
+import '../../../core/services/journey_location_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/tulink_colors.dart';
+import '../../../core/utils/logger.dart';
 import '../data/models/route_result_model.dart';
 import 'providers/map_provider.dart';
 import 'services/convoy_interpolation_service.dart';
@@ -18,7 +20,6 @@ import '../../journeys/data/models/journey_model.dart';
 import '../../journeys/domain/entities/journey.dart';
 import '../../convoy/presentation/providers/convoy_provider.dart';
 import '../../convoy/presentation/widgets/convoy_status_bar.dart';
-import '../../convoy/presentation/widgets/convoy_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/convoy_metrics_bottom_sheet.dart';
 import '../../convoy/presentation/widgets/journey_progress_card.dart';
 import '../../convoy/presentation/widgets/convoy_route_line.dart';
@@ -27,13 +28,13 @@ import '../../convoy/presentation/utils/convoy_member_presentation.dart';
 import '../../convoy/domain/entities/convoy_snapshot.dart';
 import '../../convoy/domain/entities/journey_ended_event.dart';
 import '../../convoy/domain/entities/member_position.dart';
+import '../../convoy/domain/entities/route_updated_event.dart';
 import '../../auth/presentation/providers/auth_provider.dart';
 import '../../home/presentation/state/journey_ended_event_scope.dart';
 import 'widgets/turn_instruction_card.dart';
 import 'providers/navigation_provider.dart';
 import '../domain/entities/route_progress.dart';
 import 'utils/route_rendering.dart';
-import 'utils/route_source_resolver.dart';
 import 'controllers/persistent_map_controller.dart';
 
 /// The live convoy layer, drawn over the application's single persistent map.
@@ -91,7 +92,6 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     with WidgetsBindingObserver {
   PointAnnotationManager? _pointAnnotationManager;
   String? _activeJourneyId;
-  bool _isConvoyCoordinationActive = false;
   ConvoySnapshot? _lastSnapshot;
   int _lastUpdateHash = 0;
   bool _disposed = false;
@@ -121,9 +121,15 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// [PersistentMapController.userPanTick] value last observed, used to notice
   /// a hand pan without the layer having to own the gesture listener.
   int _lastUserPanTick = 0;
+  int _lastRouteUpdatedTick = 0;
 
   /// Bounded location access shared with [ConvoyProvider]; see [LocationService].
   final LocationService _locationService = ServiceLocator().locationService;
+
+  /// Shared continuous journey stream. Map camera-follow never opens another
+  /// native GPS session of its own.
+  final JourneyLocationService _journeyLocationService =
+      ServiceLocator().journeyLocationService;
 
   /// Pending "draw the route once we finally get a fix" listener, armed only
   /// when there is neither a cached route nor an origin. See
@@ -144,6 +150,11 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// startup. Both lifecycle paths run during the same navigation transition.
   Future<void>? _routeSetupFuture;
   String? _routeSetupJourneyId;
+
+  /// Invalidates route work that started before a confirmed end or leave.
+  /// A follower can receive `journey-ended` while `/maps/route` is still in
+  /// flight; that late response must not repaint after cleanup finishes.
+  int _routeDrawEpoch = 0;
 
   // Follow by default, but yield permanently to an explicit user pan until
   // they tap recenter. This lets drivers inspect the road ahead or the wider
@@ -349,7 +360,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     await _updateMarkers();
-    _checkAndStartConvoyCoordination();
+    _syncActiveJourneyLayer();
   }
 
   /// Draw the destination pin from static [Journey] data.
@@ -360,6 +371,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     const sourceId = 'journey-destination-source';
     const ringId = 'journey-destination-ring';
     const dotId = 'journey-destination-dot';
+    final destinationColor = TulinkColors.light.sunsetOrange;
 
     try {
       await _mapboxMap!.style.removeStyleLayer(ringId);
@@ -388,14 +400,14 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         GeoJsonSource(id: sourceId, data: geoJson),
       );
 
-      // Outer pulse ring — Electric Red at 20% opacity
+      // Outer pulse ring — Tulink sunset orange at 20% opacity.
       await _mapboxMap!.style.addLayer(
         CircleLayer(
           id: ringId,
           sourceId: sourceId,
           circleRadius: 16.0,
-          circleColor: 0x33E8002D,
-          circleStrokeColor: 0xFFE8002D,
+          circleColor: destinationColor.withValues(alpha: 0.2).toARGB32(),
+          circleStrokeColor: destinationColor.toARGB32(),
           circleStrokeWidth: 2.5,
           circleOpacity: 1.0,
         ),
@@ -407,7 +419,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           id: dotId,
           sourceId: sourceId,
           circleRadius: 8.0,
-          circleColor: 0xFFE8002D,
+          circleColor: destinationColor.toARGB32(),
           circleStrokeColor: 0xFFFFFFFF,
           circleStrokeWidth: 2.0,
           circleOpacity: 1.0,
@@ -437,23 +449,24 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
     _cancelRouteLocationRetry();
     _routeRetryJourneyId = journey.id;
-    _routeRetrySubscription = _locationService
-        .getPositionStream(
-          locationSettings: const geo.LocationSettings(
-            accuracy: geo.LocationAccuracy.high,
-          ),
-        )
-        .listen((position) {
-          if (!mounted || _routeRetryJourneyId != journey.id) return;
-          _cancelRouteLocationRetry();
-          unawaited(
-            _drawActualRoute(
-              journey,
-              knownLat: position.latitude,
-              knownLng: position.longitude,
-            ),
-          );
-        }, onError: (Object e) => print('⚠️ Route retry stream error: $e'));
+    void retry(geo.Position position) {
+      if (!mounted || _routeRetryJourneyId != journey.id) return;
+      _cancelRouteLocationRetry();
+      unawaited(
+        _drawActualRoute(
+          journey,
+          knownLat: position.latitude,
+          knownLng: position.longitude,
+        ),
+      );
+    }
+
+    _routeRetrySubscription = _journeyLocationService.positions.listen(
+      retry,
+      onError: (Object e) => print('⚠️ Route retry stream error: $e'),
+    );
+    final latest = _journeyLocationService.latestPosition;
+    if (latest != null) retry(latest);
   }
 
   void _cancelRouteLocationRetry() {
@@ -590,6 +603,13 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     double? knownLng,
   }) async {
     if (_mapboxMap == null || !mounted) return;
+    final routeDrawEpoch = _routeDrawEpoch;
+
+    bool isCurrentRouteDraw() =>
+        mounted &&
+        !_disposed &&
+        routeDrawEpoch == _routeDrawEpoch &&
+        _mapboxMap != null;
 
     final mapProvider = context.read<MapProvider>();
     final userId = context.read<AuthProvider>().user?.id;
@@ -603,57 +623,31 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     // rebuilt cannot paint the new one.
     final generation = _mapGeneration;
 
-    // Cached route first — see [resolveRouteSource]. A cached route already
-    // ends at this destination and needs no origin, so it must be chosen
-    // before any GPS work.
-    //
-    // Read through [MapProvider.routeFor], never `currentRoute`: the held
-    // route must belong to *this* user, journey, destination and surface
-    // generation before it may be adopted as this journey's geometry.
-    final source = await resolveRouteSource(
-      cachedRoute: mapProvider.routeFor(
-        userId: userId,
-        journeyId: journey.id,
-        destLat: journey.destination.latitude,
-        destLng: journey.destination.longitude,
-        surfaceGeneration: generation,
-      ),
-      destinationLat: journey.destination.latitude,
-      destinationLng: journey.destination.longitude,
-      locationService: _locationService,
-      knownLat: knownLat,
-      knownLng: knownLng,
-    );
-    if (!mounted || _mapboxMap == null || generation != _mapGeneration) return;
-
-    final RouteResultModel? route;
-    switch (source) {
-      case CachedRouteSource(route: final cached):
-        print('✅ Using prefetched route — skipping fetch');
-        // Nothing is pending on location any more.
-        _cancelRouteLocationRetry();
-        route = cached;
-      case FetchRouteSource(:final originLat, :final originLng):
-        print('🌐 No prefetched route — fetching now');
-        route = await mapProvider.fetchRoute(
-          userId: userId,
-          journeyId: journey.id,
-          originLat: originLat,
-          originLng: originLng,
-          destLat: journey.destination.latitude,
-          destLng: journey.destination.longitude,
-          surfaceGeneration: generation,
-        );
-      case AwaitingLocationRouteSource():
-        // No cached route and no origin. Keep the destination visible and
-        // recover as soon as a position arrives, instead of leaving the map on
-        // a default regional camera with nothing drawn.
-        await _centerOnDestination(journey);
-        _scheduleRouteRetryOnNextFix(journey);
-        return;
+    // A live route belongs to this device, not to the convoy leader. Peer
+    // locations are rendered as markers only; their route geometry must never
+    // become the local driver's navigation line.
+    final latest = _journeyLocationService.latestPosition;
+    final originLat = knownLat ?? latest?.latitude;
+    final originLng = knownLng ?? latest?.longitude;
+    if (originLat == null || originLng == null) {
+      await _centerOnDestination(journey);
+      _scheduleRouteRetryOnNextFix(journey);
+      return;
     }
 
+    final route = await mapProvider.fetchRoute(
+      userId: userId,
+      journeyId: journey.id,
+      originLat: originLat,
+      originLng: originLng,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+      surfaceGeneration: generation,
+    );
+    if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
+
     if (route == null || !mounted || _mapboxMap == null) return;
+    _cancelRouteLocationRetry();
     // The surface was rebuilt while the route was being resolved: these layer
     // ids belong to a style that no longer exists, and whichever layer owns the
     // new surface redraws its own geometry.
@@ -674,6 +668,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       await _mapboxMap!.style.removeStyleSource(sourceId);
     } catch (_) {}
 
+    // Completion may have arrived during the sequential Mapbox removals.
+    if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
+
     try {
       final geoJson = jsonEncode({
         'type': 'Feature',
@@ -687,6 +684,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       await _mapboxMap!.style.addSource(
         GeoJsonSource(id: sourceId, data: geoJson),
       );
+      if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
 
       // Shadow line for depth
       await _mapboxMap!.style.addLayer(
@@ -700,8 +698,11 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           lineOpacity: 0.25,
         ),
       );
+      if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
 
-      // Electric Red solid route line (roads → solid, not dashed)
+      // The route has one visual identity everywhere in the app. Keeping the
+      // live layer teal prevents a second red route appearing over the teal
+      // preview/canonical route during journey transitions.
       await _mapboxMap!.style.addLayer(
         LineLayer(
           id: lineId,
@@ -709,10 +710,11 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           lineCap: LineCap.ROUND,
           lineJoin: LineJoin.ROUND,
           lineWidth: 5.0,
-          lineColor: 0xFFE8002D,
+          lineColor: 0xFF12848D,
           lineOpacity: 0.9,
         ),
       );
+      if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
 
       print(
         '✅ Actual road route drawn: '
@@ -724,7 +726,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     // Hand the route to the navigation layer for turn-by-turn guidance.
-    if (mounted) {
+    if (isCurrentRouteDraw()) {
       final navigation = context.read<NavigationProvider>();
       if (navigation.activeRoute == route && navigation.isNavigating) return;
       await navigation.startNavigation(
@@ -742,6 +744,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// cleanly.
   Future<void> _handleReroute(Journey journey) async {
     if (!mounted) return;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null) return;
     print('🧭 Handling reroute for journey ${journey.id}');
 
     // Grab the current position from the live navigation stream before clearing
@@ -753,23 +757,22 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     final knownLat = progress?.snappedLatitude;
     final knownLng = progress?.snappedLongitude;
 
-    // Clear the cached route so _drawActualRoute fetches a fresh one.
-    context.read<MapProvider>().clearRoute();
+    final latest = _journeyLocationService.latestPosition;
+    final originLat = knownLat ?? latest?.latitude;
+    final originLng = knownLng ?? latest?.longitude;
+    if (originLat == null || originLng == null) return;
+
     // Reset throttle state so trim and puck start immediately on the new route.
     _lastTrimAt = null;
 
-    await _drawActualRoute(journey, knownLat: knownLat, knownLng: knownLng);
+    await _drawActualRoute(journey, knownLat: originLat, knownLng: originLng);
+    AppLogger.info('Device-scoped reroute fetched for ${journey.id}');
+  }
 
-    final newRoute = context.read<MapProvider>().routeFor(
-      userId: context.read<AuthProvider>().user?.id ?? '',
-      journeyId: journey.id,
-      destLat: journey.destination.latitude,
-      destLng: journey.destination.longitude,
-    );
-    print('🧭 reroute fetched: ${newRoute?.coordinates.length ?? 0} coords');
-    if (newRoute != null && mounted) {
-      context.read<NavigationProvider>().loadRoute(newRoute);
-    }
+  void _invalidateRouteDrawing() {
+    _routeDrawEpoch++;
+    _routeSetupFuture = null;
+    _routeSetupJourneyId = null;
   }
 
   /// True if a route's last coordinate is within ~110 m of the given target.
@@ -853,6 +856,16 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       _navigationProvider = nav;
       _navigationProvider?.addListener(_onNavigationProgress);
     }
+    final convoy = context.watch<ConvoyProvider>();
+    if (convoy.routeUpdatedTick != _lastRouteUpdatedTick) {
+      _lastRouteUpdatedTick = convoy.routeUpdatedTick;
+      final event = convoy.lastRouteUpdatedEvent;
+      if (event != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_applyRouteUpdate(event));
+        });
+      }
+    }
     // Refresh markers only when provider dependencies actually change,
     // rather than on every build().
     if (_mapboxMap != null) {
@@ -860,6 +873,21 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         if (mounted) _updateMarkers();
       });
     }
+  }
+
+  Future<void> _applyRouteUpdate(RouteUpdatedEvent event) async {
+    final pending = _routeSetupFuture;
+    if (pending != null) await pending;
+    if (!mounted) return;
+    final journey = context.read<JourneyProvider>().currentJourney;
+    if (journey == null ||
+        journey.id != event.journeyId ||
+        journey.status != JourneyStatus.ACTIVE) {
+      return;
+    }
+    // A server route update is only a signal to refresh. Each client still
+    // calculates from its own latest fix, never from the sender's geometry.
+    await _drawActualRoute(journey);
   }
 
   /// Called by [NavigationProvider] on every GPS tick while navigating.
@@ -977,6 +1005,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       segmentIndex: progress.currentSegmentIndex,
       snappedLongitude: progress.snappedLongitude,
       snappedLatitude: progress.snappedLatitude,
+      isOffRoute: progress.isOffRoute,
     );
     if (remaining.length < 2) return;
 
@@ -1283,87 +1312,43 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
   }
 
-  /// Check if convoy coordination should be started
-  void _checkAndStartConvoyCoordination() {
+  /// Keeps map-only journey state aligned with the app-owned live session.
+  void _syncActiveJourneyLayer() {
     if (!mounted) return;
     final journeyProvider = context.read<JourneyProvider>();
-    final convoyProvider = context.read<ConvoyProvider>();
     final currentJourney = journeyProvider.currentJourney;
 
-    // Start convoy coordination if there's an active journey
     if (currentJourney != null &&
-        currentJourney.status == JourneyStatus.ACTIVE &&
-        !_isConvoyCoordinationActive) {
+        currentJourney.status == JourneyStatus.ACTIVE) {
+      final isNewJourney = _activeJourneyId != currentJourney.id;
       _activeJourneyId = currentJourney.id;
-      _isConvoyCoordinationActive = true;
 
       // Note: do NOT disable the built-in puck here. It stays on until the
       // snapped puck actually starts drawing (see _drawSnappedPuck), otherwise
       // the user has no puck during the journey overview / pre-driving window.
 
-      // Start convoy coordination. Errors are surfaced on the provider's own
-      // state (error / locationFailure), which the status bar renders — so this
-      // deliberately-unawaited call has an observable failure representation.
-      unawaited(convoyProvider.startCoordination(currentJourney.id));
-
       // Ensure the destination pin and route are drawn from static journey
       // data even when the map screen is reached without _onMapCreated firing.
-      if (_mapboxMap != null) {
+      if (isNewJourney && _mapboxMap != null) {
         _drawDestinationPin(currentJourney);
         _drawActualRoute(currentJourney);
       }
 
-      // Track the user's position so the camera follows during driving.
-      // This is a separate stream from ConvoyProvider's publishing stream.
-      _cameraFollowSubscription ??= _locationService
-          .getPositionStream(
-            locationSettings: const geo.LocationSettings(
-              accuracy: geo.LocationAccuracy.high,
-              distanceFilter: 10, // Update camera every 10m
-            ),
-          )
-          .listen((position) {
-            _updateCameraFollow(position);
-          });
+      // Presentation subscribes to the app-owned journey stream. Disposing this
+      // widget detaches camera follow without stopping screen-off publishing.
+      if (_cameraFollowSubscription == null) {
+        _cameraFollowSubscription = _journeyLocationService.positions.listen(
+          _updateCameraFollow,
+        );
+        final latest = _journeyLocationService.latestPosition;
+        if (latest != null) unawaited(_updateCameraFollow(latest));
+      }
+      return;
     }
-  }
 
-  /// Stop convoy coordination when leaving the map
-  void _stopConvoyCoordination() {
-    if (_isConvoyCoordinationActive) {
-      final convoyProvider = context.read<ConvoyProvider>();
-      convoyProvider.stopCoordination();
-      _isConvoyCoordinationActive = false;
-      _activeJourneyId = null;
-    }
-  }
-
-  /// Show convoy bottom sheet with member list
-  void _showConvoyBottomSheet() {
-    final convoyProvider = context.read<ConvoyProvider>();
-    final authProvider = context.read<AuthProvider>();
-    final currentUserId = authProvider.user?.id;
-
-    // For bottom sheet member list, show filtered snapshot (others only)
-    final snapshot = currentUserId != null
-        ? convoyProvider.getDisplaySnapshot(currentUserId)
-        : convoyProvider.getFullSnapshot();
-
-    if (snapshot != null) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => ConvoyBottomSheet(
-          snapshot: snapshot,
-          onMemberTap: (member) {
-            Navigator.pop(context);
-            unawaited(_focusOnMember(member));
-          },
-          onClose: () => Navigator.pop(context),
-        ),
-      );
-    }
+    _activeJourneyId = null;
+    unawaited(_cameraFollowSubscription?.cancel());
+    _cameraFollowSubscription = null;
   }
 
   /// Move the camera to a selected convoy member and leave follow mode off so
@@ -1464,9 +1449,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
               onTap: () {
                 Navigator.pop(context);
                 if (currentJourney != null) {
-                  convoyProvider.stopCoordination().then((_) {
-                    convoyProvider.startCoordination(currentJourney.id);
-                  });
+                  unawaited(_reconnectConvoy(currentJourney.id));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Reconnecting to convoy...')),
                   );
@@ -1536,15 +1519,15 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     if (!mounted) return;
 
     if (success) {
+      _invalidateRouteDrawing();
       await _navigationProvider?.stopNavigation();
       await convoyProvider.stopCoordination();
       if (!mounted) return;
       final completedJourney = journeyProvider.lastCompletedJourney;
       journeyProvider.consumeLastCompletedJourney();
 
-      // The summary is rendered by the shell over the same map, so the route
-      // just driven stays visible behind it instead of being replaced by a
-      // separate screen.
+      // The summary is rendered by the shell over the same map. The shell owns
+      // and clears the finished journey's persistent route artifacts.
       if (completedJourney != null) {
         widget.onCompleted?.call(completedJourney);
       } else {
@@ -1583,6 +1566,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       return;
     }
 
+    _invalidateRouteDrawing();
     await _navigationProvider?.stopNavigation();
     await convoyProvider.stopCoordination();
     if (!mounted) return;
@@ -1694,6 +1678,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     _setExitInProgress(true);
 
+    _invalidateRouteDrawing();
     _navigationProvider?.stopNavigation();
 
     // Prefer the journey carried on the event itself. Completing a journey
@@ -1841,6 +1826,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   @override
   void dispose() {
     _disposed = true;
+    _invalidateRouteDrawing();
     unawaited(_statusNotifier.clear());
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onMapControllerChanged);
@@ -1891,10 +1877,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     // Marker updates are driven by didChangeDependencies(), not build().
 
-    // Post-frame: check convoy start + handle server-driven events.
+    // Post-frame: align map-only state and handle server-driven events.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _checkAndStartConvoyCoordination();
+      _syncActiveJourneyLayer();
       _handleArrivalEvent();
       _handleJourneyEndedEvent();
     });
@@ -1908,13 +1894,11 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           Align(
             alignment: Alignment.topCenter,
             child: GestureDetector(
-              onTap: _showConvoyBottomSheet,
               onLongPress: _showConvoyManagementOptions,
               child: ConvoyStatusBar(
                 snapshot: convoySnapshot,
                 rosterMemberCount: _rosterMemberCount(currentJourney),
                 connectionState: convoyConnectionState,
-                onTap: _showConvoyBottomSheet,
                 // Back collapses chrome; it must never reach the exit path,
                 // which tears the journey down and clears the draft.
                 onBack: widget.onBack,
@@ -2044,6 +2028,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
                 onToggleExpanded: () => setState(
                   () => _isProgressCardExpanded = !_isProgressCardExpanded,
                 ),
+                onMemberTap: (member) => unawaited(_focusOnMember(member)),
               ),
             ),
           ),

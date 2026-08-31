@@ -208,10 +208,14 @@ void main() {
       ).readAsStringSync();
 
       expect(
-        home.contains('final cleaned = await _clearLiveArtifacts();'),
+        home.contains('final cleaned = await _clearFinishedJourneyMap();'),
         isTrue,
-        reason: 'Done must await the surface actually becoming clean',
+        reason:
+            'Done must await live, preview, and destination cleanup before '
+            'exposing the follower Home map',
       );
+      expect(home.contains('await _clearPreviewRoute();'), isTrue);
+      expect(home.contains('await _clearDestinationAnnotations();'), isTrue);
       // The other teardown path (ended/left) has no summary to hold, so it does
       // not await — instead, adoption of the *next* journey blocks on the same
       // coordinator, which closes the same race from the other side.
@@ -238,6 +242,27 @@ void main() {
         reason: 'the live layer must react to rebuilds, not trigger them',
       );
       expect(home.contains('_mapController.recreate()'), isTrue);
+    });
+
+    test('live transport and native location each have one app owner', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+      final invites = File(
+        'lib/features/invites/presentation/pages/invitations_screen.dart',
+      ).readAsStringSync();
+
+      expect(live.contains('startCoordination('), isFalse);
+      expect(home.contains('startCoordination('), isFalse);
+      expect(invites.contains('startCoordination('), isFalse);
+      expect(
+        live.contains('.getPositionStream('),
+        isFalse,
+        reason: 'map consumers must share JourneyLocationService',
+      );
     });
   });
 
@@ -326,6 +351,69 @@ void main() {
         isFalse,
         reason: 'raw GPS must use the same native puck as active navigation',
       );
+    });
+  });
+
+  group('destination puck styling', () {
+    test('preview and live journeys use the Tulink sunset orange token', () {
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+
+      expect(
+        home.contains('TulinkColors.light.sunsetOrange.toARGB32()'),
+        isTrue,
+      );
+      expect(
+        live.contains(
+          'final destinationColor = '
+          'TulinkColors.light.sunsetOrange;',
+        ),
+        isTrue,
+      );
+      expect(
+        live
+            .substring(
+              live.indexOf('Future<void> _drawDestinationPin'),
+              live.indexOf('Future<void> _updateMarkers'),
+            )
+            .contains('0xFFE8002D'),
+        isFalse,
+        reason: 'the retired red destination puck must not return',
+      );
+    });
+  });
+
+  group('live route ownership', () {
+    test('each client calculates from its own fix, not the leader route', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+      final routeSetup = live.substring(
+        live.indexOf('Future<void> _drawActualRouteInternal'),
+        live.indexOf('Future<void> _handleReroute'),
+      );
+
+      expect(routeSetup.contains('mapProvider.fetchRoute('), isTrue);
+      expect(routeSetup.contains('originLat: originLat'), isTrue);
+      expect(routeSetup.contains('originLng: originLng'), isTrue);
+      expect(routeSetup.contains('fetchCanonicalRoute'), isFalse);
+      expect(routeSetup.contains('replaceCanonicalRoute'), isFalse);
+    });
+  });
+
+  group('terminal route draw barrier', () {
+    test('confirmed end invalidates any route response still in flight', () {
+      final live = File(
+        'lib/features/maps/presentation/live_journey_experience.dart',
+      ).readAsStringSync();
+
+      expect(live.contains('final routeDrawEpoch = _routeDrawEpoch;'), isTrue);
+      expect(live.contains('routeDrawEpoch == _routeDrawEpoch'), isTrue);
+      expect(live.contains('_invalidateRouteDrawing();'), isTrue);
     });
   });
 

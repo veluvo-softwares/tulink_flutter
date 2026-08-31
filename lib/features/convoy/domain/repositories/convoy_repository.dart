@@ -1,6 +1,7 @@
 import '../entities/convoy_snapshot.dart';
 import '../entities/journey_ended_event.dart';
 import '../entities/participant_arrived_event.dart';
+import '../entities/route_updated_event.dart';
 import '../../../../core/errors/failure.dart';
 
 /// Abstract repository interface for convoy coordination
@@ -56,6 +57,9 @@ abstract class ConvoyRepository {
   /// Fires (with the current journeyId) when an invited member accepts.
   /// The leader uses this to refresh its participant list live.
   Stream<String> get participantAcceptedStream;
+
+  /// Fires when the leader commits a newer canonical route version.
+  Stream<RouteUpdatedEvent> get routeUpdatedStream;
 
   /// Fires when the backend pushes a `journey-invite` to this user.
   Stream<Map<String, dynamic>> get journeyInviteStream;

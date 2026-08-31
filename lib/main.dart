@@ -23,6 +23,7 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/providers/email_verification_provider.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'features/auth/presentation/screens/verify_email_screen.dart';
+import 'features/convoy/presentation/services/live_journey_coordinator.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/maps/presentation/providers/map_provider.dart';
 import 'features/maps/presentation/providers/navigation_provider.dart';
@@ -195,6 +196,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: serviceLocator.analyticsProvider),
         // Convoy Provider
         ChangeNotifierProvider.value(value: serviceLocator.convoyProvider),
+        Provider<LiveJourneyCoordinator>.value(
+          value: serviceLocator.liveJourneyCoordinator,
+        ),
         // Push notification service (FCM) — plain Provider, not a notifier.
         Provider<PushNotificationService>.value(
           value: serviceLocator.pushNotificationService,
@@ -202,7 +206,7 @@ class MyApp extends StatelessWidget {
         Provider.value(value: serviceLocator.offlineMapService),
       ],
       child: _AppLifecycleCoordinator(
-        onResumed: serviceLocator.convoyProvider.onAppResumed,
+        onResumed: serviceLocator.liveJourneyCoordinator.onAppResumed,
         child: Consumer<ThemeProvider>(
           builder: (context, themeProvider, child) {
             return MaterialApp(

@@ -12,6 +12,7 @@ import 'package:tulink_flutter/features/convoy/domain/usecases/fetch_latest_snap
 import 'package:tulink_flutter/features/convoy/domain/repositories/convoy_repository.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
 
 @GenerateMocks([
@@ -259,6 +260,9 @@ void main() {
           mockRepository.participantAcceptedStream,
         ).thenAnswer((_) => const Stream<String>.empty());
         when(
+          mockRepository.routeUpdatedStream,
+        ).thenAnswer((_) => const Stream<RouteUpdatedEvent>.empty());
+        when(
           mockStreamConvoyPositions(journeyId),
         ).thenAnswer((_) => const Stream.empty());
       }
@@ -365,6 +369,9 @@ void main() {
           when(
             mockRepository.participantAcceptedStream,
           ).thenAnswer((_) => const Stream<String>.empty());
+          when(
+            mockRepository.routeUpdatedStream,
+          ).thenAnswer((_) => const Stream<RouteUpdatedEvent>.empty());
           when(mockRepository.joinJourneyRoom(any)).thenAnswer((_) async {});
           when(mockRepository.stopCoordination()).thenAnswer((_) async {});
           when(mockStreamConvoyPositions(any)).thenAnswer((invocation) {

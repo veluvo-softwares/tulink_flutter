@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tulink_flutter/core/common/result.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
+import 'package:tulink_flutter/core/errors/user_facing_error.dart';
 import 'package:tulink_flutter/features/journeys/domain/entities/journey.dart';
 import 'package:tulink_flutter/features/journeys/domain/usecases/journey_usecases.dart';
 
@@ -94,7 +95,7 @@ class JourneyProvider extends ChangeNotifier {
   }
 
   void _setError(String? value) {
-    _error = value;
+    _error = value == null ? null : userFacingErrorMessage(value);
     notifyListeners();
   }
 

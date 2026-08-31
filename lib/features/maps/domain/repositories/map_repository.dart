@@ -21,6 +21,26 @@ abstract class MapRepository {
     required double destinationLng,
   });
 
+  /// Current server-owned route shared by every member of [journeyId].
+  Future<RouteResultModel?> getCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destinationLat,
+    required double destinationLng,
+  });
+
+  /// Asks the server to calculate and commit the next canonical route.
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+    required String reason,
+  });
+
   /// The route already stored for this journey, if one matches the
   /// destination.
   ///

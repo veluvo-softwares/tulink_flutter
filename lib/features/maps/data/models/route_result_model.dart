@@ -31,11 +31,20 @@ class RouteResultModel {
   final double durationSeconds;
   final List<RouteStepModel> steps;
 
+  /// Server-owned version for live convoy routes. Null for previews and
+  /// legacy locally calculated routes.
+  final int? canonicalVersion;
+
+  /// Why the server created this canonical version.
+  final String? canonicalReason;
+
   const RouteResultModel({
     required this.coordinates,
     required this.distanceMetres,
     required this.durationSeconds,
     required this.steps,
+    this.canonicalVersion,
+    this.canonicalReason,
   });
 
   factory RouteResultModel.fromJson(Map<String, dynamic> json) {
@@ -59,7 +68,7 @@ class RouteResultModel {
 
     final rawSteps = json['steps'] as List<dynamic>? ?? [];
     final steps = rawSteps
-        .whereType<Map>()
+        .whereType<Map<Object?, Object?>>()
         .map((s) => RouteStepModel.fromJson(s.cast<String, dynamic>()))
         .toList();
 
@@ -68,6 +77,8 @@ class RouteResultModel {
       distanceMetres: (json['distanceMetres'] as num?)?.toDouble() ?? 0.0,
       durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0.0,
       steps: steps,
+      canonicalVersion: (json['version'] as num?)?.toInt(),
+      canonicalReason: json['reason']?.toString(),
     );
   }
 
@@ -77,5 +88,7 @@ class RouteResultModel {
     'distanceMetres': distanceMetres,
     'durationSeconds': durationSeconds,
     'steps': steps.map((step) => step.toJson()).toList(growable: false),
+    if (canonicalVersion != null) 'version': canonicalVersion,
+    if (canonicalReason != null) 'reason': canonicalReason,
   };
 }

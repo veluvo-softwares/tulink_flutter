@@ -11,6 +11,7 @@ import 'package:tulink_flutter/features/convoy/data/services/location_outbox_ser
 import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart';
 
 /// A socket the tests can hold open, answer out of order, and inspect.
 class FakeConvoyWebSocketDataSource implements ConvoyWebSocketDataSource {
@@ -21,6 +22,7 @@ class FakeConvoyWebSocketDataSource implements ConvoyWebSocketDataSource {
       StreamController<ParticipantArrivedEvent>.broadcast();
   final journeyStarted = StreamController<String>.broadcast();
   final participantAccepted = StreamController<String>.broadcast();
+  final routeUpdated = StreamController<RouteUpdatedEvent>.broadcast();
   final journeyInvite = StreamController<Map<String, dynamic>>.broadcast();
 
   /// Every room operation, in order, so a test can assert the handoff.
@@ -109,6 +111,9 @@ class FakeConvoyWebSocketDataSource implements ConvoyWebSocketDataSource {
   Stream<String> get participantAcceptedStream => participantAccepted.stream;
 
   @override
+  Stream<RouteUpdatedEvent> get routeUpdatedStream => routeUpdated.stream;
+
+  @override
   Stream<Map<String, dynamic>> get journeyInviteStream => journeyInvite.stream;
 
   @override
@@ -127,6 +132,7 @@ class FakeConvoyWebSocketDataSource implements ConvoyWebSocketDataSource {
     await participantArrived.close();
     await journeyStarted.close();
     await participantAccepted.close();
+    await routeUpdated.close();
     await journeyInvite.close();
   }
 }

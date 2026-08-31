@@ -51,6 +51,23 @@ void main() {
 
       expect(result, isEmpty);
     });
+
+    test('never draws a straight connector from an off-route GPS fix', () {
+      final result = buildRemainingRouteCoordinates(
+        routeCoordinates: route,
+        segmentIndex: 2,
+        snappedLongitude: 36.75,
+        snappedLatitude: -1.25,
+        isOffRoute: true,
+      );
+
+      expect(result, route);
+      expect(
+        result.first,
+        isNot(<double>[36.75, -1.25]),
+        reason: 'the raw off-route location must not become route geometry',
+      );
+    });
   });
 
   group('interpolateRoutePosition', () {

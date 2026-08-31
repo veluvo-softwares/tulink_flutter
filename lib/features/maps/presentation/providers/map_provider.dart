@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
 import '../../../../core/constants/map_constants.dart';
 import '../../../../core/errors/failure.dart';
+import '../../../../core/errors/user_facing_error.dart';
 import '../../../../core/services/region_service.dart';
 import '../../domain/entities/place_search_result.dart';
 import '../../domain/entities/race_route.dart';
@@ -59,6 +60,19 @@ class MapProvider with ChangeNotifier {
     }
     return _currentRoute;
   }
+
+  /// Canonical version held for this exact live journey route.
+  int? canonicalVersionFor({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+  }) => routeFor(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+  )?.canonicalVersion;
 
   bool _isFetchingRoute = false;
   bool get isFetchingRoute => _isFetchingRoute;
@@ -152,6 +166,16 @@ class MapProvider with ChangeNotifier {
     _latestRouteRequest = token;
     _latestRouteKey = key;
 
+    // A hot restart or an upgrade from the shared-route implementation can
+    // leave the leader's canonical geometry held under this member's key.
+    // Drop it before either cache or network work begins so no consumer can
+    // render it while the personal route is loading.
+    if (_currentRouteKey == key && _currentRoute?.canonicalVersion != null) {
+      _currentRoute = null;
+      _currentRouteKey = null;
+      _currentRouteSurfaceGeneration = null;
+    }
+
     /// True while this request is still the newest one issued *and* the map
     /// surface it was issued against is still the one on screen.
     ///
@@ -201,10 +225,105 @@ class MapProvider with ChangeNotifier {
       // A transient failure must not erase the route currently guiding this
       // same active journey — but only if the held route really is this
       // journey's, for this user, to this destination.
-      return _currentRouteKey == key ? _currentRoute : null;
+      final held = _currentRouteKey == key ? _currentRoute : null;
+      return held?.canonicalVersion == null ? held : null;
     } finally {
       // Only the newest request owns the loading flag; an older one finishing
       // must not signal "done" while the current request is still running.
+      if (isCurrent()) {
+        _isFetchingRoute = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Loads the server-owned route shared by every live convoy member.
+  Future<RouteResultModel?> fetchCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    int? surfaceGeneration,
+  }) => _runCanonicalRequest(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+    surfaceGeneration: surfaceGeneration,
+    request: () => _repository.getCanonicalRoute(
+      userId: userId,
+      journeyId: journeyId,
+      destinationLat: destLat,
+      destinationLng: destLng,
+    ),
+  );
+
+  /// Commits the next canonical version. Only the journey leader is accepted
+  /// by the server; a version conflict resolves to the committed winner.
+  Future<RouteResultModel?> replaceCanonicalRoute({
+    required String userId,
+    required String journeyId,
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+    required int baseVersion,
+    required String reason,
+    int? surfaceGeneration,
+  }) => _runCanonicalRequest(
+    userId: userId,
+    journeyId: journeyId,
+    destLat: destLat,
+    destLng: destLng,
+    surfaceGeneration: surfaceGeneration,
+    request: () => _repository.replaceCanonicalRoute(
+      userId: userId,
+      journeyId: journeyId,
+      originLat: originLat,
+      originLng: originLng,
+      destinationLat: destLat,
+      destinationLng: destLng,
+      baseVersion: baseVersion,
+      reason: reason,
+    ),
+  );
+
+  Future<RouteResultModel?> _runCanonicalRequest({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    required Future<RouteResultModel?> Function() request,
+    int? surfaceGeneration,
+  }) async {
+    final token = ++_routeRequestSeq;
+    final key = _routeKey(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    final surface = surfaceGeneration ?? _surfaceGeneration;
+    _latestRouteRequest = token;
+    _latestRouteKey = key;
+    bool isCurrent() =>
+        _latestRouteRequest == token &&
+        _latestRouteKey == key &&
+        _surfaceGeneration == surface;
+
+    _isFetchingRoute = true;
+    notifyListeners();
+    try {
+      final route = await request();
+      if (!isCurrent()) return null;
+      if (route != null) {
+        _install(route, key, surface);
+        notifyListeners();
+        return route;
+      }
+      final held = _currentRouteKey == key ? _currentRoute : null;
+      return held?.canonicalVersion == null ? null : held;
+    } finally {
       if (isCurrent()) {
         _isFetchingRoute = false;
         notifyListeners();
@@ -233,7 +352,11 @@ class MapProvider with ChangeNotifier {
     required int surface,
     required bool Function() isCurrent,
   }) async {
-    if (_currentRouteKey == key && _currentRoute != null) return;
+    if (_currentRouteKey == key &&
+        _currentRoute != null &&
+        _currentRoute?.canonicalVersion == null) {
+      return;
+    }
 
     try {
       final cached = await _repository.getCachedRoute(
@@ -242,7 +365,10 @@ class MapProvider with ChangeNotifier {
         destinationLat: destLat,
         destinationLng: destLng,
       );
-      if (cached == null) return;
+      // Older builds cached the leader's canonical route under every member's
+      // user key. It is still somebody else's geometry and must never flash on
+      // screen while this device's route request is in flight.
+      if (cached == null || cached.canonicalVersion != null) return;
       // Superseded while the cache was being read.
       if (!isCurrent()) return;
 
@@ -366,7 +492,7 @@ class MapProvider with ChangeNotifier {
       _searchError = null;
     } else if (result.isFailure && result.failure != null) {
       _searchResults = [];
-      _searchError = result.failure!.message;
+      _searchError = userFacingErrorMessage(result.failure);
     }
 
     notifyListeners();

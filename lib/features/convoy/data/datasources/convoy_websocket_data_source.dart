@@ -10,6 +10,7 @@ import 'location_publish_ack.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/journey_ended_event.dart';
 import '../../domain/entities/participant_arrived_event.dart';
+import '../../domain/entities/route_updated_event.dart';
 import '../../domain/entities/member_position.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
@@ -152,6 +153,9 @@ abstract class ConvoyWebSocketDataSource {
   /// to the journey they are on now. Events without a `journeyId` are dropped.
   Stream<String> get participantAcceptedStream;
 
+  /// Stream of canonical route-version commits for the joined journey.
+  Stream<RouteUpdatedEvent> get routeUpdatedStream;
+
   /// Stream of `journey-invite` events pushed to this user's per-user room when
   /// someone invites them to a journey. Delivered on any connected socket, so
   /// the invite list can update live without a reload.
@@ -204,6 +208,8 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   final StreamController<String> _journeyStartedController =
       StreamController.broadcast();
   final StreamController<String> _participantAcceptedController =
+      StreamController.broadcast();
+  final StreamController<RouteUpdatedEvent> _routeUpdatedController =
       StreamController.broadcast();
   final StreamController<Map<String, dynamic>> _journeyInviteController =
       StreamController.broadcast();
@@ -331,6 +337,10 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
   @override
   Stream<String> get participantAcceptedStream =>
       _participantAcceptedController.stream;
+
+  @override
+  Stream<RouteUpdatedEvent> get routeUpdatedStream =>
+      _routeUpdatedController.stream;
 
   @override
   Stream<Map<String, dynamic>> get journeyInviteStream =>
@@ -799,6 +809,14 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
       }
       if (!_participantAcceptedController.isClosed) {
         _participantAcceptedController.add(journeyId);
+      }
+    });
+
+    _socket!.on('route-updated', (data) {
+      final event = RouteUpdatedEvent.fromPayload(data);
+      if (event == null || event.journeyId != _currentJourneyId) return;
+      if (!_routeUpdatedController.isClosed) {
+        _routeUpdatedController.add(event);
       }
     });
 
@@ -1413,6 +1431,10 @@ class ConvoyWebSocketDataSourceImpl implements ConvoyWebSocketDataSource {
 
     if (!_participantAcceptedController.isClosed) {
       await _participantAcceptedController.close();
+    }
+
+    if (!_routeUpdatedController.isClosed) {
+      await _routeUpdatedController.close();
     }
 
     if (!_journeyInviteController.isClosed) {

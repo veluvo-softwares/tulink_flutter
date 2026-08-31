@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tulink_flutter/features/analytics/domain/usecases/analytics_usecases.dart';
+import '../../../../core/errors/user_facing_error.dart';
 import '../../data/models/journey_summary_model.dart';
 import '../../../journeys/domain/entities/journey.dart';
 
@@ -51,8 +52,7 @@ class AnalyticsProvider extends ChangeNotifier {
       _currentSummary = result.data;
     } else {
       _currentSummary = null;
-      _summaryError =
-          result.failure?.message ?? 'Journey statistics are not available yet';
+      _summaryError = userFacingErrorMessage(result.failure);
       print(
         '⚠️ Failed to load journey summary: '
         '${result.failure?.message ?? 'unknown error'}',
@@ -94,15 +94,14 @@ class AnalyticsProvider extends ChangeNotifier {
         // Derive recent journeys from the loaded history
         _deriveRecentJourneysFromHistory(limit);
       } else {
-        final errorMsg =
-            result.failure?.message ?? 'Failed to load recent journeys';
+        final errorMsg = userFacingErrorMessage(result.failure);
         print('❌ Failed to load recent journeys: $errorMsg');
         _setError(errorMsg);
         _recentJourneys = [];
       }
     } catch (e) {
       print('❌ Exception loading recent journeys: $e');
-      _setError('Failed to load recent journeys: $e');
+      _setError(userFacingErrorMessage(e));
       _recentJourneys = [];
     }
 
@@ -148,8 +147,7 @@ class AnalyticsProvider extends ChangeNotifier {
         // Automatically derive recent journeys from the loaded history
         _deriveRecentJourneysFromHistory(4);
       } else {
-        final errorMessage =
-            result.failure?.message ?? 'Failed to load journey history';
+        final errorMessage = userFacingErrorMessage(result.failure);
         print('❌ Failed to load journey history: $errorMessage');
         _setError(errorMessage);
         // Keep whatever was hydrated: the fetch failing says nothing about
@@ -162,7 +160,7 @@ class AnalyticsProvider extends ChangeNotifier {
       }
     } catch (e) {
       print('❌ Exception loading journey history: $e');
-      _setError('Failed to load journey history: $e');
+      _setError(userFacingErrorMessage(e));
       if (!hadCache) {
         _journeyHistory = [];
         _recentJourneys = [];
@@ -200,7 +198,7 @@ class AnalyticsProvider extends ChangeNotifier {
     if (result.data != null) {
       return result.data;
     } else {
-      _setError(result.failure?.message ?? 'Failed to load journey analytics');
+      _setError(userFacingErrorMessage(result.failure));
       return null;
     }
   }

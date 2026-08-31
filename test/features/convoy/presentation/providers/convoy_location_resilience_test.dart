@@ -4,12 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mockito/mockito.dart';
 import 'package:tulink_flutter/core/errors/failure.dart';
+import 'package:tulink_flutter/core/services/journey_location_service.dart';
 import 'package:tulink_flutter/core/services/location_permission_service.dart';
 import 'package:tulink_flutter/core/services/location_service.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/convoy_snapshot.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/journey_ended_event.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/member_position.dart';
 import 'package:tulink_flutter/features/convoy/domain/entities/participant_arrived_event.dart';
+import 'package:tulink_flutter/features/convoy/domain/entities/route_updated_event.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 
 import 'convoy_provider_test.mocks.dart';
@@ -46,14 +48,16 @@ void main() {
     speedAccuracy: 0,
   );
 
-  ConvoyProvider buildProvider() => ConvoyProvider(
-    streamConvoyPositions: streamConvoyPositions,
-    publishMyPosition: publishMyPosition,
-    fetchLatestSnapshot: fetchLatestSnapshot,
-    repository: repository,
-    locationService: location,
-    permissionGate: permission,
-  );
+  ConvoyProvider buildProvider({JourneyLocationService? journeyLocation}) =>
+      ConvoyProvider(
+        streamConvoyPositions: streamConvoyPositions,
+        publishMyPosition: publishMyPosition,
+        fetchLatestSnapshot: fetchLatestSnapshot,
+        repository: repository,
+        locationService: location,
+        journeyLocationService: journeyLocation,
+        permissionGate: permission,
+      );
 
   setUp(() {
     streamConvoyPositions = MockStreamConvoyPositions();
@@ -83,6 +87,9 @@ void main() {
     when(
       repository.participantAcceptedStream,
     ).thenAnswer((_) => const Stream<String>.empty());
+    when(
+      repository.routeUpdatedStream,
+    ).thenAnswer((_) => const Stream<RouteUpdatedEvent>.empty());
     when(
       publishMyPosition(
         journeyId: anyNamed('journeyId'),
@@ -142,6 +149,46 @@ void main() {
       },
     );
   });
+
+  test(
+    'route update signals are journey-scoped and version-deduplicated',
+    () async {
+      final routeUpdates = StreamController<RouteUpdatedEvent>.broadcast();
+      when(
+        repository.routeUpdatedStream,
+      ).thenAnswer((_) => routeUpdates.stream);
+      location.hangs = true;
+      final provider = buildProvider();
+      await provider.startCoordination(journeyId);
+
+      void emit(String eventJourneyId, int version) {
+        routeUpdates.add(
+          RouteUpdatedEvent(
+            journeyId: eventJourneyId,
+            routeVersion: version,
+            reason: 'LEADER_REROUTE',
+            updatedAt: null,
+          ),
+        );
+      }
+
+      emit(otherJourneyId, 9);
+      emit(journeyId, 3);
+      emit(journeyId, 3);
+      emit(journeyId, 2);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.routeUpdatedTick, 1);
+      expect(provider.lastRouteUpdatedEvent?.routeVersion, 3);
+
+      emit(journeyId, 4);
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.routeUpdatedTick, 2);
+      expect(provider.lastRouteUpdatedEvent?.routeVersion, 4);
+
+      await routeUpdates.close();
+    },
+  );
 
   group('retrying location without recreating the journey', () {
     test('a later fix clears the failure and starts publishing', () async {
@@ -296,6 +343,24 @@ void main() {
 
       expect(provider.locationFailure, isNull);
     });
+
+    test(
+      'stopCoordination releases the native journey location owner',
+      () async {
+        location.nextPosition = position();
+        final journeyLocation = JourneyLocationService(location);
+        final provider = buildProvider(journeyLocation: journeyLocation);
+
+        await provider.startCoordination(journeyId);
+        expect(journeyLocation.isRunning, isTrue);
+
+        await provider.stopCoordination();
+
+        expect(journeyLocation.isRunning, isFalse);
+        expect(journeyLocation.journeyId, isNull);
+        await journeyLocation.dispose();
+      },
+    );
   });
 
   group('room membership does not wait on the permission dialog', () {
