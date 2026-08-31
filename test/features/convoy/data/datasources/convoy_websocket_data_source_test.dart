@@ -103,6 +103,43 @@ void main() {
     });
   });
 
+  group('resumable join recovery', () {
+    test('parses an inline delta from the joined-journey acknowledgement', () {
+      final recovery = JoinRecoveryEnvelope.fromAcknowledgement({
+        'journeyId': 'journey-1',
+        'recovery': {
+          'mode': 'DELTA',
+          'updates': [
+            {'sequenceNumber': 42},
+          ],
+          'nextSequence': 42,
+          'hasMore': false,
+        },
+      });
+
+      expect(recovery?.mode, 'DELTA');
+      expect(recovery?.updates, hasLength(1));
+      expect(recovery?.nextSequence, 42);
+      expect(recovery?.hasMore, isFalse);
+    });
+
+    test('recognizes snapshot repair and rejects malformed envelopes', () {
+      expect(
+        JoinRecoveryEnvelope.fromAcknowledgement({
+          'recovery': {'mode': 'SNAPSHOT_REQUIRED', 'reason': 'CURSOR_TOO_OLD'},
+        })?.mode,
+        'SNAPSHOT_REQUIRED',
+      );
+      expect(
+        JoinRecoveryEnvelope.fromAcknowledgement({
+          'recovery': {'mode': 'UNKNOWN'},
+        }),
+        isNull,
+      );
+      expect(JoinRecoveryEnvelope.fromAcknowledgement({}), isNull);
+    });
+  });
+
   group('canonical route update payload', () {
     test('parses a versioned journey event', () {
       final event = RouteUpdatedEvent.fromPayload({

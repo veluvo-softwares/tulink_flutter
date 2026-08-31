@@ -79,6 +79,27 @@ void main() {
     });
   });
 
+  group('resume health probe', () {
+    test('keeps a responsive surface and its generation', () async {
+      final map = _HealthProbeMap();
+      controller.attach(map);
+
+      expect(await controller.ensureResponsive(), isTrue);
+      expect(identical(controller.map, map), isTrue);
+      expect(controller.generation, 0);
+      expect(map.repaintCalls, 1);
+      expect(map.cameraCalls, 1);
+    });
+
+    test('recreates only when the retained surface stops answering', () async {
+      controller.attach(_HealthProbeMap(failCameraProbe: true));
+
+      expect(await controller.ensureResponsive(), isFalse);
+      expect(controller.map, isNull);
+      expect(controller.generation, 1);
+    });
+  });
+
   group('restoration runs exactly once per surface', () {
     // Every layer redraws its geometry off a generation bump. Two owners each
     // believing they had to rebuild produced two bumps and two full restore
@@ -189,6 +210,34 @@ void main() {
 /// The controller only ever stores and republishes the handle, so an empty
 /// stand-in is enough — and keeps these tests off Mapbox platform channels.
 class _FakeMapboxMap implements MapboxMap {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _HealthProbeMap implements MapboxMap {
+  _HealthProbeMap({this.failCameraProbe = false});
+
+  final bool failCameraProbe;
+  int repaintCalls = 0;
+  int cameraCalls = 0;
+
+  @override
+  Future<void> triggerRepaint() async {
+    repaintCalls++;
+  }
+
+  @override
+  Future<CameraState> getCameraState() async {
+    cameraCalls++;
+    if (failCameraProbe) throw StateError('native surface unavailable');
+    return _FakeCameraState();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeCameraState implements CameraState {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -207,6 +207,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   double? _displayedNavigationLatitude;
   double? _displayedNavigationLongitude;
   int? _displayedNavigationSegmentIndex;
+  DateTime? _displayedNavigationAt;
+  DateTime? _lastNavigationProgressAt;
+  DateTime? _lastNavigationStallLogAt;
   bool _navigationFrameRenderInFlight = false;
 
   /// Android background journey-status notification (per-member distances).
@@ -215,6 +218,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// Tracks the built-in Mapbox location puck's enabled state.
   /// `null` = unknown (nothing applied yet).
   bool? _puckEnabled;
+  bool? _appliedPuckEnabled;
+  PuckBearing _desiredPuckBearing = PuckBearing.HEADING;
+  PuckBearing? _appliedPuckBearing;
   bool _legacyCustomPucksCleared = false;
 
   @override
@@ -261,6 +267,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _pointAnnotationManager = null;
     _lastUpdateHash = 0;
     _puckEnabled = null;
+    _appliedPuckEnabled = null;
+    _appliedPuckBearing = null;
     _legacyCustomPucksCleared = false;
     _lastTrimAt = null;
     unawaited(
@@ -815,20 +823,52 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   Future<void> _updateCameraFollow(geo.Position position) async {
     if (_mapboxMap == null || !_cameraFollowEnabled) return;
 
+    _updatePuckBearingFor(position);
+
     // Prefer snapped position when navigation is active. Falls back to raw
-    // GPS when navigation is inactive or no progress snapshot exists yet.
+    // GPS when navigation is inactive or the navigation renderer has stalled.
+    // A stale displayed coordinate must never pin the camera while fresh GNSS
+    // fixes continue to arrive.
     final progress = _navigationProvider?.currentProgress;
     if (progress == null) {
       unawaited(_drawRawPuck(position));
     }
-    final centerLat =
-        _displayedNavigationLatitude ??
-        progress?.snappedLatitude ??
-        position.latitude;
-    final centerLng =
-        _displayedNavigationLongitude ??
-        progress?.snappedLongitude ??
-        position.longitude;
+    final now = DateTime.now();
+    final displayedFresh =
+        _displayedNavigationAt != null &&
+        now.difference(_displayedNavigationAt!) <= const Duration(seconds: 2);
+    final progressFresh =
+        _lastNavigationProgressAt != null &&
+        now.difference(_lastNavigationProgressAt!) <=
+            const Duration(seconds: 3);
+    final centerLat = displayedFresh
+        ? _displayedNavigationLatitude!
+        : progressFresh
+        ? progress!.snappedLatitude
+        : position.latitude;
+    final centerLng = displayedFresh
+        ? _displayedNavigationLongitude!
+        : progressFresh
+        ? progress!.snappedLongitude
+        : position.longitude;
+
+    if (_navigationProvider?.isNavigating == true && !progressFresh) {
+      final shouldLog =
+          _lastNavigationStallLogAt == null ||
+          now.difference(_lastNavigationStallLogAt!) >=
+              const Duration(seconds: 10);
+      if (shouldLog) {
+        _lastNavigationStallLogAt = now;
+        AppLogger.warning(
+          'Navigation progress is stale while native location is advancing; '
+          'camera is using raw GPS '
+          '(lastProgressAt=${_lastNavigationProgressAt?.toIso8601String()}, '
+          'lastRenderAt=${_displayedNavigationAt?.toIso8601String()}, '
+          'fixAt=${position.timestamp.toIso8601String()}, '
+          'speedMps=${position.speed.toStringAsFixed(1)})',
+        );
+      }
+    }
 
     _isProgrammaticCameraMove = true;
     try {
@@ -895,6 +935,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   void _onNavigationProgress() {
     final progress = _navigationProvider?.currentProgress;
     if (progress != null && _canUseMap) {
+      _lastNavigationProgressAt = DateTime.now();
       _navigationStartLatitude =
           _displayedNavigationLatitude ?? progress.snappedLatitude;
       _navigationStartLongitude =
@@ -956,6 +997,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _displayedNavigationLatitude = latitude;
     _displayedNavigationLongitude = longitude;
     _displayedNavigationSegmentIndex = rendered.segmentIndex;
+    _displayedNavigationAt = DateTime.now();
 
     final frame = RouteProgress(
       currentManeuver: target.currentManeuver,
@@ -1063,24 +1105,49 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     await _setBuiltInPuckEnabled(true);
   }
 
+  /// Use device heading while stationary/slow so physical phone rotation is
+  /// visible, then switch to GPS course once the vehicle is reliably moving.
+  /// Different enter/exit thresholds prevent rapid mode flapping in traffic.
+  void _updatePuckBearingFor(geo.Position position) {
+    final next = switch (_desiredPuckBearing) {
+      PuckBearing.HEADING when position.speed >= 2.5 => PuckBearing.COURSE,
+      PuckBearing.COURSE when position.speed <= 1.0 => PuckBearing.HEADING,
+      _ => _desiredPuckBearing,
+    };
+    if (next == _desiredPuckBearing) return;
+    _desiredPuckBearing = next;
+    unawaited(_applyBuiltInPuckSettings());
+  }
+
   /// Set Mapbox's built-in location puck on/off, tracking the applied state so
   /// we never spam the platform channel. Errors are logged, not swallowed.
   Future<void> _setBuiltInPuckEnabled(bool enabled) async {
     if (!_canUseMap) return;
-    // Already in the desired state — skip the redundant channel hop.
-    if (_puckEnabled == enabled) return;
+    _puckEnabled = enabled;
+    await _applyBuiltInPuckSettings();
+  }
+
+  Future<void> _applyBuiltInPuckSettings() async {
+    if (!_canUseMap || _puckEnabled == null) return;
+    final enabled = _puckEnabled!;
+    final bearing = _desiredPuckBearing;
+    if (_appliedPuckBearing == bearing && _appliedPuckEnabled == enabled) {
+      return;
+    }
     try {
       await _mapboxMap!.location.updateSettings(
         LocationComponentSettings(
           enabled: enabled,
           pulsingEnabled: enabled,
           puckBearingEnabled: enabled,
-          // Course follows direction of travel and is more useful in a
-          // driving journey than the phone's physical compass orientation.
-          puckBearing: PuckBearing.COURSE,
+          puckBearing: bearing,
         ),
       );
-      _puckEnabled = enabled;
+      _appliedPuckEnabled = enabled;
+      _appliedPuckBearing = bearing;
+      if (_desiredPuckBearing != bearing) {
+        unawaited(_applyBuiltInPuckSettings());
+      }
     } catch (e) {
       print('⚠️ Failed to set built-in puck enabled=$enabled: $e');
     }

@@ -44,9 +44,11 @@ class ManeuverTrackerService {
     _cumDist = _buildCumulativeDistances(route.coordinates);
     _maneuvers = _buildManeuvers(route);
     _currentIndex = 0;
-    print('🧭 ManeuverTracker: loaded ${_maneuvers.length} steps, '
-        '${_routeCoordinates.length} coords, '
-        'total ${_cumDist.isNotEmpty ? _cumDist.last.toStringAsFixed(0) : 0} m');
+    print(
+      '🧭 ManeuverTracker: loaded ${_maneuvers.length} steps, '
+      '${_routeCoordinates.length} coords, '
+      'total ${_cumDist.isNotEmpty ? _cumDist.last.toStringAsFixed(0) : 0} m',
+    );
   }
 
   void clear() {
@@ -77,18 +79,37 @@ class ManeuverTrackerService {
       );
     }
 
-    // Distance the user has travelled along the route polyline.
-    final distanceTravelled = segmentIndex < _cumDist.length
-        ? _cumDist[segmentIndex]
+    // Distance the user has travelled along the route polyline. A segment
+    // index alone identifies only the segment's *start*. On long/sparse
+    // segments that made distance and ETA remain frozen until the next vertex
+    // was crossed. Include the snapped point's progress within this segment.
+    final safeSegmentIndex = segmentIndex.clamp(
+      0,
+      _routeCoordinates.length - 1,
+    );
+    final segmentStartDistance = _cumDist[safeSegmentIndex];
+    final segmentEndDistance = safeSegmentIndex + 1 < _cumDist.length
+        ? _cumDist[safeSegmentIndex + 1]
         : _cumDist.last;
+    final segmentStart = _routeCoordinates[safeSegmentIndex];
+    final distanceWithinSegment = _haversineMetres(
+      segmentStart[1],
+      segmentStart[0],
+      snappedLatitude,
+      snappedLongitude,
+    );
+    final distanceTravelled = (segmentStartDistance + distanceWithinSegment)
+        .clamp(segmentStartDistance, segmentEndDistance);
 
     // Advance past any maneuvers whose position the user has already reached.
     while (_currentIndex < _maneuvers.length - 1 &&
         distanceTravelled >=
             _maneuvers[_currentIndex].cumulativeDistanceMetres) {
       _currentIndex++;
-      print('🧭 ManeuverTracker: step → $_currentIndex '
-          '(${_maneuvers[_currentIndex].instruction})');
+      print(
+        '🧭 ManeuverTracker: step → $_currentIndex '
+        '(${_maneuvers[_currentIndex].instruction})',
+      );
     }
 
     // How far ahead the current (upcoming) maneuver is.
@@ -98,7 +119,10 @@ class ManeuverTrackerService {
 
     // Total remaining distance to the destination.
     final totalRoute = _cumDist.isNotEmpty ? _cumDist.last : 0.0;
-    final remaining = (totalRoute - distanceTravelled).clamp(0.0, double.infinity);
+    final remaining = (totalRoute - distanceTravelled).clamp(
+      0.0,
+      double.infinity,
+    );
 
     return ManeuverProgress(
       distanceToNextManeuverMetres: distanceToNext,
@@ -114,10 +138,14 @@ class ManeuverTrackerService {
     if (coords.isEmpty) return const [];
     final d = List<double>.filled(coords.length, 0.0);
     for (int i = 1; i < coords.length; i++) {
-      d[i] = d[i - 1] + _haversineMetres(
-        coords[i - 1][1], coords[i - 1][0],
-        coords[i][1],     coords[i][0],
-      );
+      d[i] =
+          d[i - 1] +
+          _haversineMetres(
+            coords[i - 1][1],
+            coords[i - 1][0],
+            coords[i][1],
+            coords[i][0],
+          );
     }
     return d;
   }
@@ -141,18 +169,20 @@ class ManeuverTrackerService {
       final fraction = route.distanceMetres > 0
           ? (cumulative / route.distanceMetres).clamp(0.0, 1.0)
           : 0.0;
-      final coordIndex =
-          (fraction * (route.coordinates.length - 1)).round()
-              .clamp(0, route.coordinates.length - 1);
+      final coordIndex = (fraction * (route.coordinates.length - 1))
+          .round()
+          .clamp(0, route.coordinates.length - 1);
 
-      result.add(Maneuver(
-        index: i,
-        instruction: step.instruction,
-        maneuverType: step.maneuver,
-        distanceMetres: step.distanceMetres,
-        cumulativeDistanceMetres: cumulative,
-        coordinate: route.coordinates[coordIndex],
-      ));
+      result.add(
+        Maneuver(
+          index: i,
+          instruction: step.instruction,
+          maneuverType: step.maneuver,
+          distanceMetres: step.distanceMetres,
+          cumulativeDistanceMetres: cumulative,
+          coordinate: route.coordinates[coordIndex],
+        ),
+      );
 
       cumulative += step.distanceMetres;
     }
@@ -161,11 +191,16 @@ class ManeuverTrackerService {
   }
 
   static double _haversineMetres(
-      double lat1, double lng1, double lat2, double lng2) {
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
     const r = 6371000.0;
     final dLat = (lat2 - lat1) * math.pi / 180.0;
     final dLng = (lng2 - lng1) * math.pi / 180.0;
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(lat1 * math.pi / 180.0) *
             math.cos(lat2 * math.pi / 180.0) *
             math.sin(dLng / 2) *
