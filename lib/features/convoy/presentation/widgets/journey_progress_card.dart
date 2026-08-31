@@ -24,6 +24,7 @@ class JourneyProgressCard extends StatelessWidget {
     this.isActionInProgress = false,
     this.isExpanded = false,
     this.onToggleExpanded,
+    this.onMemberTap,
   });
 
   final Journey journey;
@@ -43,6 +44,10 @@ class JourneyProgressCard extends StatelessWidget {
   /// When false the card renders as a compact pill to keep the map visible.
   final bool isExpanded;
   final VoidCallback? onToggleExpanded;
+
+  /// Focuses the selected member directly on the map. Member identifiers are
+  /// never exposed in an intermediate sheet.
+  final ValueChanged<MemberPosition>? onMemberTap;
 
   /// Whether the current user is one of the members marked ARRIVED.
   bool get _currentUserArrived {
@@ -332,50 +337,63 @@ class JourneyProgressCard extends StatelessWidget {
         identity?.initials ??
         ConvoyMemberPresentation.initialsFor(member.userId);
 
-    return SizedBox(
-      width: 36,
-      height: 36,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color:
-                  identity?.color ??
-                  ConvoyMemberPresentation.palette[index %
-                      ConvoyMemberPresentation.palette.length],
-              shape: BoxShape.circle,
-              border: Border.all(color: colors.surface, width: 2),
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-          if (member.hasArrived)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 14,
-                height: 14,
+    return Semantics(
+      label: 'Show ${identity?.displayName ?? 'convoy member'} on map',
+      button: onMemberTap != null,
+      child: GestureDetector(
+        key: ValueKey('convoy-member-${member.userId}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onMemberTap == null ? null : () => onMemberTap!(member),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
-                  color: Colors.green,
+                  color:
+                      identity?.color ??
+                      ConvoyMemberPresentation.palette[index %
+                          ConvoyMemberPresentation.palette.length],
                   shape: BoxShape.circle,
-                  border: Border.all(color: colors.surface, width: 1.5),
+                  border: Border.all(color: colors.surface, width: 2),
                 ),
-                child: const Icon(Icons.check, size: 9, color: Colors.white),
+                child: Center(
+                  child: Text(
+                    initials,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ),
-            ),
-        ],
+              if (member.hasArrived)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: colors.surface, width: 1.5),
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      size: 9,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

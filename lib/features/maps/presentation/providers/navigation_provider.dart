@@ -127,6 +127,29 @@ class NavigationProvider with ChangeNotifier {
   @visibleForTesting
   int? get restoredSegmentIndexForTesting => _restoredSegmentIndex;
 
+  /// Stable identity for the road geometry a persisted navigation cursor was
+  /// measured against. Sampling the geometry keeps the session record small
+  /// while detecting a route recalculated from a different origin.
+  @visibleForTesting
+  static String routeStorageIdentity(RouteResultModel route) {
+    final coordinates = route.coordinates;
+    if (coordinates.isEmpty) return 'empty';
+    final indices = <int>{
+      0,
+      coordinates.length ~/ 4,
+      coordinates.length ~/ 2,
+      (coordinates.length * 3) ~/ 4,
+      coordinates.length - 1,
+    }.toList()..sort();
+    final samples = indices.map((index) {
+      final coordinate = coordinates[index];
+      return '${coordinate[0].toStringAsFixed(6)},'
+          '${coordinate[1].toStringAsFixed(6)}';
+    }).join();
+    return '${route.canonicalVersion ?? 'local'}|${coordinates.length}|'
+        '${route.distanceMetres.toStringAsFixed(1)}|$samples';
+  }
+
   /// Seeds a restored cursor for state-transition tests.
   @visibleForTesting
   void setRestoredSegmentIndexForTesting(int? segmentIndex) {
@@ -336,7 +359,14 @@ class NavigationProvider with ChangeNotifier {
     final progress = OfflineStorageService.readMap(
       session?['navigationProgress'],
     );
-    _restoredSegmentIndex = (progress?['currentSegmentIndex'] as num?)?.toInt();
+    final route = _activeRoute;
+    final storedRouteIdentity = progress?['routeIdentity']?.toString();
+    _restoredSegmentIndex =
+        route != null &&
+            storedRouteIdentity != null &&
+            storedRouteIdentity == routeStorageIdentity(route)
+        ? (progress?['currentSegmentIndex'] as num?)?.toInt()
+        : null;
 
     // _persistProgress writes distance, duration and the snapped position
     // alongside the cursor. Reading only the cursor meant the driver stared at
@@ -348,10 +378,12 @@ class NavigationProvider with ChangeNotifier {
 
   Future<void> _persistProgress() async {
     final progress = _currentProgress;
+    final route = _activeRoute;
     final storage = _offlineStorage;
     final userProvider = _currentUserId;
     final journeyId = _journeyId;
     if (progress == null ||
+        route == null ||
         storage == null ||
         userProvider == null ||
         journeyId == null) {
@@ -367,6 +399,7 @@ class NavigationProvider with ChangeNotifier {
     if (userId == null) return;
     await storage.mergeSession(userId, journeyId, {
       'navigationProgress': {
+        'routeIdentity': routeStorageIdentity(route),
         'currentSegmentIndex': progress.currentSegmentIndex,
         'distanceRemainingMetres': progress.distanceRemainingMetres,
         'durationRemainingSeconds': progress.durationRemainingSeconds,

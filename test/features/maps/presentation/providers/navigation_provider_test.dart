@@ -7,6 +7,34 @@ import 'package:tulink_flutter/features/maps/presentation/providers/navigation_p
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('route cursor identity changes when the route origin changes', () {
+    const first = RouteResultModel(
+      coordinates: <List<double>>[
+        <double>[36.80, -1.28],
+        <double>[36.81, -1.29],
+        <double>[36.82, -1.30],
+      ],
+      distanceMetres: 1000,
+      durationSeconds: 300,
+      steps: <RouteStepModel>[],
+    );
+    const recalculated = RouteResultModel(
+      coordinates: <List<double>>[
+        <double>[36.75, -1.25],
+        <double>[36.81, -1.29],
+        <double>[36.82, -1.30],
+      ],
+      distanceMetres: 1000,
+      durationSeconds: 300,
+      steps: <RouteStepModel>[],
+    );
+
+    expect(
+      NavigationProvider.routeStorageIdentity(first),
+      isNot(NavigationProvider.routeStorageIdentity(recalculated)),
+    );
+  });
+
   test('clears progress restored for the previous route when rerouting', () {
     final provider = NavigationProvider(
       journeyLocationService: JourneyLocationService(

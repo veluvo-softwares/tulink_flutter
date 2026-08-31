@@ -127,27 +127,25 @@ void main() {
       expect(find.text('Cancel'), findsNothing);
     });
 
-    testWidgets('can leave, and can step back to the map', (tester) async {
+    testWidgets('can leave without a redundant Browse map action', (
+      tester,
+    ) async {
       var left = 0;
-      var dismissed = 0;
       await pump(
         tester,
         PendingJourneyOverlay(
           journey: journey(),
           isLeader: false,
-          onDismiss: () => dismissed++,
+          onDismiss: () {},
           onLeaveJourney: () => left++,
         ),
       );
 
       await expandSheet(tester);
+      expect(find.text('Browse map'), findsNothing);
       await tester.tap(find.text('Leave'));
       await tester.pump();
       expect(left, 1);
-
-      await tester.tap(find.text('Browse map'));
-      await tester.pump();
-      expect(dismissed, 1);
     });
 
     testWidgets('surfaces a location failure without blocking membership', (

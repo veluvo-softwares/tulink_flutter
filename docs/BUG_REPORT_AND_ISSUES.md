@@ -321,6 +321,88 @@ Optimize marker updates to only modify changed markers.
 
 ---
 
+## Live Convoy Android Field-Test Register — 2026-08-30 to 2026-08-31
+
+This register reflects the current implementation and supersedes older entries
+above where they describe live convoy, notifications, location, or invitations
+as unimplemented. Testing used a physical Pixel 6 Pro, an iOS simulator, and a
+local backend on port 3000.
+
+### Confirmed working
+
+- Participant membership updates live: the leader changed immediately from
+  `2/2` to `1/1` when the participant left.
+- Journey creation/start and canonical route requests succeeded locally.
+- A recovered live journey displayed `5.4 km` and `10 min ETA`.
+
+### Issue tracker
+
+| Priority | Issue | Root cause / evidence | Status |
+|---|---|---|---|
+| P0 | Invite acceptance crashed Android. | `LiveActivityFirebaseMessagingService` handled ordinary FCM and force-unwrapped an uninitialised `LiveActivityManager`. | **Fixed locally:** service removed from the merged Android manifest; FlutterFire remains. |
+| P0 | Journey start crashed Android after the API returned `201`. | `JOURNEY_STARTED` FCM triggered the same native service. | **Fixed by the same notification-service exclusion; device regression pending.** |
+| P0 | Participant leave and journey completion were followed by process exits. | The `1/1` roster update succeeded; lifecycle notifications then coincided with “TuLink keeps stopping.” | **Same notification root suspected/confirmed across captured fatals; re-test every notification type.** |
+| P1 | Provider notified listeners during widget construction. | `PendingJourneyStagingState.initState` → `joinJourneyRoom` → `_clearError` → `notifyListeners` caused `setState() or markNeedsBuild() called during build`. | **Open:** defer join until after the first frame or avoid notifying during mount. |
+| P1 | Destination pin update raced Mapbox style recreation. | `Source journey-destination-source is not in style`; a later retry succeeded. | **Open:** serialize source create/update by map generation. |
+| P1 | Route calculation was slow at start and repeated after resume. | Recording showed “Calculating route” again during recovery. | **Partially improved by cached/canonical route restoration; timing regression remains.** |
+| P1 | KM and ETA were initially absent. | No live/restored `RouteProgress` was available until navigation state arrived. | **Improved and observed working; background/resume regression pending.** |
+| P1 | Red and teal routes appeared together. | Live route was hard-coded red while preview/canonical route was teal. | **Fixed locally:** all route presentation is teal; the red live route was removed. |
+| P1 | A straight teal line connected the Android device directly to the destination and remained after the journey ended. | An off-route raw GPS fix was prepended to later road-route vertices, creating an artificial chord. A saved segment index could also be restored against different route geometry, and completion cleanup waited for the later Done action. | **Fixed locally:** off-route fixes no longer create connector segments; restored progress cursors must match the active route identity; live route and destination artifacts are cleared as soon as completion begins. |
+| P1 | Each client displayed the leader's route instead of a route from its own position; after force-close Android restored the same foreign geometry. | Live startup intentionally fetched the shared canonical `/journeys/{id}/route`. Logs showed the identical `14,372 m / 463-point` route on both clients: iOS was `3.2 m` from it while Android was about `4.4 km` away. Canonical geometry was also cached under the receiving user's key. | **Fixed locally:** live startup and rerouting use `/maps/route` with that device's latest GPS fix; peer route-update events are refresh signals only; cached canonical routes are rejected by personal-route reads. Other members remain markers only. |
+| P1 | A follower still saw the finished route on Home after the leader ended the journey and the follower tapped Done. | Remote completion could race an in-flight route response, allowing it to repaint after live cleanup was recorded complete. Done also awaited only the live artifact inventory while Home preview geometry used separate IDs. | **Fixed locally:** confirmed end/leave invalidates older route draws; automatic completion and Done both await live, preview, and destination cleanup before exposing Home. |
+| P2 | The live destination puck used the retired red accent instead of the mobile theme orange. | The live Mapbox layers retained hard-coded `#E8002D` values while the preview puck used the newer palette. | **Fixed locally:** preview and live destination pucks now share the semantic `sunsetOrange` theme token (`#F35D32`), including the live pulse ring. |
+| P2 | The waiting-member preview showed a redundant “Browse map” button even though the persistent map was already visible behind it. | The action was retained from the older flow where the preview and map were separate screens. | **Fixed locally:** removed “Browse map”; the member now sees one full-width Leave action. |
+| P1 | Tapping `CONVOY READY` opened a sheet exposing user IDs. | Status card opened `ConvoyBottomSheet` before focusing a member. | **Fixed locally:** card tap does nothing; tapping a participant avatar directly focuses that member. |
+| P1 | Users saw serialized failure objects, timestamps, nulls, and implementation detail. | Providers forwarded raw failure strings to Journey History and place search. | **Fixed locally:** network errors show “Check your internet connection and try again.” Other operational errors show “Something went wrong. Please try again.” |
+| P2 | Android splash artwork was distorted. | Android masked a wide `320×80` wordmark as a splash icon. | **Fixed locally:** replaced with the transparent `432×432` adaptive launcher foreground export. |
+| P2 | “Invalid session. Please login again” appeared as an in-page card. | Session failure was rendered as page state instead of the app toast flow. | **Open verification:** no embedded session error card should remain. |
+| P2 | Corrupt cached journey maps are skipped. | `_Map<dynamic, dynamic>` cannot be cast directly to `Map<String, dynamic>?`. | **Open, pre-existing:** normalize/migrate cached maps; never expose this detail to users. |
+
+### Verification completed
+
+- 32 affected Flutter tests passed: error sanitization, participant avatar
+  selection, journey/convoy/invite providers, route identity/races, off-route
+  rendering, and completion artifact cleanup.
+- Android debug APK built successfully.
+- Final packaged manifest does not contain
+  `LiveActivityFirebaseMessagingService`.
+- `git diff --check` is clean.
+- `flutter analyze` still fails because of the known local Flutter
+  analysis-server tool crash. `dart analyze` reports the existing warning/info
+  backlog and no new compilation error from these changes.
+
+### Required release regression
+
+Before production, verify on a release build that invite acceptance, journey
+start, background/screen-off publishing, resume, participant leave, and journey
+completion do not terminate either client. Confirm there is no red route, no ID
+sheet, no direct device-to-destination chord, and only the approved short error
+copy appears. End a journey while its route is visible and confirm the route and
+destination marker disappear before the Last Journey state is shown.
+
+### Production incident reference
+
+Fill this table when the change is promoted:
+
+| Reference | Value |
+|---|---|
+| Mobile PR / merge commit | `TBD` |
+| Backend PR / merge commit | `TBD` |
+| Mobile release version / build | `TBD` |
+| Backend deployment version | `TBD` |
+| Deployment time (UTC) | `TBD` |
+| Verified devices / OS versions | `TBD` |
+
+For a production incident, attach the Crashlytics issue ID, backend request or
+correlation ID, journey ID, notification `type`, app state (foreground,
+background, or terminated), and release/build above. Roll back the mobile build
+if a lifecycle notification terminates the app, background location stops during
+an active journey, or another member's route/identity is exposed. Roll back the
+backend only when evidence ties the incident to its API contract or event
+payload.
+
+---
+
 ## Low Priority Issues (Priority 4 - Post-MVP)
 
 ### ⚠️ **LOW-001: Missing Journey History**

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:tulink_flutter/core/common/result.dart';
+import 'package:tulink_flutter/core/errors/user_facing_error.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/journey_invitation.dart';
 import 'package:tulink_flutter/features/invites/domain/entities/user_search_result.dart';
 import 'package:tulink_flutter/features/invites/domain/usecases/invite_usecases.dart';
@@ -81,7 +82,7 @@ class InviteProvider extends ChangeNotifier {
     if (result.isSuccess && result.data != null) {
       _searchResults = result.data!;
     } else {
-      _searchError = result.failure?.message ?? 'Search failed';
+      _searchError = userFacingErrorMessage(result.failure);
       _searchResults = [];
     }
 
@@ -121,7 +122,7 @@ class InviteProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } else {
-      _inviteError = result.failure?.message ?? 'Failed to send invitation';
+      _inviteError = userFacingErrorMessage(result.failure);
       _isInviting = false;
       notifyListeners();
       return false;
@@ -138,8 +139,7 @@ class InviteProvider extends ChangeNotifier {
     if (result.isSuccess && result.data != null) {
       _invitations = result.data!;
     } else {
-      _invitationsError =
-          result.failure?.message ?? 'Failed to load invitations';
+      _invitationsError = userFacingErrorMessage(result.failure);
     }
 
     _isLoadingInvitations = false;
@@ -198,7 +198,7 @@ class InviteProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } else {
-      _acceptError = result.failure?.message ?? 'Failed to accept invitation';
+      _acceptError = userFacingErrorMessage(result.failure);
       _isAccepting = false;
       notifyListeners();
       return false;
@@ -218,7 +218,7 @@ class InviteProvider extends ChangeNotifier {
       return true;
     }
 
-    _declineError = result.failure?.message ?? 'Failed to decline invitation';
+    _declineError = userFacingErrorMessage(result.failure);
     _isDeclining = false;
     notifyListeners();
     return false;
