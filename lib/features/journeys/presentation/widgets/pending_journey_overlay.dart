@@ -162,7 +162,7 @@ class PendingJourneyOverlay extends StatelessWidget {
                   _locationFailure(colors),
                 ],
                 const SizedBox(height: 18),
-                _actions(context, colors),
+                _actions(),
               ],
             ),
           ),
@@ -499,7 +499,7 @@ class PendingJourneyOverlay extends StatelessWidget {
     ),
   );
 
-  Widget _actions(BuildContext context, TulinkColors colors) {
+  Widget _actions() {
     if (isLeader) {
       return Column(
         children: [
@@ -543,30 +543,17 @@ class PendingJourneyOverlay extends StatelessWidget {
       );
     }
 
-    return Column(
-      children: [
-        // A member has nothing to start. The honest affordance is leaving —
-        // presented as secondary so it is not mistaken for the primary path.
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: isBusy ? null : onDismiss,
-                child: const Text('Browse map'),
-              ),
-            ),
-            if (onLeaveJourney != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: isBusy ? null : onLeaveJourney,
-                  child: const Text('Leave'),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ],
+    if (onLeaveJourney == null) return const SizedBox.shrink();
+
+    // The map is already visible behind this preview, so browsing it is not a
+    // separate action. Leaving is the member's only journey-level action.
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: OutlinedButton(
+        onPressed: isBusy ? null : onLeaveJourney,
+        child: const Text('Leave'),
+      ),
     );
   }
 }

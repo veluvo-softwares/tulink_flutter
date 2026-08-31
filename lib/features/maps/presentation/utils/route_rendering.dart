@@ -11,8 +11,19 @@ List<List<double>> buildRemainingRouteCoordinates({
   required int segmentIndex,
   required double snappedLongitude,
   required double snappedLatitude,
+  bool isOffRoute = false,
 }) {
   if (routeCoordinates.length < 2) return const <List<double>>[];
+
+  // An off-route snap is the device's raw GPS position. Prepending it to a
+  // road polyline draws an invented straight connector from the device to a
+  // later route vertex — the long diagonal seen in Android field testing.
+  // Keep the real road geometry intact until rerouting produces a new route.
+  if (isOffRoute) {
+    return routeCoordinates
+        .map((coordinate) => List<double>.from(coordinate))
+        .toList(growable: false);
+  }
 
   final safeSegmentIndex = segmentIndex.clamp(0, routeCoordinates.length - 2);
 
@@ -56,8 +67,7 @@ interpolateRoutePosition({
   // long way through the route; ease directly to the corrected snapped point.
   if (targetSegment < startSegment) {
     return (
-      longitude:
-          startLongitude + (targetLongitude - startLongitude) * progress,
+      longitude: startLongitude + (targetLongitude - startLongitude) * progress,
       latitude: startLatitude + (targetLatitude - startLatitude) * progress,
       segmentIndex: progress < 1 ? startSegment : targetSegment,
     );

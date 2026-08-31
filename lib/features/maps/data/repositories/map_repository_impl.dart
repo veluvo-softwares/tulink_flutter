@@ -39,12 +39,15 @@ class MapRepositoryImpl implements MapRepository {
     required String journeyId,
     required double destinationLat,
     required double destinationLng,
-  }) => localDataSource.loadRoute(
-    userId: userId,
-    journeyId: journeyId,
-    destinationLat: destinationLat,
-    destinationLng: destinationLng,
-  );
+  }) async {
+    final cached = await localDataSource.loadRoute(
+      userId: userId,
+      journeyId: journeyId,
+      destinationLat: destinationLat,
+      destinationLng: destinationLng,
+    );
+    return cached?.canonicalVersion == null ? cached : null;
+  }
 
   @override
   Future<RouteResultModel?> getRoute({
@@ -56,12 +59,13 @@ class MapRepositoryImpl implements MapRepository {
     required double destinationLng,
   }) async {
     if (!connectivityService.isOnline.value) {
-      return localDataSource.loadRoute(
+      final cached = await localDataSource.loadRoute(
         userId: userId,
         journeyId: journeyId,
         destinationLat: destinationLat,
         destinationLng: destinationLng,
       );
+      return cached?.canonicalVersion == null ? cached : null;
     }
 
     final remote = await routeRemoteDataSource.getRoute(
@@ -83,12 +87,13 @@ class MapRepositoryImpl implements MapRepository {
       return remote;
     }
 
-    return localDataSource.loadRoute(
+    final cached = await localDataSource.loadRoute(
       userId: userId,
       journeyId: journeyId,
       destinationLat: destinationLat,
       destinationLng: destinationLng,
     );
+    return cached?.canonicalVersion == null ? cached : null;
   }
 
   @override

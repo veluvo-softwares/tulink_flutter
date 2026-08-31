@@ -454,8 +454,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Remove the live convoy's drawings from the shared map.
   ///
-  /// Called on explicit dismissal — never on a mere state transition, which is
-  /// what keeps the driven route visible behind the completion summary.
+  /// Called once completion is confirmed and again defensively on Done.
   Future<bool> _clearLiveArtifacts() async {
     final cleaned = await _artifactCoordinator.clear(
       onStateChanged: () {
@@ -467,6 +466,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return cleaned;
   }
 
+  /// Remove every route representation a finished journey may have used.
+  /// The live layer and Home preview use different Mapbox IDs, so both must be
+  /// awaited before the completion summary can expose the browsing map.
+  Future<bool> _clearFinishedJourneyMap() async {
+    final liveCleaned = await _clearLiveArtifacts();
+    await _clearPreviewRoute();
+    await _clearDestinationAnnotations();
+    return liveCleaned;
+  }
+
+  void _invalidateDestinationRouteWork() {
+    _destinationDrawSeq++;
+    context.read<MapProvider>().invalidateRouteRequests();
+  }
+
   /// The live layer finished — the journey is genuinely over (ended or left).
   ///
   /// Only reached after [JourneyProvider] has stopped the journey, so clearing
@@ -474,6 +488,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// [_collapseLiveChrome].
   void _onLiveJourneyExit() {
     if (!mounted) return;
+    _invalidateDestinationRouteWork();
     final journeyId = context.read<JourneyProvider>().currentJourney?.id;
     setState(() {
       _completedJourney = null;
@@ -484,7 +499,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
     if (journeyId != null) _clearDraftIfJourneyFinished(journeyId);
     unawaited(
-      _clearLiveArtifacts().then((_) {
+      _clearFinishedJourneyMap().then((_) {
         if (mounted) _clearDraft();
       }),
     );
@@ -497,9 +512,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// overlay with no way out.
   void _releaseEndedJourney(String journeyId) {
     if (!mounted) return;
+    _invalidateDestinationRouteWork();
     context.read<JourneyProvider>().releaseFinishedJourney(journeyId);
     if (_stagedJourneyId == journeyId) _stagedJourneyId = null;
-    unawaited(_clearLiveArtifacts());
+    unawaited(_clearFinishedJourneyMap());
   }
 
   /// Back from the live convoy.
@@ -521,6 +537,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// The journey completed and has a summary to show over the same map.
   void _onLiveJourneyCompleted(Journey journey) {
     if (!mounted) return;
+    // Stop a preview/network response captured before remote completion from
+    // repainting after the finished journey has been cleared.
+    _invalidateDestinationRouteWork();
     setState(() {
       _completedJourney = journey;
       // Teardown finished — clear it so the summary can outrank `ending`.
@@ -532,6 +551,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // dismissed. The summary itself is driven by [_completedJourney].
     context.read<JourneyProvider>().releaseFinishedJourney(journey.id);
     _stagedJourneyId = null;
+    // A completed journey no longer owns map geometry. Clear immediately,
+    // while the completion overlay remains mounted, rather than waiting for a
+    // later Done tap and exposing the finished route on the exploring map.
+    unawaited(_clearFinishedJourneyMap());
     unawaited(context.read<AnalyticsProvider>().loadJourneyHistory());
   }
 
@@ -548,7 +571,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Awaited, not fired and forgotten. The summary stays up in an explicit
     // cleaning state for the whole removal, so exploring is only ever reported
     // for a surface that really is clear.
-    final cleaned = await _clearLiveArtifacts();
+    final cleaned = await _clearFinishedJourneyMap();
     if (!mounted) return;
 
     if (!cleaned) {
@@ -791,7 +814,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await manager.create(
       CircleAnnotationOptions(
         geometry: Point(coordinates: Position(place.lng, place.lat)),
-        circleColor: const Color(0xFFF35D32).toARGB32(),
+        circleColor: TulinkColors.light.sunsetOrange.toARGB32(),
         circleRadius: 10,
         circleStrokeColor: Colors.white.toARGB32(),
         circleStrokeWidth: 4,
@@ -1679,8 +1702,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _clearDraft() {
     // Abandon any in-flight route/draw work for the destination being dropped.
-    _destinationDrawSeq++;
-    context.read<MapProvider>().invalidateRouteRequests();
+    _invalidateDestinationRouteWork();
     unawaited(_clearDestinationAnnotations());
     unawaited(_clearPreviewRoute());
     setState(() {

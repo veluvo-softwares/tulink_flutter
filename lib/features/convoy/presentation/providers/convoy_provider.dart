@@ -15,6 +15,7 @@ import '../../domain/usecases/publish_my_position.dart';
 import '../../domain/usecases/fetch_latest_snapshot.dart';
 import '../../domain/repositories/convoy_repository.dart';
 import '../../../../core/errors/failure.dart';
+import '../../../../core/errors/user_facing_error.dart';
 import '../../../../core/services/location_permission_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/journey_location_service.dart';
@@ -252,7 +253,7 @@ class ConvoyProvider extends ChangeNotifier {
 
       await _repository.joinJourneyRoom(journeyId);
     } catch (e) {
-      _setError(e is Failure ? e.message : 'Could not reconnect to the convoy');
+      _setError(userFacingErrorMessage(e));
     }
   }
 
@@ -483,7 +484,7 @@ class ConvoyProvider extends ChangeNotifier {
               details: 'An unexpected error occurred: $e',
               timestamp: DateTime.now(),
             );
-      _setError(failure.message);
+      _setError(userFacingErrorMessage(failure));
     }
   }
 
@@ -843,7 +844,7 @@ class ConvoyProvider extends ChangeNotifier {
       print(
         '🛑 Terminal publish failure (${failure.message}) — stopping coordination',
       );
-      _setError(failure.message);
+      _setError(userFacingErrorMessage(failure));
       await stopCoordination();
       return;
     }
@@ -949,7 +950,7 @@ class ConvoyProvider extends ChangeNotifier {
           // N rapid peer updates collapse into one render.
           _scheduleSnapshotNotify();
         } else if (result.failure != null) {
-          _setError(result.failure!.message);
+          _setError(userFacingErrorMessage(result.failure));
           notifyListeners();
         }
       },
@@ -958,7 +959,7 @@ class ConvoyProvider extends ChangeNotifier {
         final failure = error is Failure
             ? error
             : ConvoyFailure.rtdbConnectionFailed;
-        _setError(failure.message);
+        _setError(userFacingErrorMessage(failure));
         notifyListeners();
       },
     );
@@ -1149,12 +1150,12 @@ class ConvoyProvider extends ChangeNotifier {
         _snapshot = result.snapshot;
         _clearError();
       } else if (result.failure != null) {
-        _setError(result.failure!.message);
+        _setError(userFacingErrorMessage(result.failure));
       }
       notifyListeners();
     } catch (e) {
       print('❌ Failed to refresh snapshot: $e');
-      _setError('Failed to refresh convoy data');
+      _setError(genericErrorMessage);
     }
   }
 

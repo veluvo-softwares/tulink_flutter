@@ -114,6 +114,61 @@ void main() {
   });
 
   test(
+    'a personal route request never installs a cached canonical route',
+    () async {
+      final network = Completer<RouteResultModel?>();
+      repository.cachedFor['A'] = Future.value(
+        tagged('leader-canonical', version: 7),
+      );
+      repository.routeFor['A'] = network.future;
+
+      final pending = fetch(journeyId: 'A');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        provider.currentRoute,
+        isNull,
+        reason: "another member's canonical geometry must never flash locally",
+      );
+
+      network.complete(tagged('this-device-route'));
+      expect(tagOf(await pending), 'this-device-route');
+      expect(tagOf(provider.currentRoute), 'this-device-route');
+    },
+  );
+
+  test(
+    'starting a personal request drops a canonical route already held',
+    () async {
+      repository.canonicalFor['A'] = Future.value(
+        tagged('leader-canonical', version: 8),
+      );
+      await provider.fetchCanonicalRoute(
+        userId: 'u1',
+        journeyId: 'A',
+        destLat: -1,
+        destLng: 36,
+      );
+      expect(provider.currentRoute?.canonicalVersion, 8);
+
+      repository.cachedFor['A'] = Future.value(null);
+      final network = Completer<RouteResultModel?>();
+      repository.routeFor['A'] = network.future;
+      final pending = fetch(journeyId: 'A');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        provider.currentRoute,
+        isNull,
+        reason: 'foreign geometry must disappear before the local fetch waits',
+      );
+
+      network.complete(tagged('this-device-route'));
+      expect(tagOf(await pending), 'this-device-route');
+    },
+  );
+
+  test(
     'clearing the draft invalidates a cache read already in flight',
     () async {
       final cacheGate = Completer<RouteResultModel?>();
