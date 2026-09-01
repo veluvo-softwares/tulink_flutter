@@ -563,6 +563,35 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR to `main`.
 
 CI skips forked PRs because they cannot access repository secrets.
 
+### iOS App Store production uploads
+
+`.github/workflows/production.yml` is the production-only iOS pipeline. It
+runs only from the `prod` branch, uses the protected `production` GitHub
+environment, builds the version declared in `pubspec.yaml`, and uploads the
+signed IPA to App Store Connect. It intentionally does **not** submit the app
+for review or release it to customers; selecting the build, checking the store
+metadata and pressing **Submit for Review** remain explicit human approvals.
+
+Before the first run:
+
+1. create and protect the `prod` branch, requiring a PR from `main`;
+2. configure a required reviewer on the `production` GitHub environment;
+3. copy the iOS signing and App Store Connect secrets already used by the
+   TestFlight workflow into that environment; and
+4. set the repository variable `IOS_PRODUCTION_ENABLED` to `true`.
+
+The required production secrets are `APP_STORE_CONNECT_API_KEY`,
+`APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`,
+`IOS_CERT_P12`, `IOS_CERT_PASSWORD`, `IOS_KEYCHAIN_PASSWORD`,
+`IOS_PROVISIONING_PROFILE`, `IOS_WIDGET_PROVISIONING_PROFILE`,
+`GOOGLE_SERVICE_INFO_PLIST`, `MAPBOX_ACCESS_TOKEN`, and
+`GOOGLE_SERVER_CLIENT_ID`.
+
+To ship, open a PR from `main` to `prod`. Merging it creates and uploads a new
+App Store build. After Apple processes the upload, select that build on the
+matching App Store version page and complete the submission in App Store
+Connect.
+
 ---
 
 ## Adding a New Feature
