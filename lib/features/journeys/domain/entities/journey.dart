@@ -27,6 +27,11 @@ class Journey extends Equatable {
   final JourneyStatus status;
   final LatLng destination;
 
+  /// First recorded position for this user on a completed journey.
+  /// Supplied by the history endpoint and intentionally nullable for journeys
+  /// recorded before location history was retained.
+  final LatLng? origin;
+
   /// Human-readable place name (e.g. "Karen Shopping Centre").
   ///
   /// Null for journeys created before the field existed, and for clients that
@@ -60,6 +65,7 @@ class Journey extends Equatable {
     required this.leaderId,
     required this.status,
     required this.destination,
+    this.origin,
     this.destinationName,
     required this.destinationAddress,
     required this.lagThresholdMeters,
@@ -103,6 +109,7 @@ class Journey extends Equatable {
     leaderId,
     status,
     destination,
+    origin,
     destinationName,
     destinationAddress,
     lagThresholdMeters,

@@ -791,6 +791,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<bool> _showDestinationOnMap(
     PlaceSearchResult place, {
     bool asDraft = true,
+    LatLng? originOverride,
+    bool resolveCurrentOrigin = true,
   }) async {
     final manager = _destinationAnnotations;
     final map = _map;
@@ -827,16 +829,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
 
-    final origin = await _resolveOrigin();
+    final currentOrigin = resolveCurrentOrigin ? await _resolveOrigin() : null;
+    final originLat = originOverride?.latitude ?? currentOrigin?.latitude;
+    final originLng = originOverride?.longitude ?? currentOrigin?.longitude;
+    if (originLat == null || originLng == null) {
+      // Old history entries may not have retained location points. Showing
+      // only their destination is honest; using today's location would depict
+      // a trip the user never took.
+      await map.flyTo(
+        CameraOptions(
+          center: Point(coordinates: Position(place.lng, place.lat)),
+          zoom: 12.5,
+        ),
+        MapAnimationOptions(duration: 800),
+      );
+      return false;
+    }
     final route = await mapProvider.fetchRoute(
       userId: userId,
       journeyId: 'draft-${place.placeId}',
       surfaceGeneration: generation,
-      // A denied or cold GPS fix should not prevent a route preview. Nairobi
-      // is already Tulink's initial map centre and is replaced by live origin
-      // whenever location is available.
-      originLat: origin?.latitude ?? -1.2921,
-      originLng: origin?.longitude ?? 36.8219,
+      originLat: originLat,
+      originLng: originLng,
       destLat: place.lat,
       destLng: place.lng,
     );
@@ -982,7 +996,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     var routeRendered = false;
     try {
-      routeRendered = await _showDestinationOnMap(place);
+      routeRendered = await _showDestinationOnMap(
+        place,
+        originOverride: journey.origin,
+        resolveCurrentOrigin: false,
+      );
     } catch (error) {
       debugPrint('Could not preview journey ${journey.id}: $error');
     }
