@@ -872,13 +872,17 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     _isProgrammaticCameraMove = true;
     try {
-      await _mapboxMap!.setCamera(
+      // Ease between fixes so both forward motion and bearing changes remain
+      // continuous at driving speed. The native puck keeps its own high-rate
+      // location animation; this keeps the camera from visibly stepping.
+      await _mapboxMap!.easeTo(
         CameraOptions(
           center: Point(coordinates: Position(centerLng, centerLat)),
           bearing: position.heading,
           zoom: 16.0,
           pitch: 45.0,
         ),
+        MapAnimationOptions(duration: 650),
       );
     } finally {
       _isProgrammaticCameraMove = false;

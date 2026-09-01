@@ -21,10 +21,7 @@ void main() {
 
       final model = JourneyModel.fromJson(json);
 
-      expect(
-        model.scheduledFor,
-        DateTime.parse('2026-07-19T06:30:00.000Z'),
-      );
+      expect(model.scheduledFor, DateTime.parse('2026-07-19T06:30:00.000Z'));
       expect(model.autoStart, isTrue);
       expect(model.isScheduled, isTrue);
     });
@@ -47,5 +44,15 @@ void main() {
       expect(model.status, JourneyStatus.ACTIVE);
       expect(model.isScheduled, isFalse);
     });
+  });
+
+  test('preserves a completed journey historical origin', () {
+    final json = baseJson()
+      ..['origin'] = {'latitude': -1.31, 'longitude': 36.79};
+
+    final model = JourneyModel.fromJson(json);
+
+    expect(model.origin, const LatLng(latitude: -1.31, longitude: 36.79));
+    expect(model.toJson()['origin'], {'latitude': -1.31, 'longitude': 36.79});
   });
 }

@@ -8,6 +8,12 @@ class OffRouteDetectionService {
   /// Distance (metres) beyond which a reading is treated as off-route.
   static const double offRouteThresholdMetres = 50.0;
 
+  /// A route this far from the first live fix is stale, not GPS jitter. This
+  /// commonly happens when the app resumes after the driver has moved while
+  /// the screen was off, so reroute immediately instead of waiting for a
+  /// multi-reading confirmation window.
+  static const double grossDeviationThresholdMetres = 125.0;
+
   /// Consecutive off-route readings required to trigger a reroute.
   static const int sustainedReadingsRequired = 5;
 
@@ -43,9 +49,16 @@ class OffRouteDetectionService {
     }
 
     _consecutiveOffRouteReadings++;
-    print('🧭 off-route streak: $_consecutiveOffRouteReadings/$_effectiveSustainedReadings');
+    print(
+      '🧭 off-route streak: $_consecutiveOffRouteReadings/$_effectiveSustainedReadings',
+    );
 
-    if (_consecutiveOffRouteReadings < _effectiveSustainedReadings) return;
+    final isGrossInitialDeviation =
+        _rerouteCount == 0 && deviationMetres >= grossDeviationThresholdMetres;
+    if (!isGrossInitialDeviation &&
+        _consecutiveOffRouteReadings < _effectiveSustainedReadings) {
+      return;
+    }
 
     if (_lastRerouteAt != null &&
         DateTime.now().difference(_lastRerouteAt!) < rerouteCooldown) {
@@ -55,7 +68,11 @@ class OffRouteDetectionService {
     _rerouteCount++;
     _lastRerouteAt = DateTime.now();
     _consecutiveOffRouteReadings = 0;
-    print('🧭 Off-route sustained — triggering reroute #$_rerouteCount');
+    print(
+      isGrossInitialDeviation
+          ? '🧭 Stale route detected — triggering immediate reroute #$_rerouteCount'
+          : '🧭 Off-route sustained — triggering reroute #$_rerouteCount',
+    );
     await onRerouteNeeded();
   }
 
