@@ -8,6 +8,7 @@ class JourneyModel extends Journey {
     required super.leaderId,
     required super.status,
     required super.destination,
+    super.origin,
     super.destinationName,
     required super.destinationAddress,
     required super.lagThresholdMeters,
@@ -25,6 +26,7 @@ class JourneyModel extends Journey {
     final destination =
         json['destination'] as Map<String, dynamic>? ?? <String, dynamic>{};
     final metadata = json['metadata'] as Map<String, dynamic>?;
+    final origin = json['origin'] as Map<String, dynamic>?;
     return JourneyModel(
       id: json['id']?.toString() ?? '',
       inviteCode: json['inviteCode']?.toString(),
@@ -32,6 +34,7 @@ class JourneyModel extends Journey {
       leaderId: json['leaderId']?.toString() ?? '',
       status: _parseStatus(json['status']?.toString()),
       destination: _parseDestination(destination),
+      origin: origin == null ? null : _parseDestination(origin),
       // Absent on journeys created before the field existed — stays null and
       // display falls back to destinationAddress via Journey.destinationLabel.
       destinationName: json['destinationName']?.toString(),
@@ -134,6 +137,11 @@ class JourneyModel extends Journey {
         'latitude': destination.latitude,
         'longitude': destination.longitude,
       },
+      if (origin != null)
+        'origin': {
+          'latitude': origin!.latitude,
+          'longitude': origin!.longitude,
+        },
       if (destinationName != null) 'destinationName': destinationName,
       'destinationAddress': destinationAddress,
       'lagThresholdMeters': lagThresholdMeters,
