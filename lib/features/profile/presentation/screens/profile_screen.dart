@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
+import 'package:tulink_flutter/core/layout/tulink_breakpoints.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/core/utils/journey_stats_calculator.dart';
 import 'package:tulink_flutter/features/analytics/presentation/providers/analytics_provider.dart';
@@ -40,6 +41,89 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = context.watch<AuthProvider>().user;
     final journeys = context.watch<AnalyticsProvider>().journeyHistory;
     final userId = user?.id ?? '';
+    final journeyCount = JourneyStatsCalculator.calculateParticipationCount(
+      journeys,
+      userId,
+    );
+    final totalDistance = JourneyStatsCalculator.calculateTotalDistance(
+      journeys,
+    );
+    final leadershipCount = JourneyStatsCalculator.calculateLeadershipCount(
+      journeys,
+      userId,
+    );
+
+    final overview = Column(
+      children: [
+        _ProfileHero(
+          name: user?.name ?? 'Traveller',
+          email: user?.email ?? 'driver@tulink.app',
+          imageUrl: user?.profilePicture,
+          isVerified: user?.isEmailVerified ?? false,
+        ),
+        const SizedBox(height: 18),
+        ProfileStatsGrid(
+          journeyCount: journeyCount,
+          totalDistance: totalDistance,
+          leaderboardPosition: leadershipCount,
+        ),
+      ],
+    );
+
+    final accountDetails = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          title: 'Your travel',
+          actionLabel: 'View journeys',
+          onAction: () =>
+              Navigator.of(context).pop(ProfileScreen.showJourneysResult),
+        ),
+        const SizedBox(height: 10),
+        _TravelSummaryCard(
+          journeyCount: journeyCount,
+          onTap: () =>
+              Navigator.of(context).pop(ProfileScreen.showJourneysResult),
+        ),
+        const SizedBox(height: 28),
+        const _SectionHeader(title: 'Preferences'),
+        const SizedBox(height: 10),
+        _SettingsGroup(
+          children: [
+            Consumer<NavigationProvider>(
+              builder: (context, navigation, _) => SettingsMenuItem(
+                icon: Icons.record_voice_over_outlined,
+                title: 'Voice navigation',
+                subtitle: 'Hear turns and convoy updates',
+                showArrow: false,
+                onTap: () =>
+                    navigation.setVoiceEnabled(!navigation.isVoiceEnabled),
+                trailing: Switch.adaptive(
+                  value: navigation.isVoiceEnabled,
+                  onChanged: navigation.setVoiceEnabled,
+                  activeTrackColor: colors.routeTeal,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        const _SectionHeader(title: 'Account'),
+        const SizedBox(height: 10),
+        _SettingsGroup(
+          children: [
+            SettingsMenuItem(
+              icon: Icons.logout_rounded,
+              title: 'Sign out',
+              titleColor: Theme.of(context).colorScheme.error,
+              iconColor: Theme.of(context).colorScheme.error,
+              showArrow: false,
+              onTap: _showSignOutDialog,
+            ),
+          ],
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: colors.warmSand,
@@ -53,89 +137,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ProfileHero(
-                name: user?.name ?? 'Traveller',
-                email: user?.email ?? 'driver@tulink.app',
-                imageUrl: user?.profilePicture,
-                isVerified: user?.isEmailVerified ?? false,
-              ),
-              const SizedBox(height: 18),
-              ProfileStatsGrid(
-                journeyCount:
-                    JourneyStatsCalculator.calculateParticipationCount(
-                      journeys,
-                      userId,
-                    ),
-                totalDistance: JourneyStatsCalculator.calculateTotalDistance(
-                  journeys,
-                ),
-                leaderboardPosition:
-                    JourneyStatsCalculator.calculateLeadershipCount(
-                      journeys,
-                      userId,
-                    ),
-              ),
-              const SizedBox(height: 28),
-              _SectionHeader(
-                title: 'Your travel',
-                actionLabel: 'View journeys',
-                onAction: () =>
-                    Navigator.of(context).pop(ProfileScreen.showJourneysResult),
-              ),
-              const SizedBox(height: 10),
-              _TravelSummaryCard(
-                journeyCount:
-                    JourneyStatsCalculator.calculateParticipationCount(
-                      journeys,
-                      userId,
-                    ),
-                onTap: () =>
-                    Navigator.of(context).pop(ProfileScreen.showJourneysResult),
-              ),
-              const SizedBox(height: 28),
-              const _SectionHeader(title: 'Preferences'),
-              const SizedBox(height: 10),
-              _SettingsGroup(
-                children: [
-                  Consumer<NavigationProvider>(
-                    builder: (context, navigation, _) => SettingsMenuItem(
-                      icon: Icons.record_voice_over_outlined,
-                      title: 'Voice navigation',
-                      subtitle: 'Hear turns and convoy updates',
-                      showArrow: false,
-                      onTap: () => navigation.setVoiceEnabled(
-                        !navigation.isVoiceEnabled,
-                      ),
-                      trailing: Switch.adaptive(
-                        value: navigation.isVoiceEnabled,
-                        onChanged: navigation.setVoiceEnabled,
-                        activeTrackColor: colors.routeTeal,
+        child: LayoutBuilder(
+          builder: (context, _) => SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              TulinkBreakpoints.isWideLandscape(context) ? 32 : 20,
+              12,
+              TulinkBreakpoints.isWideLandscape(context) ? 32 : 20,
+              36,
+            ),
+            child: TulinkBreakpoints.isWideLandscape(context)
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 4, child: overview),
+                      const SizedBox(width: 28),
+                      Expanded(flex: 6, child: accountDetails),
+                    ],
+                  )
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          overview,
+                          const SizedBox(height: 28),
+                          accountDetails,
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              const _SectionHeader(title: 'Account'),
-              const SizedBox(height: 10),
-              _SettingsGroup(
-                children: [
-                  SettingsMenuItem(
-                    icon: Icons.logout_rounded,
-                    title: 'Sign out',
-                    titleColor: Theme.of(context).colorScheme.error,
-                    iconColor: Theme.of(context).colorScheme.error,
-                    showArrow: false,
-                    onTap: _showSignOutDialog,
-                  ),
-                ],
-              ),
-            ],
           ),
         ),
       ),

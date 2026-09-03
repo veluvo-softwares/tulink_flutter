@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart' as geo;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
+import 'package:tulink_flutter/core/layout/tulink_breakpoints.dart';
 import 'package:tulink_flutter/core/services/push_notification_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
 import 'package:tulink_flutter/core/widgets/location_access_sheet.dart';
@@ -1031,12 +1032,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _chooseDestination() async {
-    final place = await showModalBottomSheet<PlaceSearchResult>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _DestinationSearchSheet(),
-    );
+    final usesLandscapePanel = TulinkBreakpoints.isWideLandscape(context);
+    final PlaceSearchResult? place;
+    if (usesLandscapePanel) {
+      place = await showDialog<PlaceSearchResult>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: .46),
+        builder: (_) => Dialog(
+          alignment: Alignment.centerLeft,
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: const _DestinationSearchSheet(isLandscapePanel: true),
+        ),
+      );
+    } else {
+      place = await showModalBottomSheet<PlaceSearchResult>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => const _DestinationSearchSheet(),
+      );
+    }
     if (place == null || !mounted) return;
     widget.onTabSelected?.call(0);
     setState(() {
@@ -1109,14 +1128,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _inviteContextIsCurrent(journey, selectionAtIssue, userAtIssue),
       nameOf: (person) => person.name,
       pickTargets: () async {
-        final selected = await showModalBottomSheet<List<_SelectedCompanion>>(
-          context: context,
-          isScrollControlled: true,
-          useSafeArea: true,
-          builder: (_) => _CompanionPickerSheet(
-            initial: const [],
-            excludedUserIds: existing,
-          ),
+        final selected = await _showCompanionPicker(
+          initial: const [],
+          excludedUserIds: existing,
         );
         if (selected == null || !mounted) return null;
         // Dedupe defensively; the picker is keyed by id but callers can change.
@@ -1179,18 +1193,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _chooseCompanions() async {
     if (_isStarting) return;
-    final selected = await showModalBottomSheet<List<_SelectedCompanion>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => _CompanionPickerSheet(initial: _companions),
-    );
+    final selected = await _showCompanionPicker(initial: _companions);
     if (selected != null && mounted) {
       setState(() => _companions = selected);
       if (selected.isNotEmpty) {
         await _stageGroupJourney();
       }
     }
+  }
+
+  Future<List<_SelectedCompanion>?> _showCompanionPicker({
+    required List<_SelectedCompanion> initial,
+    Set<String> excludedUserIds = const <String>{},
+  }) {
+    final usesLandscapePanel = TulinkBreakpoints.isWideLandscape(context);
+    final picker = _CompanionPickerSheet(
+      initial: initial,
+      excludedUserIds: excludedUserIds,
+      isLandscapePanel: usesLandscapePanel,
+    );
+    if (!usesLandscapePanel) {
+      return showModalBottomSheet<List<_SelectedCompanion>>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => picker,
+      );
+    }
+    return showDialog<List<_SelectedCompanion>>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: .46),
+      builder: (_) => Dialog(
+        alignment: Alignment.centerLeft,
+        clipBehavior: Clip.antiAlias,
+        insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: picker,
+      ),
+    );
   }
 
   /// Persist a group journey and deliver its invitations before the leader
@@ -1480,12 +1520,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _joinJourneyByCode() async {
-    final joinedJourney = await showModalBottomSheet<Journey>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const JoinJourneyCodeSheet(),
-    );
+    final usesLandscapePanel = TulinkBreakpoints.isWideLandscape(context);
+    final Journey? joinedJourney;
+    if (usesLandscapePanel) {
+      joinedJourney = await showDialog<Journey>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: .46),
+        builder: (_) => Dialog(
+          alignment: Alignment.centerLeft,
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: const JoinJourneyCodeSheet(isLandscapePanel: true),
+        ),
+      );
+    } else {
+      joinedJourney = await showModalBottomSheet<Journey>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => const JoinJourneyCodeSheet(),
+      );
+    }
     if (!mounted || joinedJourney == null) return;
 
     if (joinedJourney.status == JourneyStatus.ACTIVE) {
@@ -1751,6 +1809,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       selectedJourneyId: _previewedJourneyId,
     );
     final convoy = context.watch<ConvoyProvider>();
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+    final isTablet = TulinkBreakpoints.isTablet(context);
 
     // One derived value decides what the map is doing, so the map layer and
     // the overlays can never disagree about the same journey.
@@ -1876,18 +1936,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 bottom: false,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: _MapSearchBar(
-                    destination: _destination,
-                    userName: user?.name ?? 'Traveller',
-                    imageUrl: user?.profilePicture,
-                    onLogoTap: _clearDraft,
-                    onSearchTap: _chooseDestination,
-                    onJoinTap: _joinJourneyByCode,
-                    onProfileTap: _openProfile,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: isWideLandscape ? 640 : double.infinity,
+                      child: _MapSearchBar(
+                        destination: _destination,
+                        userName: user?.name ?? 'Traveller',
+                        imageUrl: user?.profilePicture,
+                        onLogoTap: _clearDraft,
+                        onSearchTap: _chooseDestination,
+                        onJoinTap: _joinJourneyByCode,
+                        onProfileTap: _openProfile,
+                      ),
+                    ),
                   ),
                 ),
               ),
-              Align(alignment: Alignment.bottomCenter, child: bottomOverlay),
+              if (isWideLandscape)
+                Positioned(
+                  left: 112,
+                  bottom: 0,
+                  width: 500,
+                  child: bottomOverlay,
+                )
+              else
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    width: isTablet ? 720 : null,
+                    child: bottomOverlay,
+                  ),
+                ),
             ],
 
             // An invited member waiting for the leader. A real experience over
@@ -2130,7 +2210,9 @@ class _MapSearchBar extends StatelessWidget {
 
 /// Bottom sheet for joining an existing journey using its shared code.
 class JoinJourneyCodeSheet extends StatefulWidget {
-  const JoinJourneyCodeSheet({super.key});
+  const JoinJourneyCodeSheet({super.key, this.isLandscapePanel = false});
+
+  final bool isLandscapePanel;
 
   @override
   State<JoinJourneyCodeSheet> createState() => _JoinJourneyCodeSheetState();
@@ -2177,20 +2259,36 @@ class _JoinJourneyCodeSheetState extends State<JoinJourneyCodeSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        8,
-        24,
-        20 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Join a journey',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
+      padding: widget.isLandscapePanel
+          ? const EdgeInsets.fromLTRB(24, 18, 24, 24)
+          : EdgeInsets.fromLTRB(
+              24,
+              8,
+              24,
+              20 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+      child: SizedBox(
+        width: widget.isLandscapePanel ? 520 : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Join a journey',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+                if (widget.isLandscapePanel)
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+            ),
           const SizedBox(height: 6),
           Text(
             'Enter the 10-character code shared by the journey leader.',
@@ -2225,24 +2323,33 @@ class _JoinJourneyCodeSheetState extends State<JoinJourneyCodeSheet> {
             onSubmitted: _submitting ? null : (_) => _submit(),
           ),
           const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _submitting ? null : _submit,
-            child: _submitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Join journey'),
-          ),
-        ],
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: widget.isLandscapePanel ? 190 : double.infinity,
+                child: FilledButton(
+                  onPressed: _submitting ? null : _submit,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Join journey'),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _DestinationSearchSheet extends StatefulWidget {
-  const _DestinationSearchSheet();
+  const _DestinationSearchSheet({this.isLandscapePanel = false});
+
+  final bool isLandscapePanel;
 
   @override
   State<_DestinationSearchSheet> createState() =>
@@ -2275,79 +2382,124 @@ class _DestinationSearchSheetState extends State<_DestinationSearchSheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
     final maps = context.watch<MapProvider>();
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        8,
-        20,
-        20 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * .72,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Where are you going?',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Your destination becomes the journey name.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 18),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              onChanged: _search,
-              textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
-                hintText: 'Search for a place',
-                prefixIcon: Icon(Icons.search_rounded),
+    final mediaQuery = MediaQuery.of(context);
+    final hasSearchContent =
+        maps.isSearching ||
+        maps.searchError != null ||
+        maps.searchResults.isNotEmpty;
+    final landscapePanelHeight = hasSearchContent
+        ? (mediaQuery.size.height - mediaQuery.viewInsets.bottom - 64)
+              .clamp(320.0, 560.0)
+              .toDouble()
+        : 220.0;
+
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.isLandscapePanel)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _DestinationSearchHeading()),
+              const SizedBox(width: 16),
+              IconButton(
+                tooltip: 'Close destination search',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
               ),
-            ),
-            const SizedBox(height: 12),
-            if (maps.isSearching)
-              const LinearProgressIndicator(minHeight: 2)
-            else if (maps.searchError != null)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(maps.searchError!),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  itemCount: maps.searchResults.length,
-                  separatorBuilder: (_, __) => Divider(color: colors.divider),
-                  itemBuilder: (context, index) {
-                    final place = maps.searchResults[index];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                      leading: CircleAvatar(
-                        backgroundColor: colors.routeTeal.withValues(
-                          alpha: .12,
-                        ),
-                        foregroundColor: colors.deepTeal,
-                        child: const Icon(Icons.place_outlined),
-                      ),
-                      title: Text(
-                        place.displayName,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(
-                        place.address,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () => Navigator.of(context).pop(place),
-                    );
-                  },
-                ),
-              ),
-          ],
+            ],
+          )
+        else ...[
+          const _DestinationSearchHeading(),
+          const SizedBox(height: 18),
+        ],
+        TextField(
+          controller: _controller,
+          autofocus: true,
+          onChanged: _search,
+          textInputAction: TextInputAction.search,
+          decoration: const InputDecoration(
+            hintText: 'Search for a place',
+            prefixIcon: Icon(Icons.search_rounded),
+          ),
         ),
+        const SizedBox(height: 12),
+        if (maps.isSearching)
+          const LinearProgressIndicator(minHeight: 2)
+        else if (maps.searchError != null)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(maps.searchError!),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              itemCount: maps.searchResults.length,
+              separatorBuilder: (_, __) => Divider(color: colors.divider),
+              itemBuilder: (context, index) {
+                final place = maps.searchResults[index];
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: CircleAvatar(
+                    backgroundColor: colors.routeTeal.withValues(alpha: .12),
+                    foregroundColor: colors.deepTeal,
+                    child: const Icon(Icons.place_outlined),
+                  ),
+                  title: Text(
+                    place.displayName,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    place.address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.of(context).pop(place),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+
+    return Padding(
+      padding: widget.isLandscapePanel
+          ? const EdgeInsets.fromLTRB(24, 16, 24, 24)
+          : EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              20 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+      child: SizedBox(
+        width: widget.isLandscapePanel ? 520 : null,
+        height: widget.isLandscapePanel
+            ? landscapePanelHeight
+            : MediaQuery.sizeOf(context).height * .72,
+        child: content,
       ),
+    );
+  }
+}
+
+class _DestinationSearchHeading extends StatelessWidget {
+  const _DestinationSearchHeading();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Where are you going?',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Your destination becomes the journey name.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 }
@@ -2356,6 +2508,7 @@ class _CompanionPickerSheet extends StatefulWidget {
   const _CompanionPickerSheet({
     required this.initial,
     this.excludedUserIds = const <String>{},
+    this.isLandscapePanel = false,
   });
 
   final List<_SelectedCompanion> initial;
@@ -2364,6 +2517,7 @@ class _CompanionPickerSheet extends StatefulWidget {
   /// Filtering here rather than after selection means a duplicate invitation is
   /// simply not offerable.
   final Set<String> excludedUserIds;
+  final bool isLandscapePanel;
 
   @override
   State<_CompanionPickerSheet> createState() => _CompanionPickerSheetState();
@@ -2418,14 +2572,23 @@ class _CompanionPickerSheetState extends State<_CompanionPickerSheet> {
     final showingSearch = _controller.text.trim().length >= 2;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        8,
-        20,
-        20 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
+      padding: widget.isLandscapePanel
+          ? const EdgeInsets.fromLTRB(24, 18, 24, 24)
+          : EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              20 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
       child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * .76,
+        width: widget.isLandscapePanel ? 520 : null,
+        height: widget.isLandscapePanel
+            ? (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom -
+                      64)
+                  .clamp(360.0, 560.0)
+                  .toDouble()
+            : MediaQuery.sizeOf(context).height * .76,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2442,6 +2605,12 @@ class _CompanionPickerSheetState extends State<_CompanionPickerSheet> {
                       Navigator.of(context).pop(_selected.values.toList()),
                   child: Text('Done · ${_selected.length}'),
                 ),
+                if (widget.isLandscapePanel)
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
               ],
             ),
             const SizedBox(height: 6),
@@ -2640,12 +2809,18 @@ class _ReadyJourneySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
     return Container(
       width: double.infinity,
+      margin: isWideLandscape
+          ? const EdgeInsets.only(bottom: 16)
+          : EdgeInsets.zero,
       padding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
       decoration: BoxDecoration(
         color: colors.warmSand,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: isWideLandscape
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x14000000),
@@ -2658,16 +2833,17 @@ class _ReadyJourneySheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: colors.divider,
-                borderRadius: BorderRadius.circular(99),
+          if (!isWideLandscape)
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: colors.divider,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2743,24 +2919,27 @@ class _ReadyJourneySheet extends StatelessWidget {
             ),
             const SizedBox(height: 14),
           ],
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: isStarting || isRouteLoading ? null : onStart,
-              icon: isStarting || isRouteLoading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.arrow_forward_rounded),
-              iconAlignment: IconAlignment.end,
-              label: Text(
-                isStarting
-                    ? 'Starting…'
-                    : isRouteLoading
-                    ? 'Finding route…'
-                    : 'Start journey',
+          Align(
+            alignment: Alignment.centerRight,
+            child: SizedBox(
+              width: isWideLandscape ? 200 : double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: isStarting || isRouteLoading ? null : onStart,
+                icon: isStarting || isRouteLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.arrow_forward_rounded),
+                iconAlignment: IconAlignment.end,
+                label: Text(
+                  isStarting
+                      ? 'Starting…'
+                      : isRouteLoading
+                      ? 'Finding route…'
+                      : 'Start journey',
+                ),
               ),
             ),
           ),
