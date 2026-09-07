@@ -35,12 +35,13 @@ same landscape density. The final states were rendered in the running iPad Pro
 5. **End journey confirmation** — leader and follower confirmation dialogs use
    a lower-left, 480-pixel bounded placement on wide landscape screens. Phone
    dialogs are unchanged.
-6. **Journey complete** — the completion summary is a 520-pixel lower-left card
-   on wide screens, preserving the driven route behind it and keeping Done and
-   View details reachable.
-7. **Journey recap** — recap content is presented in a 760-pixel left panel with
-   16-pixel margins, rounded containment, and independent scrolling. The panel
-   is bounded to the available screen height.
+6. **Journey complete** — the completion summary is a height-bounded,
+   independently scrollable 520-pixel lower-left card on wide screens. A lighter
+   landscape scrim preserves the driven route while Done and View details remain
+   reachable.
+7. **Journey recap** — the experimental wide floating card looked disconnected
+   from the established details experience. Landscape now keeps the same
+   full-page hierarchy, spacing, surfaces, and scrolling used in portrait.
 8. **Recent journeys** — the previously missing landscape overlay is now a
    visible, content-sized lower-left panel. It preserves journey preview, long
    press details, and Go again actions without consuming the full map height.

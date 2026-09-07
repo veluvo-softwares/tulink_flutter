@@ -16,7 +16,7 @@ void main() {
     lagThresholdMeters: 500,
   );
 
-  testWidgets('keeps the journey recap in a reachable landscape panel', (
+  testWidgets('keeps the portrait recap treatment in tablet landscape', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -32,9 +32,9 @@ void main() {
     await tester.pump();
 
     final panel = tester.getRect(find.byKey(const Key('journey-recap-panel')));
-    expect(panel.left, 16);
-    expect(panel.top, 16);
-    expect(panel.width, 760);
-    expect(panel.bottom, 1008);
+    expect(panel.left, 299);
+    expect(panel.top, 0);
+    expect(panel.width, 768);
+    expect(panel.height, 1024);
   });
 }

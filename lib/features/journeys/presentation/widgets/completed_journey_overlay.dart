@@ -48,7 +48,11 @@ class CompletedJourneyOverlay extends StatelessWidget {
         Positioned.fill(
           child: GestureDetector(
             onTap: isDismissing ? null : onDismiss,
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.45)),
+            child: ColoredBox(
+              color: Colors.black.withValues(
+                alpha: isWideLandscape ? 0.20 : 0.45,
+              ),
+            ),
           ),
         ),
         Align(
@@ -59,100 +63,110 @@ class CompletedJourneyOverlay extends StatelessWidget {
             minimum: const EdgeInsets.all(16),
             child: SizedBox(
               width: isWideLandscape ? 520 : null,
-              child: Container(
-                key: const Key('completed-journey-card'),
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                decoration: BoxDecoration(
-                  color: colors.surface,
-                  borderRadius: BorderRadius.circular(20),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height - 32,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: colors.sunsetOrange.withValues(alpha: 0.14),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.flag_rounded,
-                            color: colors.sunsetOrange,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Journey complete',
-                                style: TextStyle(
-                                  color: colors.ink,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                journey.destinationLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: colors.muted,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              if (subtitle != null)
-                                Text(
-                                  subtitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: colors.muted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
+                child: SingleChildScrollView(
+                  child: Container(
+                    key: const Key('completed-journey-card'),
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    const SizedBox(height: 18),
-                    Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (onViewDetails != null) ...[
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: onViewDetails,
-                              child: const Text('View details'),
+                        Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: colors.sunsetOrange.withValues(
+                                  alpha: 0.14,
+                                ),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.flag_rounded,
+                                color: colors.sunsetOrange,
+                                size: 24,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                        ],
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: isDismissing ? null : onDismiss,
-                            child: isDismissing
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Journey complete',
+                                    style: TextStyle(
+                                      color: colors.ink,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                  )
-                                : const Text('Done'),
-                          ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    journey.destinationLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: colors.muted,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  if (subtitle != null)
+                                    Text(
+                                      subtitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colors.muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            if (onViewDetails != null) ...[
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: onViewDetails,
+                                  child: const Text('View details'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: isDismissing ? null : onDismiss,
+                                child: isDismissing
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Done'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
