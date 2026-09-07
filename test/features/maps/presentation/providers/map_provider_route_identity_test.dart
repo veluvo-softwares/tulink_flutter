@@ -372,6 +372,44 @@ void main() {
     expect(repository.lastReason, 'LEADER_REROUTE');
     expect(provider.currentRoute?.canonicalVersion, 4);
   });
+
+  test(
+    'a preferred pre-departure route bypasses a fresh network route',
+    () async {
+      final selected = tagged('selected-alternate');
+      repository.routeFor['A'] = Future.value(tagged('server-primary'));
+      provider.preferRoute(
+        route: selected,
+        userId: 'u1',
+        journeyId: 'A',
+        destLat: -1,
+        destLng: 36,
+      );
+
+      final result = await fetch();
+
+      expect(tagOf(result), 'selected-alternate');
+      expect(repository.routeCalls, 0);
+      expect(repository.cacheCalls, 0);
+    },
+  );
+
+  test('clearing a route preference allows off-route recovery', () async {
+    provider.preferRoute(
+      route: tagged('selected-alternate'),
+      userId: 'u1',
+      journeyId: 'A',
+      destLat: -1,
+      destLng: 36,
+    );
+    provider.clearRoutePreference();
+    repository.routeFor['A'] = Future.value(tagged('recalculated'));
+
+    final result = await fetch();
+
+    expect(tagOf(result), 'recalculated');
+    expect(repository.routeCalls, 1);
+  });
 }
 
 class _FakeMapRepository implements MapRepository {
@@ -381,6 +419,8 @@ class _FakeMapRepository implements MapRepository {
   final Map<String, Future<RouteResultModel?>> replacementFor = {};
   int? lastBaseVersion;
   String? lastReason;
+  int routeCalls = 0;
+  int cacheCalls = 0;
 
   @override
   Future<RouteResultModel?> getRoute({
@@ -390,7 +430,10 @@ class _FakeMapRepository implements MapRepository {
     required double originLng,
     required double destinationLat,
     required double destinationLng,
-  }) => routeFor[journeyId] ?? Future.value(null);
+  }) {
+    routeCalls++;
+    return routeFor[journeyId] ?? Future.value(null);
+  }
 
   @override
   Future<RouteResultModel?> getCachedRoute({
@@ -398,7 +441,10 @@ class _FakeMapRepository implements MapRepository {
     required String journeyId,
     required double destinationLat,
     required double destinationLng,
-  }) => cachedFor[journeyId] ?? Future.value(null);
+  }) {
+    cacheCalls++;
+    return cachedFor[journeyId] ?? Future.value(null);
+  }
 
   @override
   Future<RouteResultModel?> getCanonicalRoute({

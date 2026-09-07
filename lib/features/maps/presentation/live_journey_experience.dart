@@ -774,6 +774,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     // Reset throttle state so trim and puck start immediately on the new route.
     _lastTrimAt = null;
 
+    // The user-selected pre-departure route is no longer viable once they are
+    // genuinely off it. Release that preference before requesting recovery.
+    context.read<MapProvider>().clearRoutePreference();
+
     await _drawActualRoute(journey, knownLat: originLat, knownLng: originLng);
     AppLogger.info('Device-scoped reroute fetched for ${journey.id}');
   }

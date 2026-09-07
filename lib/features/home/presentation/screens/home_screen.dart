@@ -27,6 +27,7 @@ import 'package:tulink_flutter/features/journeys/presentation/widgets/completed_
 import 'package:tulink_flutter/features/home/presentation/widgets/live_journey_back_boundary.dart';
 import 'package:tulink_flutter/features/home/presentation/widgets/pending_journey_staging.dart';
 import 'package:tulink_flutter/features/journeys/presentation/utils/journey_navigation.dart';
+import 'package:tulink_flutter/features/maps/data/models/route_result_model.dart';
 import 'package:tulink_flutter/features/maps/domain/entities/place_search_result.dart';
 import 'package:tulink_flutter/features/home/presentation/state/history_preview_selection.dart';
 import 'package:tulink_flutter/features/home/presentation/state/journey_adoption_sequence.dart';
@@ -40,6 +41,7 @@ import 'package:tulink_flutter/features/maps/presentation/controllers/persistent
 import 'package:tulink_flutter/features/maps/presentation/live_journey_experience.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/map_provider.dart';
 import 'package:tulink_flutter/features/maps/presentation/widgets/persistent_tulink_map.dart';
+import 'package:tulink_flutter/features/maps/presentation/widgets/route_alternatives_picker.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 
 /// Tulink's map-first home. Creating a journey is intentionally reduced to
@@ -94,6 +96,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _invitePollingTimer;
   PlaceSearchResult? _destination;
   List<_SelectedCompanion> _companions = const [];
+  List<RouteResultModel> _draftRouteOptions = const [];
+  int _selectedDraftRouteIndex = 0;
+  String? _draftRoutePlaceId;
   bool _isStarting = false;
   bool _isEnteringLiveJourney = false;
 
@@ -194,6 +199,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _previewSourceId = 'home-preview-route-source';
   static const _previewShadowId = 'home-preview-route-shadow';
   static const _previewLineId = 'home-preview-route-line';
+  static const _maxPreviewAlternates = 2;
 
   @override
   void initState() {
@@ -792,6 +798,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<bool> _showDestinationOnMap(
     PlaceSearchResult place, {
     bool asDraft = true,
+    String? routeJourneyId,
     LatLng? originOverride,
     bool resolveCurrentOrigin = true,
   }) async {
@@ -848,7 +855,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     final route = await mapProvider.fetchRoute(
       userId: userId,
-      journeyId: 'draft-${place.placeId}',
+      journeyId: routeJourneyId ?? 'draft-${place.placeId}',
       surfaceGeneration: generation,
       originLat: originLat,
       originLng: originLng,
@@ -857,9 +864,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (!isCurrentDraw()) return false;
     if (route != null && route.coordinates.length > 1) {
-      await _drawPreviewRoute(route.coordinates);
+      var routes = asDraft
+          ? <RouteResultModel>[route, ...route.alternates]
+          : <RouteResultModel>[route];
+      var selectedIndex = 0;
+      final ownsDraft =
+          asDraft && _destination?.placeId == place.placeId && mounted;
+      if (ownsDraft) {
+        if (_draftRoutePlaceId == place.placeId &&
+            _draftRouteOptions.isNotEmpty) {
+          routes = _draftRouteOptions;
+          selectedIndex = _selectedDraftRouteIndex.clamp(0, routes.length - 1);
+        } else {
+          setState(() {
+            _draftRoutePlaceId = place.placeId;
+            _draftRouteOptions = routes;
+            _selectedDraftRouteIndex = 0;
+          });
+        }
+        mapProvider.preferRoute(
+          route: routes[selectedIndex],
+          userId: userId,
+          journeyId: routeJourneyId ?? 'draft-${place.placeId}',
+          destLat: place.lat,
+          destLng: place.lng,
+          surfaceGeneration: generation,
+        );
+      }
+      await _drawPreviewRoutes(routes, selectedIndex: selectedIndex);
       if (!isCurrentDraw()) return false;
-      await _fitPreviewCamera(route.coordinates);
+      await _fitPreviewCamera(routes[selectedIndex].coordinates);
       return true;
     }
 
@@ -888,44 +922,91 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _drawPreviewRoute(List<List<double>> coordinates) async {
+  Future<void> _drawPreviewRoutes(
+    List<RouteResultModel> routes, {
+    required int selectedIndex,
+  }) async {
     final map = _map;
-    if (map == null || coordinates.length < 2) return;
+    if (map == null || routes.isEmpty) return;
     await _clearPreviewRoute();
     try {
-      final geoJson = jsonEncode({
-        'type': 'Feature',
-        'properties': <String, dynamic>{},
-        'geometry': {'type': 'LineString', 'coordinates': coordinates},
-      });
-      await map.style.addSource(
-        GeoJsonSource(id: _previewSourceId, data: geoJson),
-      );
-      await map.style.addLayer(
-        LineLayer(
-          id: _previewShadowId,
-          sourceId: _previewSourceId,
-          lineCap: LineCap.ROUND,
-          lineJoin: LineJoin.ROUND,
-          lineWidth: 8,
-          lineColor: const Color(0xFFFFFFFF).toARGB32(),
-          lineOpacity: .9,
-        ),
-      );
-      await map.style.addLayer(
-        LineLayer(
-          id: _previewLineId,
-          sourceId: _previewSourceId,
-          lineCap: LineCap.ROUND,
-          lineJoin: LineJoin.ROUND,
-          lineWidth: 5,
-          lineColor: const Color(0xFF12848D).toARGB32(),
-          lineOpacity: 1,
-        ),
+      var alternateSlot = 0;
+      for (var index = 0; index < routes.length; index++) {
+        if (index == selectedIndex) continue;
+        final route = routes[index];
+        if (route.coordinates.length < 2 ||
+            alternateSlot >= _maxPreviewAlternates) {
+          continue;
+        }
+        await _addPreviewRoute(
+          map,
+          route.coordinates,
+          sourceId: '$_previewSourceId-alt-$alternateSlot',
+          lineId: '$_previewLineId-alt-$alternateSlot',
+          color: const Color(0xFF758486),
+          width: 4,
+          opacity: .7,
+        );
+        alternateSlot++;
+      }
+
+      final selected = routes[selectedIndex];
+      if (selected.coordinates.length < 2) return;
+      await _addPreviewRoute(
+        map,
+        selected.coordinates,
+        sourceId: _previewSourceId,
+        lineId: _previewLineId,
+        shadowId: _previewShadowId,
+        color: const Color(0xFF12848D),
+        width: 5,
+        opacity: 1,
       );
     } catch (error) {
       debugPrint('Could not draw home route preview: $error');
     }
+  }
+
+  Future<void> _addPreviewRoute(
+    MapboxMap map,
+    List<List<double>> coordinates, {
+    required String sourceId,
+    required String lineId,
+    required Color color,
+    required double width,
+    required double opacity,
+    String? shadowId,
+  }) async {
+    final geoJson = jsonEncode({
+      'type': 'Feature',
+      'properties': <String, dynamic>{},
+      'geometry': {'type': 'LineString', 'coordinates': coordinates},
+    });
+    await map.style.addSource(GeoJsonSource(id: sourceId, data: geoJson));
+    if (shadowId != null) {
+      await map.style.addLayer(
+        LineLayer(
+          id: shadowId,
+          sourceId: sourceId,
+          lineCap: LineCap.ROUND,
+          lineJoin: LineJoin.ROUND,
+          lineWidth: width + 3,
+          lineColor: const Color(0xFFFFFFFF).toARGB32(),
+          lineOpacity: .9,
+        ),
+      );
+    }
+    await map.style.addLayer(
+      LineLayer(
+        id: lineId,
+        sourceId: sourceId,
+        lineCap: LineCap.ROUND,
+        lineJoin: LineJoin.ROUND,
+        lineWidth: width,
+        lineColor: color.toARGB32(),
+        lineOpacity: opacity,
+      ),
+    );
   }
 
   Future<void> _clearPreviewRoute() async {
@@ -940,6 +1021,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       await map.style.removeStyleSource(_previewSourceId);
     } catch (_) {}
+    for (var index = 0; index < _maxPreviewAlternates; index++) {
+      try {
+        await map.style.removeStyleLayer('$_previewLineId-alt-$index');
+      } catch (_) {}
+      try {
+        await map.style.removeStyleSource('$_previewSourceId-alt-$index');
+      } catch (_) {}
+    }
   }
 
   Future<void> _clearDestinationAnnotations() async {
@@ -1057,12 +1146,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
     if (place == null || !mounted) return;
+    final selectedPlace = place;
     widget.onTabSelected?.call(0);
+    context.read<MapProvider>().clearRoutePreference();
     setState(() {
-      _destination = place;
+      _destination = selectedPlace;
       _companions = const [];
+      _draftRouteOptions = const [];
+      _selectedDraftRouteIndex = 0;
+      _draftRoutePlaceId = selectedPlace.placeId;
     });
-    await _showDestinationOnMap(place);
+    await _showDestinationOnMap(selectedPlace);
   }
 
   Future<void> _repeatJourney(Journey journey) async {
@@ -1088,11 +1182,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       types: const ['journey'],
     );
     widget.onTabSelected?.call(0);
+    context.read<MapProvider>().clearRoutePreference();
     setState(() {
       _destination = place;
       _companions = people;
+      _draftRouteOptions = const [];
+      _selectedDraftRouteIndex = 0;
+      _draftRoutePlaceId = place.placeId;
     });
     await _showDestinationOnMap(place);
+  }
+
+  Future<void> _selectDraftRoute(int index) async {
+    final destination = _destination;
+    if (destination == null ||
+        index < 0 ||
+        index >= _draftRouteOptions.length) {
+      return;
+    }
+    setState(() => _selectedDraftRouteIndex = index);
+    final selected = _draftRouteOptions[index];
+    final userId = context.read<AuthProvider>().user?.id ?? 'map-preview';
+    context.read<MapProvider>().preferRoute(
+      route: selected,
+      userId: userId,
+      journeyId: 'draft-${destination.placeId}',
+      destLat: destination.lat,
+      destLng: destination.lng,
+      surfaceGeneration: _mapController.generation,
+    );
+    await _drawPreviewRoutes(_draftRouteOptions, selectedIndex: index);
+    if (mounted) await _fitPreviewCamera(selected.coordinates);
+  }
+
+  RouteResultModel? get _selectedDraftRoute {
+    if (_draftRouteOptions.isEmpty) return null;
+    final index = _selectedDraftRouteIndex.clamp(
+      0,
+      _draftRouteOptions.length - 1,
+    );
+    return _draftRouteOptions[index];
+  }
+
+  void _promoteSelectedRoute(Journey journey) {
+    final route = _selectedDraftRoute;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (route == null || userId == null || userId.isEmpty) return;
+    context.read<MapProvider>().preferRoute(
+      route: route,
+      userId: userId,
+      journeyId: journey.id,
+      destLat: journey.destination.latitude,
+      destLng: journey.destination.longitude,
+      surfaceGeneration: _mapController.generation,
+    );
   }
 
   /// Invite people to an existing pending journey.
@@ -1265,6 +1408,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
         return;
       }
+      _promoteSelectedRoute(pending);
 
       final invites = context.read<InviteProvider>();
       invites.resetInviteSession();
@@ -1289,6 +1433,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _destination = null;
           _companions = const [];
+          _draftRouteOptions = const [];
+          _selectedDraftRouteIndex = 0;
+          _draftRoutePlaceId = null;
         });
       }
       await _enterPendingJourney(
@@ -1350,6 +1497,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     final journeyId = journeys.currentJourney!.id;
+    _promoteSelectedRoute(journeys.currentJourney!);
     final invites = context.read<InviteProvider>();
     invites.resetInviteSession();
     var failedInvites = 0;
@@ -1516,6 +1664,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         types: const ['journey'],
       ),
       asDraft: false,
+      routeJourneyId: journey.id,
     );
   }
 
@@ -1787,9 +1936,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _invalidateDestinationRouteWork();
     unawaited(_clearDestinationAnnotations());
     unawaited(_clearPreviewRoute());
+    context.read<MapProvider>().clearRoutePreference();
     setState(() {
       _destination = null;
       _companions = const [];
+      _draftRouteOptions = const [];
+      _selectedDraftRouteIndex = 0;
+      _draftRoutePlaceId = null;
     });
     unawaited(_recenter());
   }
@@ -1896,10 +2049,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : _ReadyJourneySheet(
                 destinationTitle: _destinationTitle(_destination!.displayName),
                 companions: _companions,
+                routeOptions: _draftRouteOptions,
+                selectedRouteIndex: _selectedDraftRouteIndex,
                 isStarting: _isStarting,
                 isRouteLoading: isRouteLoading,
                 onClose: _clearDraft,
                 onChooseCompanions: _chooseCompanions,
+                onRouteSelected: (index) => unawaited(_selectDraftRoute(index)),
                 onStart: _startJourney,
               ),
     };
@@ -2798,19 +2954,25 @@ class _ReadyJourneySheet extends StatelessWidget {
   const _ReadyJourneySheet({
     required this.destinationTitle,
     required this.companions,
+    required this.routeOptions,
+    required this.selectedRouteIndex,
     required this.isStarting,
     required this.isRouteLoading,
     required this.onClose,
     required this.onChooseCompanions,
+    required this.onRouteSelected,
     required this.onStart,
   });
 
   final String destinationTitle;
   final List<_SelectedCompanion> companions;
+  final List<RouteResultModel> routeOptions;
+  final int selectedRouteIndex;
   final bool isStarting;
   final bool isRouteLoading;
   final VoidCallback onClose;
   final VoidCallback onChooseCompanions;
+  final ValueChanged<int> onRouteSelected;
   final VoidCallback onStart;
 
   @override
@@ -2925,6 +3087,14 @@ class _ReadyJourneySheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
+          ],
+          if (!isRouteLoading && routeOptions.isNotEmpty) ...[
+            RouteAlternativesPicker(
+              routes: routeOptions,
+              selectedIndex: selectedRouteIndex,
+              onSelected: onRouteSelected,
+            ),
+            const SizedBox(height: 18),
           ],
           Align(
             alignment: Alignment.centerRight,
