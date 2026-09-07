@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/layout/tulink_breakpoints.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../domain/entities/journey.dart';
 
@@ -38,6 +39,7 @@ class CompletedJourneyOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
     final subtitle = journey.destinationSubtitle;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
 
     return Stack(
       children: [
@@ -50,11 +52,15 @@ class CompletedJourneyOverlay extends StatelessWidget {
           ),
         ),
         Align(
-          alignment: Alignment.bottomCenter,
+          alignment: isWideLandscape
+              ? Alignment.bottomLeft
+              : Alignment.bottomCenter,
           child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            minimum: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: isWideLandscape ? 520 : null,
               child: Container(
+                key: const Key('completed-journey-card'),
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
                 decoration: BoxDecoration(
                   color: colors.surface,

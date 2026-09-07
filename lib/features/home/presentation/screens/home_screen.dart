@@ -1039,9 +1039,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context: context,
         barrierColor: Colors.black.withValues(alpha: .46),
         builder: (_) => Dialog(
-          alignment: Alignment.centerLeft,
+          alignment: Alignment.bottomLeft,
           clipBehavior: Clip.antiAlias,
-          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
           ),
@@ -1224,9 +1224,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context: context,
       barrierColor: Colors.black.withValues(alpha: .46),
       builder: (_) => Dialog(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.bottomLeft,
         clipBehavior: Clip.antiAlias,
-        insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+        insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         child: picker,
       ),
@@ -1527,9 +1527,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context: context,
         barrierColor: Colors.black.withValues(alpha: .46),
         builder: (_) => Dialog(
-          alignment: Alignment.centerLeft,
+          alignment: Alignment.bottomLeft,
           clipBehavior: Clip.antiAlias,
-          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 32),
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
           ),
@@ -2289,40 +2289,40 @@ class _JoinJourneyCodeSheetState extends State<JoinJourneyCodeSheet> {
                   ),
               ],
             ),
-          const SizedBox(height: 6),
-          Text(
-            'Enter the 10-character code shared by the journey leader.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.characters,
-            textAlign: TextAlign.center,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(
-                RegExp('[2-9A-HJ-NP-Za-hj-np-z]'),
+            const SizedBox(height: 6),
+            Text(
+              'Enter the 10-character code shared by the journey leader.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              textAlign: TextAlign.center,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                  RegExp('[2-9A-HJ-NP-Za-hj-np-z]'),
+                ),
+                LengthLimitingTextInputFormatter(10),
+              ],
+              style: const TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 3.2,
               ),
-              LengthLimitingTextInputFormatter(10),
-            ],
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 3.2,
+              decoration: InputDecoration(
+                hintText: 'JOURNEY CODE',
+                errorText: _validationError,
+              ),
+              onChanged: (_) {
+                if (_validationError != null) {
+                  setState(() => _validationError = null);
+                }
+              },
+              onSubmitted: _submitting ? null : (_) => _submit(),
             ),
-            decoration: InputDecoration(
-              hintText: 'JOURNEY CODE',
-              errorText: _validationError,
-            ),
-            onChanged: (_) {
-              if (_validationError != null) {
-                setState(() => _validationError = null);
-              }
-            },
-            onSubmitted: _submitting ? null : (_) => _submit(),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerRight,
               child: SizedBox(
@@ -2689,12 +2689,18 @@ class _HomeJourneySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
     return Container(
       width: double.infinity,
+      margin: isWideLandscape
+          ? const EdgeInsets.only(bottom: 16)
+          : EdgeInsets.zero,
       padding: EdgeInsets.fromLTRB(20, 10, 20, 12),
       decoration: BoxDecoration(
         color: colors.warmSand,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: isWideLandscape
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x14000000),
@@ -2707,16 +2713,17 @@ class _HomeJourneySheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: colors.divider,
-                borderRadius: BorderRadius.circular(99),
+          if (!isWideLandscape)
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: colors.divider,
+                  borderRadius: BorderRadius.circular(99),
+                ),
               ),
             ),
-          ),
           if (activeJourney != null &&
               (activeJourney!.status == JourneyStatus.PENDING ||
                   activeJourney!.status == JourneyStatus.ACTIVE)) ...[
@@ -2979,83 +2986,94 @@ class _JourneyHistoryMapSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+
+    Widget buildPanel(ScrollController? scrollController) {
+      return DecoratedBox(
+        decoration: _mapSheetDecoration(colors, floating: isWideLandscape),
+        child: RefreshIndicator(
+          onRefresh: onRefresh,
+          color: colors.routeTeal,
+          child: CustomScrollView(
+            controller: scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _MapSheetHeader(title: 'Journeys')),
+              if (isLoading && journeys.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: colors.routeTeal),
+                  ),
+                )
+              else if (error != null && journeys.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _OverlayMessage(
+                    icon: Icons.cloud_off_rounded,
+                    title: 'Journeys are unavailable',
+                    message: error!,
+                    actionLabel: 'Try again',
+                    onAction: onRefresh,
+                  ),
+                )
+              else if (journeys.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _OverlayMessage(
+                    icon: Icons.route_rounded,
+                    title: 'No journeys yet',
+                    message: 'Choose a destination on the map to get moving.',
+                  ),
+                )
+              else ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
+                  sliver: SliverList.separated(
+                    itemCount: journeys.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: colors.divider.withValues(alpha: .8),
+                    ),
+                    itemBuilder: (context, index) {
+                      final journey = journeys[index];
+                      return _JourneyOverlayRow(
+                        journey: journey,
+                        isSelected: selectedJourneyId == journey.id,
+                        isLoading:
+                            isPreviewLoading && selectedJourneyId == journey.id,
+                        hasError: previewErrorJourneyId == journey.id,
+                        isPrimary: index == 0,
+                        currentUserId: currentUserId,
+                        onPreview: () => onPreview(journey),
+                        onOpen: () => onOpen(journey),
+                        onRepeat: () => onRepeat(journey),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isWideLandscape) {
+      final height = (140.0 + journeys.length * 100).clamp(300.0, 520.0);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: SizedBox(height: height, child: buildPanel(null)),
+      );
+    }
+
     return DraggableScrollableSheet(
       initialChildSize: .43,
       minChildSize: .115,
       maxChildSize: .78,
       snap: true,
       snapSizes: const [.115, .43, .78],
-      builder: (context, scrollController) {
-        return DecoratedBox(
-          decoration: _mapSheetDecoration(colors),
-          child: RefreshIndicator(
-            onRefresh: onRefresh,
-            color: colors.routeTeal,
-            child: CustomScrollView(
-              controller: scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(child: _MapSheetHeader(title: 'Journeys')),
-                if (isLoading && journeys.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: CircularProgressIndicator(color: colors.routeTeal),
-                    ),
-                  )
-                else if (error != null && journeys.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _OverlayMessage(
-                      icon: Icons.cloud_off_rounded,
-                      title: 'Journeys are unavailable',
-                      message: error!,
-                      actionLabel: 'Try again',
-                      onAction: onRefresh,
-                    ),
-                  )
-                else if (journeys.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _OverlayMessage(
-                      icon: Icons.route_rounded,
-                      title: 'No journeys yet',
-                      message: 'Choose a destination on the map to get moving.',
-                    ),
-                  )
-                else ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 10),
-                    sliver: SliverList.separated(
-                      itemCount: journeys.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        color: colors.divider.withValues(alpha: .8),
-                      ),
-                      itemBuilder: (context, index) {
-                        final journey = journeys[index];
-                        return _JourneyOverlayRow(
-                          journey: journey,
-                          isSelected: selectedJourneyId == journey.id,
-                          isLoading:
-                              isPreviewLoading &&
-                              selectedJourneyId == journey.id,
-                          hasError: previewErrorJourneyId == journey.id,
-                          isPrimary: index == 0,
-                          currentUserId: currentUserId,
-                          onPreview: () => onPreview(journey),
-                          onOpen: () => onOpen(journey),
-                          onRepeat: () => onRepeat(journey),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (_, scrollController) => buildPanel(scrollController),
     );
   }
 }
@@ -3229,82 +3247,93 @@ class _InvitationsMapSheet extends StatelessWidget {
     final colors = Theme.of(context).tulinkColors;
     final provider = context.watch<InviteProvider>();
     final invitations = provider.invitations;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+
+    Widget buildPanel(ScrollController? scrollController) {
+      return DecoratedBox(
+        decoration: _mapSheetDecoration(colors, floating: isWideLandscape),
+        child: RefreshIndicator(
+          onRefresh: onRefresh,
+          color: colors.routeTeal,
+          child: CustomScrollView(
+            controller: scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: _MapSheetHeader(
+                  title: 'Invites',
+                  count: invitations.length,
+                ),
+              ),
+              if (provider.isLoadingInvitations && invitations.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: colors.routeTeal),
+                  ),
+                )
+              else if (provider.invitationsError != null && invitations.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _OverlayMessage(
+                    icon: Icons.cloud_off_rounded,
+                    title: 'Invites are unavailable',
+                    message: provider.invitationsError!,
+                    actionLabel: 'Try again',
+                    onAction: onRefresh,
+                  ),
+                )
+              else if (invitations.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _OverlayMessage(
+                    icon: Icons.mail_outline_rounded,
+                    title: 'No invitations',
+                    message: 'New journey invitations will appear here.',
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
+                  sliver: SliverList.separated(
+                    itemCount: invitations.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: colors.divider.withValues(alpha: .8),
+                    ),
+                    itemBuilder: (context, index) {
+                      final invitation = invitations[index];
+                      return _InvitationOverlayRow(
+                        invitation: invitation,
+                        isPrimary: index == 0,
+                        isBusy: provider.isAccepting || provider.isDeclining,
+                        onAccept: () => onAccept(invitation),
+                        onDecline: () => onDecline(invitation),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (isWideLandscape) {
+      final height = (170.0 + invitations.length * 110).clamp(300.0, 520.0);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: SizedBox(height: height, child: buildPanel(null)),
+      );
+    }
+
     return DraggableScrollableSheet(
       initialChildSize: invitations.isEmpty ? .36 : .48,
       minChildSize: .115,
       maxChildSize: .78,
       snap: true,
       snapSizes: [.115, invitations.isEmpty ? .36 : .48, .78],
-      builder: (context, scrollController) {
-        return DecoratedBox(
-          decoration: _mapSheetDecoration(colors),
-          child: RefreshIndicator(
-            onRefresh: onRefresh,
-            color: colors.routeTeal,
-            child: CustomScrollView(
-              controller: scrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _MapSheetHeader(
-                    title: 'Invites',
-                    count: invitations.length,
-                  ),
-                ),
-                if (provider.isLoadingInvitations && invitations.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: CircularProgressIndicator(color: colors.routeTeal),
-                    ),
-                  )
-                else if (provider.invitationsError != null &&
-                    invitations.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _OverlayMessage(
-                      icon: Icons.cloud_off_rounded,
-                      title: 'Invites are unavailable',
-                      message: provider.invitationsError!,
-                      actionLabel: 'Try again',
-                      onAction: onRefresh,
-                    ),
-                  )
-                else if (invitations.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _OverlayMessage(
-                      icon: Icons.mail_outline_rounded,
-                      title: 'No invitations',
-                      message: 'New journey invitations will appear here.',
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
-                    sliver: SliverList.separated(
-                      itemCount: invitations.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        color: colors.divider.withValues(alpha: .8),
-                      ),
-                      itemBuilder: (context, index) {
-                        final invitation = invitations[index];
-                        return _InvitationOverlayRow(
-                          invitation: invitation,
-                          isPrimary: index == 0,
-                          isBusy: provider.isAccepting || provider.isDeclining,
-                          onAccept: () => onAccept(invitation),
-                          onDecline: () => onDecline(invitation),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+      builder: (_, scrollController) => buildPanel(scrollController),
     );
   }
 }
@@ -3547,9 +3576,14 @@ class _InitialAvatar extends StatelessWidget {
   }
 }
 
-BoxDecoration _mapSheetDecoration(TulinkColors colors) => BoxDecoration(
+BoxDecoration _mapSheetDecoration(
+  TulinkColors colors, {
+  bool floating = false,
+}) => BoxDecoration(
   color: colors.warmSand,
-  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+  borderRadius: floating
+      ? BorderRadius.circular(24)
+      : const BorderRadius.vertical(top: Radius.circular(28)),
   boxShadow: const [
     BoxShadow(color: Color(0x18000000), blurRadius: 28, offset: Offset(0, -8)),
   ],

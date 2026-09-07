@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/layout/tulink_breakpoints.dart';
 import '../../../../core/services/car_toast_service.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../../../core/navigation/navigation_helper.dart';
@@ -50,360 +51,401 @@ class _JourneyDetailsScreenState extends State<JourneyDetailsScreen> {
     final journey = widget.journey;
     final showDoneButton = widget.showDoneButton;
     final showJourneyStats = journey.status == JourneyStatus.COMPLETED;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
 
     return Scaffold(
       backgroundColor: colors.warmSand,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // App Bar
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      tooltip: 'Back',
-                      icon: Icon(Icons.arrow_back, color: colors.ink, size: 24),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'Journey Details',
-                      style: TextStyle(
-                        color: colors.ink,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+      body: Align(
+        alignment: isWideLandscape ? Alignment.centerLeft : Alignment.topCenter,
+        child: Padding(
+          padding: isWideLandscape ? const EdgeInsets.all(16) : EdgeInsets.zero,
+          child: Container(
+            key: const Key('journey-recap-panel'),
+            width: isWideLandscape ? 760 : null,
+            height: isWideLandscape
+                ? MediaQuery.sizeOf(context).height - 32
+                : null,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: colors.warmSand,
+              borderRadius: isWideLandscape
+                  ? BorderRadius.circular(24)
+                  : BorderRadius.zero,
+              border: isWideLandscape
+                  ? Border.all(color: colors.divider)
+                  : null,
+              boxShadow: isWideLandscape
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x18000000),
+                        blurRadius: 24,
+                        offset: Offset(0, 8),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // App Bar
+                  SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            tooltip: 'Back',
+                            icon: Icon(
+                              Icons.arrow_back,
+                              color: colors.ink,
+                              size: 24,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Journey Details',
+                            style: TextStyle(
+                              color: colors.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          const SizedBox(width: 48), // Balance the back button
+                        ],
                       ),
                     ),
-                    const Spacer(),
-                    const SizedBox(width: 48), // Balance the back button
-                  ],
-                ),
-              ),
-            ),
+                  ),
 
-            // Compact Map View
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.divider),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: JourneyDestinationBanner(journey: journey),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Journey Title and Status
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      journey.name,
-                      style: TextStyle(
-                        color: colors.ink,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  // Compact Map View
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colors.divider),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: JourneyDestinationBanner(journey: journey),
                     ),
                   ),
-                  StatusIndicator(
-                    status: journey.status,
-                    fontSize: 12,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 8),
+                  const SizedBox(height: 20),
 
-            // Subtitle
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Text(
-                    'CONVOY • ',
-                    style: TextStyle(
-                      color: colors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Text(
-                    journey.createdAt != null
-                        ? 'CREATED ${_getTimeAgo(journey.createdAt)}'
-                        : 'CREATED RECENTLY',
-                    style: TextStyle(
-                      color: colors.muted,
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Destination Card (without edit button)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colors.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: colors.divider),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.location_on, color: colors.sunsetOrange, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  // Journey Title and Status
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
                       children: [
-                        Text(
-                          'DESTINATION',
-                          style: TextStyle(
-                            color: colors.muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: Text(
+                            journey.name,
+                            style: TextStyle(
+                              color: colors.ink,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          journey.destinationLabel,
-                          style: TextStyle(
-                            color: colors.ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                        StatusIndicator(
+                          status: journey.status,
+                          fontSize: 12,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
-            // Journey Info Cards Row
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoCard(
-                      colors,
-                      'TYPE',
-                      'Convoy',
-                      Icons.route,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildInfoCard(
-                      colors,
-                      'LAG LIMIT',
-                      '${journey.lagThresholdMeters}m',
-                      Icons.speed,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _buildInfoCard(
-                      colors,
-                      'DRIVERS',
-                      '${journey.participants?.length ?? 1}',
-                      Icons.group,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Journey Stats Section — only shown on post-trip summary
-            if (showJourneyStats) ...[
-              const SizedBox(height: 16),
-              Consumer<AnalyticsProvider>(
-                builder: (context, analytics, _) {
-                  if (analytics.isSummaryLoading) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-                  final summary = analytics.currentSummary;
-                  if (summary == null) {
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colors.surface,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: colors.divider),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              analytics.summaryError ??
-                                  'Journey statistics are still being prepared.',
-                              style: TextStyle(color: colors.muted),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () =>
-                                analytics.loadJourneySummary(journey.id),
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  // Subtitle
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
                       children: [
                         Text(
-                          'TRIP STATS',
+                          'CONVOY • ',
                           style: TextStyle(
                             color: colors.muted,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
+                            letterSpacing: 0.5,
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'LEADER DISTANCE',
-                                summary.distanceDisplay,
-                                Icons.straighten,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'DURATION',
-                                summary.durationDisplay,
-                                Icons.timer,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'LEADER AVG SPEED',
-                                summary.avgSpeedDisplay,
-                                Icons.speed,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'LAG ALERTS',
-                                summary.lagAlertCount.toString(),
-                                Icons.warning_amber,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'DRIVERS',
-                                summary.participantCount.toString(),
-                                Icons.group,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildStatCard(
-                                colors,
-                                'COMPLETED',
-                                _formatDateTime(summary.endTime),
-                                Icons.flag,
-                              ),
-                            ),
-                          ],
+                        Text(
+                          journey.createdAt != null
+                              ? 'CREATED ${_getTimeAgo(journey.createdAt)}'
+                              : 'CREATED RECENTLY',
+                          style: TextStyle(
+                            color: colors.muted,
+                            fontSize: 12,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ],
                     ),
-                  );
-                },
-              ),
-            ],
-
-            const SizedBox(height: 20),
-
-            // Done Button (for completed journeys)
-            if (showDoneButton) ...[
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                child: ElevatedButton(
-                  onPressed: _isReturningHome
-                      ? null
-                      : () => _navigateToHomeAndRefresh(context),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
                   ),
-                  child: _isReturningHome
-                      ? SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(
-                            color: colors.surface,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text(
-                          'Done',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+
+                  const SizedBox(height: 20),
+
+                  // Destination Card (without edit button)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colors.divider),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          color: colors.sunsetOrange,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'DESTINATION',
+                                style: TextStyle(
+                                  color: colors.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                journey.destinationLabel,
+                                style: TextStyle(
+                                  color: colors.ink,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Journey Info Cards Row
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildInfoCard(
+                            colors,
+                            'TYPE',
+                            'Convoy',
+                            Icons.route,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildInfoCard(
+                            colors,
+                            'LAG LIMIT',
+                            '${journey.lagThresholdMeters}m',
+                            Icons.speed,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildInfoCard(
+                            colors,
+                            'DRIVERS',
+                            '${journey.participants?.length ?? 1}',
+                            Icons.group,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Journey Stats Section — only shown on post-trip summary
+                  if (showJourneyStats) ...[
+                    const SizedBox(height: 16),
+                    Consumer<AnalyticsProvider>(
+                      builder: (context, analytics, _) {
+                        if (analytics.isSummaryLoading) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        }
+                        final summary = analytics.currentSummary;
+                        if (summary == null) {
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: colors.surface,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: colors.divider),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    analytics.summaryError ??
+                                        'Journey statistics are still being prepared.',
+                                    style: TextStyle(color: colors.muted),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      analytics.loadJourneySummary(journey.id),
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'TRIP STATS',
+                                style: TextStyle(
+                                  color: colors.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'LEADER DISTANCE',
+                                      summary.distanceDisplay,
+                                      Icons.straighten,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'DURATION',
+                                      summary.durationDisplay,
+                                      Icons.timer,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'LEADER AVG SPEED',
+                                      summary.avgSpeedDisplay,
+                                      Icons.speed,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'LAG ALERTS',
+                                      summary.lagAlertCount.toString(),
+                                      Icons.warning_amber,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'DRIVERS',
+                                      summary.participantCount.toString(),
+                                      Icons.group,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      colors,
+                                      'COMPLETED',
+                                      _formatDateTime(summary.endTime),
+                                      Icons.flag,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+
+                  // Done Button (for completed journeys)
+                  if (showDoneButton) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      child: ElevatedButton(
+                        onPressed: _isReturningHome
+                            ? null
+                            : () => _navigateToHomeAndRefresh(context),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _isReturningHome
+                            ? SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  color: colors.surface,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Done',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 40), // Extra padding for bottom
+                  ],
+                ],
               ),
-              const SizedBox(height: 40), // Extra padding for bottom
-            ],
-          ],
+            ),
+          ),
         ),
       ),
     );
