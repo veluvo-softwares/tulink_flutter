@@ -114,6 +114,23 @@ void main() {
     expect(find.text('View details'), findsNothing);
     expect(find.text('Done'), findsOneWidget);
   });
+
+  testWidgets('anchors the summary within thumb reach on a wide tablet', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1366, 1024);
+    addTearDown(tester.view.reset);
+
+    await pump(tester, onDismiss: () {}, onViewDetails: () {});
+
+    final card = tester.getRect(
+      find.byKey(const Key('completed-journey-card')),
+    );
+    expect(card.left, 16);
+    expect(card.width, 520);
+    expect(card.bottom, 1008);
+  });
 }
 
 class _RecordingNavigatorObserver extends NavigatorObserver {

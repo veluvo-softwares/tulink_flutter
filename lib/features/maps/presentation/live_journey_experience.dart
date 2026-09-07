@@ -7,6 +7,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/di/service_locator.dart';
+import '../../../core/layout/tulink_breakpoints.dart';
 import '../../../core/services/car_toast_service.dart';
 import '../../../core/services/journey_location_service.dart';
 import '../../../core/services/location_service.dart';
@@ -1796,9 +1797,15 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
   /// Show confirmation dialog for ending journey
   void _showEndJourneyConfirmation() {
-    showDialog(
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+    showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        alignment: isWideLandscape ? Alignment.bottomLeft : null,
+        insetPadding: isWideLandscape ? const EdgeInsets.all(16) : null,
+        constraints: isWideLandscape
+            ? const BoxConstraints(maxWidth: 480)
+            : null,
         backgroundColor: const Color(0xFF1A1A1A),
         title: const Text(
           'End Journey?',
@@ -1829,9 +1836,15 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   }
 
   void _showLeaveJourneyConfirmation() {
-    showDialog(
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+    showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        alignment: isWideLandscape ? Alignment.bottomLeft : null,
+        insetPadding: isWideLandscape ? const EdgeInsets.all(16) : null,
+        constraints: isWideLandscape
+            ? const BoxConstraints(maxWidth: 480)
+            : null,
         backgroundColor: const Color(0xFF1A1A1A),
         title: const Text(
           'Leave Journey?',
@@ -1945,6 +1958,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         currentJourney != null &&
         currentUserId.isNotEmpty &&
         currentJourney.leaderId == currentUserId;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+    final safeTop = MediaQuery.paddingOf(context).top;
+    const wideChromeWidth = 520.0;
 
     // Marker updates are driven by didChangeDependencies(), not build().
 
@@ -1963,26 +1979,31 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         if (currentJourney != null &&
             currentJourney.status == JourneyStatus.ACTIVE)
           Align(
-            alignment: Alignment.topCenter,
-            child: GestureDetector(
-              onLongPress: _showConvoyManagementOptions,
-              child: ConvoyStatusBar(
-                snapshot: convoySnapshot,
-                rosterMemberCount: _rosterMemberCount(currentJourney),
-                connectionState: convoyConnectionState,
-                // Back collapses chrome; it must never reach the exit path,
-                // which tears the journey down and clears the draft.
-                onBack: widget.onBack,
-                locationFailure: context
-                    .watch<ConvoyProvider>()
-                    .locationFailure,
-                onRetryLocation: _retryLocation,
-                journeyId: currentJourney.id,
-                connectionAttemptId: context
-                    .watch<ConvoyProvider>()
-                    .connectionAttemptId,
-                onReconnect: () => _reconnectConvoy(currentJourney.id),
-                isReconnecting: _isReconnectingConvoy,
+            alignment: isWideLandscape
+                ? Alignment.topLeft
+                : Alignment.topCenter,
+            child: SizedBox(
+              width: isWideLandscape ? wideChromeWidth : null,
+              child: GestureDetector(
+                onLongPress: _showConvoyManagementOptions,
+                child: ConvoyStatusBar(
+                  snapshot: convoySnapshot,
+                  rosterMemberCount: _rosterMemberCount(currentJourney),
+                  connectionState: convoyConnectionState,
+                  // Back collapses chrome; it must never reach the exit path,
+                  // which tears the journey down and clears the draft.
+                  onBack: widget.onBack,
+                  locationFailure: context
+                      .watch<ConvoyProvider>()
+                      .locationFailure,
+                  onRetryLocation: _retryLocation,
+                  journeyId: currentJourney.id,
+                  connectionAttemptId: context
+                      .watch<ConvoyProvider>()
+                      .connectionAttemptId,
+                  onReconnect: () => _reconnectConvoy(currentJourney.id),
+                  isReconnecting: _isReconnectingConvoy,
+                ),
               ),
             ),
           ),
@@ -1992,17 +2013,16 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
             currentJourney.status == JourneyStatus.ACTIVE &&
             !_currentUserHasArrived)
           Positioned(
-            top: MediaQuery.of(context).padding.top + 100,
+            top: safeTop + 100,
             left: 0,
-            right: 0,
+            right: isWideLandscape ? null : 0,
+            width: isWideLandscape ? wideChromeWidth : null,
             child: Consumer<NavigationProvider>(
-              builder: (context, nav, _) {
-                return TurnInstructionCard(
-                  progress: nav.currentProgress,
-                  isVoiceEnabled: nav.isVoiceEnabled,
-                  onToggleVoice: () => nav.setVoiceEnabled(!nav.isVoiceEnabled),
-                );
-              },
+              builder: (context, nav, _) => TurnInstructionCard(
+                progress: nav.currentProgress,
+                isVoiceEnabled: nav.isVoiceEnabled,
+                onToggleVoice: () => nav.setVoiceEnabled(!nav.isVoiceEnabled),
+              ),
             ),
           ),
 
@@ -2083,23 +2103,34 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         if (currentJourney != null &&
             currentJourney.status == JourneyStatus.ACTIVE)
           Align(
-            alignment: Alignment.bottomCenter,
-            child: Consumer<NavigationProvider>(
-              builder: (context, navigation, _) => JourneyProgressCard(
-                journey: currentJourney,
-                convoySnapshot: convoySnapshot,
-                currentUserId: currentUserId,
-                isLeader: isLeader,
-                routeProgress: navigation.currentProgress,
-                lastKnownProgress: navigation.lastKnownProgress,
-                onEndJourney: _showEndJourneyConfirmation,
-                onLeaveJourney: _showLeaveJourneyConfirmation,
-                isActionInProgress: _isJourneyExitInProgress,
-                isExpanded: _isProgressCardExpanded,
-                onToggleExpanded: () => setState(
-                  () => _isProgressCardExpanded = !_isProgressCardExpanded,
+            alignment: isWideLandscape
+                ? Alignment.bottomLeft
+                : Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              minimum: isWideLandscape
+                  ? const EdgeInsets.fromLTRB(16, 0, 0, 16)
+                  : EdgeInsets.zero,
+              child: SizedBox(
+                width: isWideLandscape ? wideChromeWidth : null,
+                child: Consumer<NavigationProvider>(
+                  builder: (context, navigation, _) => JourneyProgressCard(
+                    journey: currentJourney,
+                    convoySnapshot: convoySnapshot,
+                    currentUserId: currentUserId,
+                    isLeader: isLeader,
+                    routeProgress: navigation.currentProgress,
+                    lastKnownProgress: navigation.lastKnownProgress,
+                    onEndJourney: _showEndJourneyConfirmation,
+                    onLeaveJourney: _showLeaveJourneyConfirmation,
+                    isActionInProgress: _isJourneyExitInProgress,
+                    isExpanded: _isProgressCardExpanded,
+                    onToggleExpanded: () => setState(
+                      () => _isProgressCardExpanded = !_isProgressCardExpanded,
+                    ),
+                    onMemberTap: (member) => unawaited(_focusOnMember(member)),
+                  ),
                 ),
-                onMemberTap: (member) => unawaited(_focusOnMember(member)),
               ),
             ),
           ),
