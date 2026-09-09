@@ -39,6 +39,7 @@ abstract class MapRepository {
     required double destinationLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   });
 
   /// The route already stored for this journey, if one matches the

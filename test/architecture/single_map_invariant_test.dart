@@ -398,7 +398,7 @@ void main() {
   });
 
   group('live route ownership', () {
-    test('each client calculates from its own fix, not the leader route', () {
+    test('followers can use the canonical route or their own route', () {
       final live = File(
         'lib/features/maps/presentation/live_journey_experience.dart',
       ).readAsStringSync();
@@ -410,8 +410,9 @@ void main() {
       expect(routeSetup.contains('mapProvider.fetchRoute('), isTrue);
       expect(routeSetup.contains('originLat: originLat'), isTrue);
       expect(routeSetup.contains('originLng: originLng'), isTrue);
-      expect(routeSetup.contains('fetchCanonicalRoute'), isFalse);
-      expect(routeSetup.contains('replaceCanonicalRoute'), isFalse);
+      expect(routeSetup.contains('fetchCanonicalRoute'), isTrue);
+      expect(routeSetup.contains('replaceCanonicalRoute'), isTrue);
+      expect(routeSetup.contains('followsLeaderRoute'), isTrue);
     });
   });
 
