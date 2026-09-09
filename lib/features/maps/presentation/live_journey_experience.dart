@@ -151,6 +151,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   /// startup. Both lifecycle paths run during the same navigation transition.
   Future<void>? _routeSetupFuture;
   String? _routeSetupJourneyId;
+  Timer? _canonicalRouteRetryTimer;
 
   /// Invalidates route work that started before a confirmed end or leave.
   /// A follower can receive `journey-ended` while `/maps/route` is still in
@@ -632,9 +633,6 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     // rebuilt cannot paint the new one.
     final generation = _mapGeneration;
 
-    // A live route belongs to this device, not to the convoy leader. Peer
-    // locations are rendered as markers only; their route geometry must never
-    // become the local driver's navigation line.
     final latest = _journeyLocationService.latestPosition;
     final originLat = knownLat ?? latest?.latitude;
     final originLng = knownLng ?? latest?.longitude;
@@ -644,7 +642,43 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       return;
     }
 
-    final route = await mapProvider.fetchRoute(
+    final isLeader = journey.leaderId == userId;
+    final followsLeader =
+        isLeader || mapProvider.followsLeaderRoute(journey.id);
+    RouteResultModel? route;
+
+    if (followsLeader) {
+      route = await mapProvider.fetchCanonicalRoute(
+        userId: userId,
+        journeyId: journey.id,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+        surfaceGeneration: generation,
+      );
+
+      // The first live draw publishes the leader's selected preview option as
+      // the canonical convoy route. Followers can read it but the backend
+      // rejects this mutation for everyone except the journey leader.
+      if (route == null && isLeader) {
+        route = await mapProvider.replaceCanonicalRoute(
+          userId: userId,
+          journeyId: journey.id,
+          originLat: mapProvider.preferredRouteOriginLat ?? originLat,
+          originLng: mapProvider.preferredRouteOriginLng ?? originLng,
+          destLat: journey.destination.latitude,
+          destLng: journey.destination.longitude,
+          baseVersion: 0,
+          reason: 'INITIAL',
+          routeIndex: mapProvider.preferredRouteIndex,
+          surfaceGeneration: generation,
+        );
+        if (route != null) mapProvider.clearRoutePreference();
+      }
+    }
+
+    // A follower who opts out — or a member who arrives before the leader has
+    // published the shared route — still receives useful local navigation.
+    route ??= await mapProvider.fetchRoute(
       userId: userId,
       journeyId: journey.id,
       originLat: originLat,
@@ -653,6 +687,12 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       destLng: journey.destination.longitude,
       surfaceGeneration: generation,
     );
+    if (isLeader && route?.canonicalVersion == null) {
+      _scheduleCanonicalRouteRetry(journey);
+    } else if (route?.canonicalVersion != null) {
+      _canonicalRouteRetryTimer?.cancel();
+      _canonicalRouteRetryTimer = null;
+    }
     if (!isCurrentRouteDraw() || generation != _mapGeneration) return;
 
     if (route == null || !mounted || _mapboxMap == null) return;
@@ -742,8 +782,22 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         route: route,
         journeyId: journey.id,
         onRerouteNeeded: () => _handleReroute(journey),
+        rerouteOnDeviation:
+            isLeader || !mapProvider.followsLeaderRoute(journey.id),
       );
     }
+  }
+
+  void _scheduleCanonicalRouteRetry(Journey journey) {
+    if (_canonicalRouteRetryTimer?.isActive ?? false) return;
+    _canonicalRouteRetryTimer = Timer(const Duration(seconds: 15), () {
+      _canonicalRouteRetryTimer = null;
+      if (!mounted || _activeJourneyId != journey.id) return;
+      final userId = context.read<AuthProvider>().user?.id;
+      if (userId == null || journey.leaderId != userId) return;
+      _invalidateRouteDrawing();
+      unawaited(_drawActualRoute(journey));
+    });
   }
 
   /// Called by [NavigationProvider] when sustained off-route is detected.
@@ -755,6 +809,18 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     if (!mounted) return;
     final userId = context.read<AuthProvider>().user?.id;
     if (userId == null) return;
+    final mapProvider = context.read<MapProvider>();
+    final isFollowerFollowingLeader =
+        journey.leaderId != userId &&
+        mapProvider.followsLeaderRoute(journey.id);
+    if (isFollowerFollowingLeader) {
+      // The leader's path is advisory and remains visible when a follower
+      // deviates. A follower must never replace the convoy's canonical route.
+      AppLogger.info(
+        'Follower remains on canonical route guidance for ${journey.id}',
+      );
+      return;
+    }
     print('🧭 Handling reroute for journey ${journey.id}');
 
     // Grab the current position from the live navigation stream before clearing
@@ -776,10 +842,50 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     // The user-selected pre-departure route is no longer viable once they are
     // genuinely off it. Release that preference before requesting recovery.
-    context.read<MapProvider>().clearRoutePreference();
+    mapProvider.clearRoutePreference();
 
+    if (journey.leaderId == userId) {
+      final baseVersion = mapProvider.canonicalVersionFor(
+        userId: userId,
+        journeyId: journey.id,
+        destLat: journey.destination.latitude,
+        destLng: journey.destination.longitude,
+      );
+      if (baseVersion != null) {
+        final updated = await mapProvider.replaceCanonicalRoute(
+          userId: userId,
+          journeyId: journey.id,
+          originLat: originLat,
+          originLng: originLng,
+          destLat: journey.destination.latitude,
+          destLng: journey.destination.longitude,
+          baseVersion: baseVersion,
+          reason: 'LEADER_REROUTE',
+          surfaceGeneration: _mapGeneration,
+        );
+        if (updated == null) {
+          AppLogger.warning(
+            'Could not publish leader reroute for ${journey.id}',
+          );
+          return;
+        }
+      }
+    }
+
+    _invalidateRouteDrawing();
     await _drawActualRoute(journey, knownLat: originLat, knownLng: originLng);
     AppLogger.info('Device-scoped reroute fetched for ${journey.id}');
+  }
+
+  Future<void> _setFollowLeaderRoute(Journey journey, bool value) async {
+    if (!mounted) return;
+    final mapProvider = context.read<MapProvider>();
+    mapProvider.setFollowsLeaderRoute(journey.id, value);
+    _invalidateRouteDrawing();
+    mapProvider.clearRoute();
+    await _navigationProvider?.stopNavigation();
+    if (!mounted) return;
+    await _drawActualRoute(journey);
   }
 
   void _invalidateRouteDrawing() {
@@ -934,8 +1040,14 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         journey.status != JourneyStatus.ACTIVE) {
       return;
     }
-    // A server route update is only a signal to refresh. Each client still
-    // calculates from its own latest fix, never from the sender's geometry.
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null) return;
+    final isLeader = journey.leaderId == userId;
+    if (!isLeader &&
+        !context.read<MapProvider>().followsLeaderRoute(journey.id)) {
+      return;
+    }
+    _invalidateRouteDrawing();
     await _drawActualRoute(journey);
   }
 
@@ -1397,6 +1509,10 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     if (currentJourney != null &&
         currentJourney.status == JourneyStatus.ACTIVE) {
       final isNewJourney = _activeJourneyId != currentJourney.id;
+      if (isNewJourney) {
+        _canonicalRouteRetryTimer?.cancel();
+        _canonicalRouteRetryTimer = null;
+      }
       _activeJourneyId = currentJourney.id;
 
       // Note: do NOT disable the built-in puck here. It stays on until the
@@ -1423,6 +1539,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
 
     _activeJourneyId = null;
+    _canonicalRouteRetryTimer?.cancel();
+    _canonicalRouteRetryTimer = null;
     unawaited(_cameraFollowSubscription?.cancel());
     _cameraFollowSubscription = null;
   }
@@ -1922,6 +2040,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _stopInterpolationTicker();
     _navigationFrameTicker?.cancel();
     _navigationFrameTicker = null;
+    _canonicalRouteRetryTimer?.cancel();
+    _canonicalRouteRetryTimer = null;
     // Stop the camera-follow GPS stream — independent of convoy coordination
     _cameraFollowSubscription?.cancel();
     _cameraFollowSubscription = null;
@@ -1962,6 +2082,7 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
         currentJourney != null &&
         currentUserId.isNotEmpty &&
         currentJourney.leaderId == currentUserId;
+    final mapProvider = context.watch<MapProvider>();
     final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
     final safeTop = MediaQuery.paddingOf(context).top;
     const wideChromeWidth = 520.0;
@@ -2133,6 +2254,14 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
                       () => _isProgressCardExpanded = !_isProgressCardExpanded,
                     ),
                     onMemberTap: (member) => unawaited(_focusOnMember(member)),
+                    followsLeaderRoute: mapProvider.followsLeaderRoute(
+                      currentJourney.id,
+                    ),
+                    onFollowsLeaderRouteChanged: isLeader
+                        ? null
+                        : (value) => unawaited(
+                            _setFollowLeaderRoute(currentJourney, value),
+                          ),
                   ),
                 ),
               ),

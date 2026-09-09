@@ -175,10 +175,11 @@ class NavigationProvider with ChangeNotifier {
     required RouteResultModel route,
     required Future<void> Function() onRerouteNeeded,
     String? journeyId,
+    bool rerouteOnDeviation = true,
   }) async {
     print('🧭 NavigationProvider: starting navigation');
 
-    _onRerouteCallback = onRerouteNeeded;
+    _onRerouteCallback = rerouteOnDeviation ? onRerouteNeeded : null;
     _journeyId = journeyId;
     _activeRoute = route;
     await _restoreProgressCursor();

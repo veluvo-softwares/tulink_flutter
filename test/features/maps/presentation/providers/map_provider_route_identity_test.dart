@@ -366,11 +366,23 @@ void main() {
       destLng: 36,
       baseVersion: 3,
       reason: 'LEADER_REROUTE',
+      routeIndex: 2,
     );
 
     expect(repository.lastBaseVersion, 3);
     expect(repository.lastReason, 'LEADER_REROUTE');
+    expect(repository.lastRouteIndex, 2);
     expect(provider.currentRoute?.canonicalVersion, 4);
+  });
+
+  test('followers default on and retain their choice per journey', () {
+    expect(provider.followsLeaderRoute('A'), isTrue);
+    expect(provider.followsLeaderRoute('B'), isTrue);
+
+    provider.setFollowsLeaderRoute('A', false);
+
+    expect(provider.followsLeaderRoute('A'), isFalse);
+    expect(provider.followsLeaderRoute('B'), isTrue);
   });
 
   test(
@@ -418,6 +430,7 @@ class _FakeMapRepository implements MapRepository {
   final Map<String, Future<RouteResultModel?>> canonicalFor = {};
   final Map<String, Future<RouteResultModel?>> replacementFor = {};
   int? lastBaseVersion;
+  int? lastRouteIndex;
   String? lastReason;
   int routeCalls = 0;
   int cacheCalls = 0;
@@ -464,9 +477,11 @@ class _FakeMapRepository implements MapRepository {
     required double destinationLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   }) {
     lastBaseVersion = baseVersion;
     lastReason = reason;
+    lastRouteIndex = routeIndex;
     return replacementFor[journeyId] ?? Future.value(null);
   }
 

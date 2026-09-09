@@ -25,6 +25,8 @@ class JourneyProgressCard extends StatelessWidget {
     this.isExpanded = false,
     this.onToggleExpanded,
     this.onMemberTap,
+    this.followsLeaderRoute = true,
+    this.onFollowsLeaderRouteChanged,
   });
 
   final Journey journey;
@@ -48,6 +50,11 @@ class JourneyProgressCard extends StatelessWidget {
   /// Focuses the selected member directly on the map. Member identifiers are
   /// never exposed in an intermediate sheet.
   final ValueChanged<MemberPosition>? onMemberTap;
+
+  /// Device-level follower preference. The server-owned leader route is not
+  /// changed when a follower turns this off.
+  final bool followsLeaderRoute;
+  final ValueChanged<bool>? onFollowsLeaderRouteChanged;
 
   /// Whether the current user is one of the members marked ARRIVED.
   bool get _currentUserArrived {
@@ -142,6 +149,10 @@ class JourneyProgressCard extends StatelessWidget {
             _buildHeader(colors),
             const SizedBox(height: 16),
             _buildStats(colors),
+            if (!isLeader && onFollowsLeaderRouteChanged != null) ...[
+              const SizedBox(height: 16),
+              _buildFollowLeaderSwitch(colors),
+            ],
             const SizedBox(height: 16),
             _buildParticipants(colors),
             if (_shouldShowWaitingBanner) ...[
@@ -156,6 +167,60 @@ class JourneyProgressCard extends StatelessWidget {
               const SizedBox(height: 20),
               _buildEndJourneyButton(colors),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowLeaderSwitch(TulinkColors colors) {
+    return Semantics(
+      toggled: followsLeaderRoute,
+      label: 'Follow the leader',
+      hint: 'Use the route selected by the journey leader',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: colors.warmSand.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colors.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.alt_route, color: colors.routeTeal, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Follow the leader',
+                    style: TextStyle(
+                      color: colors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Use the route selected by the journey leader. '
+                    'Turn this off to use your own route.',
+                    style: TextStyle(
+                      color: colors.muted,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Switch.adaptive(
+              key: const ValueKey('follow-leader-route-switch'),
+              value: followsLeaderRoute,
+              activeTrackColor: colors.routeTeal,
+              onChanged: onFollowsLeaderRouteChanged,
+            ),
           ],
         ),
       ),

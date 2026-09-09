@@ -152,6 +152,7 @@ class MapRepositoryImpl implements MapRepository {
     required double destinationLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   }) async {
     if (!connectivityService.isOnline.value) return null;
     try {
@@ -161,6 +162,7 @@ class MapRepositoryImpl implements MapRepository {
         originLng: originLng,
         baseVersion: baseVersion,
         reason: reason,
+        routeIndex: routeIndex,
       );
       if (route == null) return null;
       await localDataSource.saveRoute(

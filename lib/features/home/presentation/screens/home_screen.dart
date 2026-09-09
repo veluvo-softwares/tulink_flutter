@@ -99,6 +99,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<RouteResultModel> _draftRouteOptions = const [];
   int _selectedDraftRouteIndex = 0;
   String? _draftRoutePlaceId;
+  LatLng? _draftRouteOrigin;
   bool _isStarting = false;
   bool _isEnteringLiveJourney = false;
 
@@ -880,6 +881,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _draftRoutePlaceId = place.placeId;
             _draftRouteOptions = routes;
             _selectedDraftRouteIndex = 0;
+            _draftRouteOrigin = LatLng(
+              latitude: originLat,
+              longitude: originLng,
+            );
           });
         }
         mapProvider.preferRoute(
@@ -888,6 +893,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           journeyId: routeJourneyId ?? 'draft-${place.placeId}',
           destLat: place.lat,
           destLng: place.lng,
+          originLat: originLat,
+          originLng: originLng,
+          routeIndex: selectedIndex,
           surfaceGeneration: generation,
         );
       }
@@ -1155,6 +1163,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _draftRouteOptions = const [];
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = selectedPlace.placeId;
+      _draftRouteOrigin = null;
     });
     await _showDestinationOnMap(selectedPlace);
   }
@@ -1189,6 +1198,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _draftRouteOptions = const [];
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = place.placeId;
+      _draftRouteOrigin = null;
     });
     await _showDestinationOnMap(place);
   }
@@ -1209,6 +1219,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       journeyId: 'draft-${destination.placeId}',
       destLat: destination.lat,
       destLng: destination.lng,
+      originLat: _draftRouteOrigin?.latitude,
+      originLng: _draftRouteOrigin?.longitude,
+      routeIndex: index,
       surfaceGeneration: _mapController.generation,
     );
     await _drawPreviewRoutes(_draftRouteOptions, selectedIndex: index);
@@ -1234,6 +1247,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       journeyId: journey.id,
       destLat: journey.destination.latitude,
       destLng: journey.destination.longitude,
+      originLat: _draftRouteOrigin?.latitude,
+      originLng: _draftRouteOrigin?.longitude,
+      routeIndex: _selectedDraftRouteIndex,
       surfaceGeneration: _mapController.generation,
     );
   }
@@ -1436,6 +1452,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _draftRouteOptions = const [];
           _selectedDraftRouteIndex = 0;
           _draftRoutePlaceId = null;
+          _draftRouteOrigin = null;
         });
       }
       await _enterPendingJourney(
@@ -1943,6 +1960,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _draftRouteOptions = const [];
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = null;
+      _draftRouteOrigin = null;
     });
     unawaited(_recenter());
   }
