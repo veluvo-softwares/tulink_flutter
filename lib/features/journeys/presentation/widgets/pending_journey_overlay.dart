@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/errors/failure.dart';
+import '../../../../core/layout/tulink_breakpoints.dart';
 import '../../../../core/theme/tulink_colors.dart';
 import '../../domain/entities/journey.dart';
 
@@ -106,6 +107,86 @@ class PendingJourneyOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).tulinkColors;
+    final isWideLandscape = TulinkBreakpoints.isWideLandscape(context);
+
+    Widget buildPanel(ScrollController? scrollController) => Container(
+      key: const Key('pending-journey-panel'),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: isWideLandscape
+            ? BorderRadius.circular(24)
+            : const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border.all(color: colors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        controller: scrollController,
+        padding: EdgeInsets.fromLTRB(
+          20,
+          isWideLandscape ? 20 : 12,
+          20,
+          isWideLandscape
+              ? 20
+              : 4 + MediaQuery.paddingOf(context).bottom * 0.35,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!isWideLandscape) ...[
+              _grabber(colors),
+              const SizedBox(height: 14),
+            ],
+            _header(colors),
+            const SizedBox(height: 16),
+            _destination(colors),
+            if (!isWideLandscape) ...[
+              const SizedBox(height: 12),
+              _swipeHint(colors),
+            ],
+            if (journey.isScheduled) ...[
+              const SizedBox(height: 12),
+              _scheduled(colors),
+            ],
+            const SizedBox(height: 18),
+            _participantsSection(colors),
+            if (hasRoomFailure) ...[
+              const SizedBox(height: 14),
+              _roomFailure(colors),
+            ],
+            if (locationFailure != null) ...[
+              const SizedBox(height: 14),
+              _locationFailure(colors),
+            ],
+            const SizedBox(height: 18),
+            _actions(),
+          ],
+        ),
+      ),
+    );
+
+    if (isWideLandscape) {
+      final panelHeight = (MediaQuery.sizeOf(context).height - 32).clamp(
+        420.0,
+        560.0,
+      );
+      return Align(
+        alignment: Alignment.bottomLeft,
+        child: SafeArea(
+          minimum: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: 520,
+            height: panelHeight,
+            child: buildPanel(null),
+          ),
+        ),
+      );
+    }
 
     return Align(
       alignment: Alignment.bottomCenter,
@@ -116,57 +197,7 @@ class PendingJourneyOverlay extends StatelessWidget {
         maxChildSize: 0.78,
         snap: true,
         snapSizes: const [0.42, 0.78],
-        builder: (context, scrollController) => Container(
-          decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border.all(color: colors.divider),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 20,
-                offset: const Offset(0, -6),
-              ),
-            ],
-          ),
-          child: SingleChildScrollView(
-            controller: scrollController,
-            padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              4 + MediaQuery.paddingOf(context).bottom * 0.35,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _grabber(colors),
-                const SizedBox(height: 14),
-                _header(colors),
-                const SizedBox(height: 16),
-                _destination(colors),
-                const SizedBox(height: 12),
-                _swipeHint(colors),
-                if (journey.isScheduled) ...[
-                  const SizedBox(height: 12),
-                  _scheduled(colors),
-                ],
-                const SizedBox(height: 18),
-                _participantsSection(colors),
-                if (hasRoomFailure) ...[
-                  const SizedBox(height: 14),
-                  _roomFailure(colors),
-                ],
-                if (locationFailure != null) ...[
-                  const SizedBox(height: 14),
-                  _locationFailure(colors),
-                ],
-                const SizedBox(height: 18),
-                _actions(),
-              ],
-            ),
-          ),
-        ),
+        builder: (_, scrollController) => buildPanel(scrollController),
       ),
     );
   }

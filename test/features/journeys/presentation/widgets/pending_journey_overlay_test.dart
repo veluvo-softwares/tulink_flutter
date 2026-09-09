@@ -277,4 +277,34 @@ void main() {
       );
     });
   });
+
+  testWidgets('uses a bounded lower-left panel on a wide tablet', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1366, 1024);
+    addTearDown(tester.view.reset);
+
+    await pump(
+      tester,
+      PendingJourneyOverlay(
+        journey: journey(
+          participants: [person('leader-1', 'Wanjiru'), person('u2', 'Otieno')],
+        ),
+        isLeader: true,
+        onDismiss: () {},
+        onStart: () {},
+        onCancelJourney: () {},
+      ),
+    );
+
+    expect(find.byType(DraggableScrollableSheet), findsNothing);
+    final panel = tester.getRect(
+      find.byKey(const Key('pending-journey-panel')),
+    );
+    expect(panel.left, 16);
+    expect(panel.width, 520);
+    expect(panel.bottom, 1008);
+    expect(panel.height, 560);
+  });
 }

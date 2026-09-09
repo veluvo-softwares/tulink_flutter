@@ -734,12 +734,14 @@ class MockNavigationProvider extends _i1.Mock
     required _i13.RouteResultModel? route,
     required _i3.Future<void> Function()? onRerouteNeeded,
     String? journeyId,
+    bool? rerouteOnDeviation = true,
   }) =>
       (super.noSuchMethod(
             Invocation.method(#startNavigation, [], {
               #route: route,
               #onRerouteNeeded: onRerouteNeeded,
               #journeyId: journeyId,
+              #rerouteOnDeviation: rerouteOnDeviation,
             }),
             returnValue: _i3.Future<void>.value(),
             returnValueForMissingStub: _i3.Future<void>.value(),

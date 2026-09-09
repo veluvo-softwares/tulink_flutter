@@ -1,58 +1,197 @@
-# iOS production (App Store) scaffold — NOT yet implemented.
+# Upload the iOS production binary to App Store Connect.
 #
-# Android production is NOT here: it lives in android-release.yml, which
-# promotes an existing closed-testing build to the production track. This file
-# is kept only so the iOS App Store lane has somewhere to land when it is built.
-#
-# Manual dispatch runs the `guard` job, which only prints an explanation and
-# exits 0. The `ios-production` job below is gated behind the
-# IOS_PRODUCTION_ENABLED repo variable and never runs while it is unset, so
-# nothing here can publish. Set that variable only AFTER replacing the
-# placeholder step with a real production lane.
-name: Production · App Store (iOS)
+# A push to the protected `prod` branch builds and uploads the signed IPA. The
+# workflow deliberately does not submit the version for App Review or release
+# it to customers: the App Store metadata, review account and selected build
+# remain a final human approval in App Store Connect.
+name: Production · iOS · App Store
 
 on:
+  push:
+    branches: [prod]
   workflow_dispatch:
-    inputs:
-      release_notes:
-        description: "Release notes for this version"
-        required: false
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: production-ios-${{ github.ref }}
+  group: production-ios-app-store
   cancel-in-progress: false
 
 jobs:
-  guard:
-    name: iOS production not yet wired
-    runs-on: ubuntu-latest
-    steps:
-      - name: Explain
-        run: |
-          echo "iOS production releases are not yet implemented."
-          echo "Android production is handled by android-release.yml"
-          echo "(mode: promote — promotes a closed-testing build to production)."
-          echo ""
-          echo "To implement iOS production:"
-          echo "  1. Add a production lane to ios/fastlane/Fastfile using deliver,"
-          echo "     reusing the signing setup from alpha-ios.yml."
-          echo "  2. Replace the placeholder step in the ios-production job."
-          echo "  3. Only then set the IOS_PRODUCTION_ENABLED repo variable to 'true'."
-          exit 0
-
-  ios-production:
-    name: iOS · App Store
-    needs: guard
-    # Gate: set the IOS_PRODUCTION_ENABLED repo variable to "true" once the
-    # iOS production lane exists. Unset means this job never runs.
-    if: vars.IOS_PRODUCTION_ENABLED == 'true'
+  upload:
+    name: Build & upload to App Store Connect
+    # Manual runs must also be dispatched from prod. IOS_PRODUCTION_ENABLED is
+    # a repository kill switch and must be set to "true" before first use.
+    if: github.ref == 'refs/heads/prod' && vars.IOS_PRODUCTION_ENABLED == 'true'
     runs-on: macos-latest
+    timeout-minutes: 40
     environment: production
+
     steps:
-      - name: Placeholder
+      - name: Preflight — credentials and configuration
+        env:
+          APP_STORE_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          CERTIFICATE: ${{ secrets.IOS_CERT_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+          APP_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          WIDGET_PROFILE: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE }}
+          FIREBASE_CONFIG: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID }}
         run: |
-          echo "TODO: build signed IPA and run fastlane ios production"
+          set -euo pipefail
+          failed=0
+          for variable in \
+            APP_STORE_KEY APP_STORE_KEY_ID APP_STORE_ISSUER_ID \
+            CERTIFICATE CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD \
+            APP_PROFILE WIDGET_PROFILE FIREBASE_CONFIG \
+            MAPBOX_TOKEN GOOGLE_CLIENT_ID; do
+            if [ -z "${!variable:-}" ]; then
+              echo "::error::Required production secret $variable is not configured."
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Checkout prod
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          XCODE_APP=$(find /Applications -maxdepth 1 -type d -name 'Xcode_26*.app' -print | sort -V | tail -1)
+          if [ -z "$XCODE_APP" ]; then
+            echo "::error::Xcode 26 is required for App Store uploads but was not found."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.41.9"
+          channel: stable
+          cache: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: Install Ruby dependencies
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Inject application configuration
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+          GOOGLE_SERVER_CLIENT_ID: ${{ secrets.GOOGLE_SERVER_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          printf 'MAPBOX_ACCESS_TOKEN=%s\n' "$MAPBOX_ACCESS_TOKEN" > .env
+          printf 'GOOGLE_SERVER_CLIENT_ID=%s\n' "$GOOGLE_SERVER_CLIENT_ID" >> .env
+
+      - name: Decode App Store signing material
+        env:
+          IOS_CERT_P12: ${{ secrets.IOS_CERT_P12 }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          IOS_WIDGET_PROVISIONING_PROFILE: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/ios-signing"
+          printf '%s' "$IOS_CERT_P12" | base64 --decode > "$HOME/ios-signing/tulink-distribution.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | base64 --decode > "$HOME/ios-signing/TuLink_App_Store.mobileprovision"
+          printf '%s' "$IOS_WIDGET_PROVISIONING_PROFILE" | base64 --decode > "$HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY" | base64 --decode > "$HOME/ios-signing/asc-api-key.p8"
+          {
+            echo "IOS_CERT_PATH=$HOME/ios-signing/tulink-distribution.p12"
+            echo "IOS_PROVISIONING_PROFILE_PATH=$HOME/ios-signing/TuLink_App_Store.mobileprovision"
+            echo "IOS_WIDGET_PROVISIONING_PROFILE_PATH=$HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision"
+            echo "APP_STORE_CONNECT_API_KEY_PATH=$HOME/ios-signing/asc-api-key.p8"
+          } >> "$GITHUB_ENV"
+
+      - name: Prepare signing keychain
+        id: signing
+        working-directory: ios
+        env:
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+        run: bundle exec fastlane ios prepare_signing
+
+      - name: Resolve production version
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(awk '/^version:/ { split($2, value, "+"); print value[1] }' pubspec.yaml)
+          if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not read a semantic app version from pubspec.yaml: $APP_VERSION"
+            exit 1
+          fi
+          BUILD_NUMBER=$(date -u +%Y%m%d%H%M)
+          {
+            echo "APP_VERSION=$APP_VERSION"
+            echo "BUILD_NUMBER=$BUILD_NUMBER"
+          } >> "$GITHUB_ENV"
+          {
+            echo "### iOS App Store upload"
+            echo "- source: \`prod\`"
+            echo "- version: \`$APP_VERSION\`"
+            echo "- build: \`$BUILD_NUMBER\`"
+            echo "- action: upload only; App Review submission remains manual"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fetch Flutter dependencies
+        run: flutter pub get
+
+      - name: Install iOS dependencies
+        working-directory: ios
+        run: pod install
+
+      - name: Build signed production IPA
+        run: >-
+          flutter build ipa
+          --release
+          --export-options-plist=ios/ExportOptions.plist
+          --build-name="$APP_VERSION"
+          --build-number="$BUILD_NUMBER"
+
+      - name: Locate signed IPA
+        run: |
+          set -euo pipefail
+          IPA_PATH=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' | head -1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "::error::No signed IPA was produced."
+            exit 1
+          fi
+          echo "IOS_IPA_PATH=$(cd "$(dirname "$IPA_PATH")" && pwd)/$(basename "$IPA_PATH")" >> "$GITHUB_ENV"
+
+      - name: Upload to App Store Connect
+        working-directory: ios
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: bundle exec fastlane ios production
+
+      - name: Cleanup signing keychain
+        if: always() && steps.signing.outcome != 'skipped'
+        working-directory: ios
+        run: bundle exec fastlane ios cleanup_signing
+
+      - name: Cleanup secrets
+        if: always()
+        run: |
+          rm -f "$HOME/ios-signing/tulink-distribution.p12"
+          rm -f "$HOME/ios-signing/TuLink_App_Store.mobileprovision"
+          rm -f "$HOME/ios-signing/TuLink_Widget_App_Store.mobileprovision"
+          rm -f "$HOME/ios-signing/asc-api-key.p8"
+          rm -f ios/Runner/GoogleService-Info.plist .env

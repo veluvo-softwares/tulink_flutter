@@ -366,11 +366,61 @@ void main() {
       destLng: 36,
       baseVersion: 3,
       reason: 'LEADER_REROUTE',
+      routeIndex: 2,
     );
 
     expect(repository.lastBaseVersion, 3);
     expect(repository.lastReason, 'LEADER_REROUTE');
+    expect(repository.lastRouteIndex, 2);
     expect(provider.currentRoute?.canonicalVersion, 4);
+  });
+
+  test('followers default on and retain their choice per journey', () {
+    expect(provider.followsLeaderRoute('A'), isTrue);
+    expect(provider.followsLeaderRoute('B'), isTrue);
+
+    provider.setFollowsLeaderRoute('A', false);
+
+    expect(provider.followsLeaderRoute('A'), isFalse);
+    expect(provider.followsLeaderRoute('B'), isTrue);
+  });
+
+  test(
+    'a preferred pre-departure route bypasses a fresh network route',
+    () async {
+      final selected = tagged('selected-alternate');
+      repository.routeFor['A'] = Future.value(tagged('server-primary'));
+      provider.preferRoute(
+        route: selected,
+        userId: 'u1',
+        journeyId: 'A',
+        destLat: -1,
+        destLng: 36,
+      );
+
+      final result = await fetch();
+
+      expect(tagOf(result), 'selected-alternate');
+      expect(repository.routeCalls, 0);
+      expect(repository.cacheCalls, 0);
+    },
+  );
+
+  test('clearing a route preference allows off-route recovery', () async {
+    provider.preferRoute(
+      route: tagged('selected-alternate'),
+      userId: 'u1',
+      journeyId: 'A',
+      destLat: -1,
+      destLng: 36,
+    );
+    provider.clearRoutePreference();
+    repository.routeFor['A'] = Future.value(tagged('recalculated'));
+
+    final result = await fetch();
+
+    expect(tagOf(result), 'recalculated');
+    expect(repository.routeCalls, 1);
   });
 }
 
@@ -380,7 +430,10 @@ class _FakeMapRepository implements MapRepository {
   final Map<String, Future<RouteResultModel?>> canonicalFor = {};
   final Map<String, Future<RouteResultModel?>> replacementFor = {};
   int? lastBaseVersion;
+  int? lastRouteIndex;
   String? lastReason;
+  int routeCalls = 0;
+  int cacheCalls = 0;
 
   @override
   Future<RouteResultModel?> getRoute({
@@ -390,7 +443,10 @@ class _FakeMapRepository implements MapRepository {
     required double originLng,
     required double destinationLat,
     required double destinationLng,
-  }) => routeFor[journeyId] ?? Future.value(null);
+  }) {
+    routeCalls++;
+    return routeFor[journeyId] ?? Future.value(null);
+  }
 
   @override
   Future<RouteResultModel?> getCachedRoute({
@@ -398,7 +454,10 @@ class _FakeMapRepository implements MapRepository {
     required String journeyId,
     required double destinationLat,
     required double destinationLng,
-  }) => cachedFor[journeyId] ?? Future.value(null);
+  }) {
+    cacheCalls++;
+    return cachedFor[journeyId] ?? Future.value(null);
+  }
 
   @override
   Future<RouteResultModel?> getCanonicalRoute({
@@ -418,9 +477,11 @@ class _FakeMapRepository implements MapRepository {
     required double destinationLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   }) {
     lastBaseVersion = baseVersion;
     lastReason = reason;
+    lastRouteIndex = routeIndex;
     return replacementFor[journeyId] ?? Future.value(null);
   }
 

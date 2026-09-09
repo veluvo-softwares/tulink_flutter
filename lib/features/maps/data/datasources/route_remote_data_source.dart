@@ -19,6 +19,7 @@ abstract class RouteRemoteDataSource {
     required double originLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   });
 }
 
@@ -103,6 +104,7 @@ class RouteRemoteDataSourceImpl implements RouteRemoteDataSource {
     required double originLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
   }) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
@@ -112,6 +114,7 @@ class RouteRemoteDataSourceImpl implements RouteRemoteDataSource {
           'originLng': originLng,
           'baseVersion': baseVersion,
           'reason': reason,
+          'routeIndex': routeIndex,
           'requestId': _uuidV4(),
         },
       );

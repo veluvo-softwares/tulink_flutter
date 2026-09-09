@@ -23,6 +23,35 @@ class MapProvider with ChangeNotifier {
   /// user/journey/destination is never handed someone else's geometry.
   String? _currentRouteKey;
 
+  /// A route explicitly chosen before departure. It remains authoritative for
+  /// this journey until rerouting is requested or the route is cleared.
+  String? _preferredRouteKey;
+  double? _preferredRouteOriginLat;
+  double? _preferredRouteOriginLng;
+  int _preferredRouteIndex = 0;
+
+  /// Follower choice is local to this device and journey. It defaults to true
+  /// without requiring a stored value, so every newly joined convoy follows
+  /// the leader unless the member deliberately opts out.
+  final Map<String, bool> _followLeaderByJourney = <String, bool>{};
+
+  bool followsLeaderRoute(String journeyId) =>
+      _followLeaderByJourney[journeyId] ?? true;
+
+  void setFollowsLeaderRoute(String journeyId, bool value) {
+    if (followsLeaderRoute(journeyId) == value &&
+        _followLeaderByJourney.containsKey(journeyId)) {
+      return;
+    }
+    _followLeaderByJourney[journeyId] = value;
+    invalidateRouteRequests();
+    notifyListeners();
+  }
+
+  double? get preferredRouteOriginLat => _preferredRouteOriginLat;
+  double? get preferredRouteOriginLng => _preferredRouteOriginLng;
+  int get preferredRouteIndex => _preferredRouteIndex;
+
   /// The surface generation the held route was resolved under. A rebuilt
   /// surface has none of the drawn geometry, so work captured against the old
   /// generation must not be treated as current.
@@ -143,6 +172,10 @@ class MapProvider with ChangeNotifier {
     _currentRoute = null;
     _currentRouteKey = null;
     _currentRouteSurfaceGeneration = null;
+    _preferredRouteKey = null;
+    _preferredRouteOriginLat = null;
+    _preferredRouteOriginLng = null;
+    _preferredRouteIndex = 0;
     notifyListeners();
   }
 
@@ -163,6 +196,16 @@ class MapProvider with ChangeNotifier {
       destLng: destLng,
     );
     final surface = surfaceGeneration ?? _surfaceGeneration;
+
+    if (_preferredRouteKey == key &&
+        _currentRouteKey == key &&
+        _currentRoute?.canonicalVersion == null) {
+      final preferred = _currentRoute;
+      if (preferred != null) {
+        _currentRouteSurfaceGeneration = surface;
+        return preferred;
+      }
+    }
     _latestRouteRequest = token;
     _latestRouteKey = key;
 
@@ -269,6 +312,7 @@ class MapProvider with ChangeNotifier {
     required double destLng,
     required int baseVersion,
     required String reason,
+    int routeIndex = 0,
     int? surfaceGeneration,
   }) => _runCanonicalRequest(
     userId: userId,
@@ -285,6 +329,7 @@ class MapProvider with ChangeNotifier {
       destinationLng: destLng,
       baseVersion: baseVersion,
       reason: reason,
+      routeIndex: routeIndex,
     ),
   );
 
@@ -337,6 +382,41 @@ class MapProvider with ChangeNotifier {
     _currentRouteSurfaceGeneration = surface;
   }
 
+  /// Makes a user-selected preview path the route for an exact draft/journey.
+  void preferRoute({
+    required RouteResultModel route,
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    double? originLat,
+    double? originLng,
+    int routeIndex = 0,
+    int? surfaceGeneration,
+  }) {
+    final key = _routeKey(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    _preferredRouteKey = key;
+    _preferredRouteOriginLat = originLat;
+    _preferredRouteOriginLng = originLng;
+    _preferredRouteIndex = routeIndex;
+    _install(route, key, surfaceGeneration ?? _surfaceGeneration);
+    notifyListeners();
+  }
+
+  /// Releases the pre-departure choice so an off-route recovery can fetch a
+  /// fresh path from the driver's current position.
+  void clearRoutePreference() {
+    _preferredRouteKey = null;
+    _preferredRouteOriginLat = null;
+    _preferredRouteOriginLng = null;
+    _preferredRouteIndex = 0;
+  }
+
   /// Show the stored route for this request, if one is held and nothing is
   /// already drawn for it.
   ///
@@ -384,6 +464,10 @@ class MapProvider with ChangeNotifier {
     _currentRoute = null;
     _currentRouteKey = null;
     _currentRouteSurfaceGeneration = null;
+    _preferredRouteKey = null;
+    _preferredRouteOriginLat = null;
+    _preferredRouteOriginLng = null;
+    _preferredRouteIndex = 0;
     // A cleared route must also abandon whatever is still in flight for it,
     // or that response lands a moment later and undoes the clear.
     invalidateRouteRequests();

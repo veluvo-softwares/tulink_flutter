@@ -31,6 +31,10 @@ class RouteResultModel {
   final double durationSeconds;
   final List<RouteStepModel> steps;
 
+  /// Other viable paths returned for a pre-departure route request.
+  /// Canonical live-convoy routes intentionally leave this empty.
+  final List<RouteResultModel> alternates;
+
   /// Server-owned version for live convoy routes. Null for previews and
   /// legacy locally calculated routes.
   final int? canonicalVersion;
@@ -43,11 +47,18 @@ class RouteResultModel {
     required this.distanceMetres,
     required this.durationSeconds,
     required this.steps,
+    this.alternates = const <RouteResultModel>[],
     this.canonicalVersion,
     this.canonicalReason,
   });
 
-  factory RouteResultModel.fromJson(Map<String, dynamic> json) {
+  factory RouteResultModel.fromJson(Map<String, dynamic> json) =>
+      RouteResultModel._fromJson(json, includeAlternates: true);
+
+  factory RouteResultModel._fromJson(
+    Map<String, dynamic> json, {
+    required bool includeAlternates,
+  }) {
     final rawCoords = json['coordinates'] as List<dynamic>? ?? [];
     final coordinates = <List<double>>[];
     for (final coordinate in rawCoords) {
@@ -72,11 +83,26 @@ class RouteResultModel {
         .map((s) => RouteStepModel.fromJson(s.cast<String, dynamic>()))
         .toList();
 
+    final rawAlternates = includeAlternates
+        ? json['alternates'] as List<dynamic>? ?? const <dynamic>[]
+        : const <dynamic>[];
+    final alternates = rawAlternates
+        .whereType<Map<Object?, Object?>>()
+        .map(
+          (route) => RouteResultModel._fromJson(
+            route.cast<String, dynamic>(),
+            includeAlternates: false,
+          ),
+        )
+        .where((route) => route.coordinates.length >= 2)
+        .toList(growable: false);
+
     return RouteResultModel(
       coordinates: coordinates,
       distanceMetres: (json['distanceMetres'] as num?)?.toDouble() ?? 0.0,
       durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0.0,
       steps: steps,
+      alternates: alternates,
       canonicalVersion: (json['version'] as num?)?.toInt(),
       canonicalReason: json['reason']?.toString(),
     );
@@ -88,6 +114,10 @@ class RouteResultModel {
     'distanceMetres': distanceMetres,
     'durationSeconds': durationSeconds,
     'steps': steps.map((step) => step.toJson()).toList(growable: false),
+    if (alternates.isNotEmpty)
+      'alternates': alternates
+          .map((route) => route.toJson())
+          .toList(growable: false),
     if (canonicalVersion != null) 'version': canonicalVersion,
     if (canonicalReason != null) 'reason': canonicalReason,
   };
