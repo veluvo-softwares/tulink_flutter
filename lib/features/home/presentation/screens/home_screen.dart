@@ -41,6 +41,7 @@ import 'package:tulink_flutter/features/maps/presentation/controllers/live_map_a
 import 'package:tulink_flutter/features/maps/presentation/controllers/persistent_map_controller.dart';
 import 'package:tulink_flutter/features/maps/presentation/live_journey_experience.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/map_provider.dart';
+import 'package:tulink_flutter/features/maps/presentation/widgets/map_style_selector.dart';
 import 'package:tulink_flutter/features/maps/presentation/widgets/persistent_tulink_map.dart';
 import 'package:tulink_flutter/features/maps/presentation/widgets/route_alternatives_picker.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
@@ -106,6 +107,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _selectedSavedRouteId;
   bool _isStarting = false;
   bool _isEnteringLiveJourney = false;
+  TulinkMapStyle _mapStyle = TulinkMapStyle.streets;
+  CameraOptions? _mapCamera;
+  bool _isChangingMapStyle = false;
 
   /// Journey the shell has already promoted to live, so a duplicate
   /// `journey-started` event is idempotent.
@@ -718,6 +722,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Restore the shell's own layers whenever a new surface attaches.
   void _onMapSurfaceChanged() {
     if (!mounted) return;
+    if (_mapController.map != null && _isChangingMapStyle) {
+      setState(() => _isChangingMapStyle = false);
+    }
     // Publish the surface generation before anything reads it. Route work is
     // stamped with the generation it was issued under, so a rebuild has to
     // invalidate the outstanding requests before the new surface is drawn on —
@@ -791,6 +798,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       MapAnimationOptions(duration: 700),
     );
+  }
+
+  Future<void> _changeMapStyle(TulinkMapStyle style) async {
+    if (style == _mapStyle || _isChangingMapStyle) return;
+
+    setState(() => _isChangingMapStyle = true);
+    CameraOptions? camera;
+    try {
+      final currentMap = _map;
+      if (currentMap != null) {
+        final currentCamera = await currentMap.getCameraState();
+        camera = CameraOptions(
+          center: currentCamera.center,
+          padding: currentCamera.padding,
+          zoom: currentCamera.zoom,
+          bearing: currentCamera.bearing,
+          pitch: currentCamera.pitch,
+        );
+      }
+    } catch (_) {
+      // A style can still be changed if the outgoing surface disappears while
+      // its camera is being read; the replacement falls back to Nairobi.
+    }
+    if (!mounted) return;
+
+    _destinationAnnotations = null;
+    _mapController.prepareForStyleChange();
+    setState(() {
+      _mapStyle = style;
+      _mapCamera = camera;
+    });
   }
 
   /// Draw [place] as the map's destination and preview a route to it.
@@ -2241,11 +2279,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Scaffold(
         body: Stack(
           children: [
-            // The application's single map. It is never rebuilt across a journey
-            // transition, which is what keeps the camera and the drawn route
+            // The application's single map. It is never rebuilt across a
+            // journey transition, which keeps the camera and drawn route
             // continuous from destination preview through to arrival.
             Positioned.fill(
-              child: PersistentTulinkMap(controller: _mapController),
+              child: PersistentTulinkMap(
+                controller: _mapController,
+                initialCamera: _mapCamera,
+                styleUri: _mapStyle.styleUri,
+              ),
             ),
 
             // Browse chrome is replaced by journey chrome whenever the journey
@@ -2291,6 +2333,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: bottomOverlay,
                   ),
                 ),
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 80,
+                right: 16,
+                child: MapStyleSelector(
+                  selectedStyle: _mapStyle,
+                  isLoading: _isChangingMapStyle,
+                  onSelected: (style) => unawaited(_changeMapStyle(style)),
+                ),
+              ),
             ],
 
             // An invited member waiting for the leader. A real experience over

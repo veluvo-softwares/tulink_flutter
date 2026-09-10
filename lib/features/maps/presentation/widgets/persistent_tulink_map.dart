@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
-
-import '../controllers/persistent_map_controller.dart';
+import 'package:tulink_flutter/features/maps/presentation/controllers/persistent_map_controller.dart';
 
 /// The application's only `MapWidget`.
 ///
@@ -15,14 +14,22 @@ import '../controllers/persistent_map_controller.dart';
 /// costs a full renderer and reintroduces the state divergence this exists to
 /// prevent.
 class PersistentTulinkMap extends StatelessWidget {
+  /// Creates the application's persistent Mapbox surface.
   const PersistentTulinkMap({
-    super.key,
     required this.controller,
+    super.key,
     this.initialCamera,
+    this.styleUri = MapboxStyles.MAPBOX_STREETS,
   });
 
+  /// Publishes the native map handle to the rest of the application.
   final PersistentMapController controller;
+
+  /// Camera used when creating or recreating the native map surface.
   final CameraOptions? initialCamera;
+
+  /// Mapbox style URI used for the base map.
+  final String styleUri;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +42,7 @@ class PersistentTulinkMap extends StatelessWidget {
         // Fires only for direct manipulation, never for programmatic camera
         // moves, so camera-follow can yield to the user without a guard flag.
         onScrollListener: (_) => controller.reportUserPan(),
-        styleUri: MapboxStyles.MAPBOX_STREETS,
+        styleUri: styleUri,
         cameraOptions:
             initialCamera ??
             CameraOptions(
