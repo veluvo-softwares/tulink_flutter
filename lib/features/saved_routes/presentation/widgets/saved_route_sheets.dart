@@ -504,7 +504,7 @@ class _SavedRouteComposerSheetState extends State<SavedRouteComposerSheet> {
           ];
     final source = _isPlan
         ? SavedRouteSource.computed
-        : SavedRouteSource.recorded;
+        : widget.initialRoute?.source ?? SavedRouteSource.recorded;
     final waypoints = _isPlan ? _waypoints : recordedWaypoints;
     final geometry = _isPlan ? null : _recordedGeometry;
     final duration = _isPlan
