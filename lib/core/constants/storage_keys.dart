@@ -29,6 +29,8 @@ class StorageKeys {
   static const String notificationsEnabled = 'notifications_enabled';
   static const String analyticsEnabled = 'analytics_enabled';
   static const String voiceNavigationEnabled = 'voice_navigation_enabled';
+  static const String followLeaderDefaultEnabled =
+      'follow_leader_default_enabled';
 
   // Cache Keys with Prefixes
   static const String userProfilePrefix = 'user_profile_';

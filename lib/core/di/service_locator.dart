@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:hive/hive.dart';
+import 'package:tulink_flutter/core/utils/logger.dart';
 import 'package:tulink_flutter/features/invites/data/datasources/invite_remote_data_source.dart';
 import 'package:tulink_flutter/features/invites/data/repositories/invite_repository_impl.dart';
 import 'package:tulink_flutter/features/invites/domain/repositories/invite_repository.dart';
 import 'package:tulink_flutter/features/invites/domain/usecases/invite_usecases.dart';
 import 'package:tulink_flutter/features/invites/presentation/providers/invite_provider.dart';
+import 'package:tulink_flutter/features/profile/data/datasources/user_preferences_remote_data_source.dart';
 import 'package:tulink_flutter/features/analytics/data/services/analytics_api_service.dart';
 import 'package:tulink_flutter/features/analytics/data/datasources/analytics_remote_data_source.dart';
 import 'package:tulink_flutter/features/analytics/data/repositories/analytics_repository_impl.dart';
@@ -46,6 +48,10 @@ import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
 import '../../features/maps/presentation/providers/navigation_provider.dart';
+import '../../features/saved_routes/data/datasources/saved_route_remote_data_source.dart';
+import '../../features/saved_routes/data/repositories/saved_route_repository_impl.dart';
+import '../../features/saved_routes/domain/repositories/saved_route_repository.dart';
+import '../../features/saved_routes/presentation/providers/saved_route_provider.dart';
 import '../constants/app_constants.dart';
 import '../constants/storage_keys.dart';
 import '../network/dio_client.dart';
@@ -78,6 +84,9 @@ class ServiceLocator {
   late AuthProvider _authProvider;
   late EmailVerificationProvider _emailVerificationProvider;
   late ThemeProvider _themeProvider;
+  late UserPreferencesRemoteDataSource _userPreferencesRemoteDataSource;
+  String? _preferencesSyncedUserId;
+  bool _preferencesSyncInFlight = false;
 
   // Map Feature
   late MapLocalDataSource _mapLocalDataSource;
@@ -87,6 +96,11 @@ class ServiceLocator {
   late SearchPlacesUseCase _searchPlacesUseCase;
   late MapProvider _mapProvider;
   late NavigationProvider _navigationProvider;
+
+  // Saved routes
+  late SavedRouteRemoteDataSource _savedRouteRemoteDataSource;
+  late SavedRouteRepository _savedRouteRepository;
+  late SavedRouteProvider _savedRouteProvider;
 
   // Journey Feature
   late JourneyRemoteDataSource _journeyRemoteDataSource;
@@ -150,6 +164,7 @@ class ServiceLocator {
   MapProvider get mapProvider => _mapProvider;
   NavigationProvider get navigationProvider => _navigationProvider;
   RouteRemoteDataSource get routeRemoteDataSource => _routeRemoteDataSource;
+  SavedRouteProvider get savedRouteProvider => _savedRouteProvider;
 
   // Journey Feature Getters
   JourneyProvider get journeyProvider => _journeyProvider;
@@ -216,6 +231,10 @@ class ServiceLocator {
       dio: _dioClient.dio,
     );
     _routeRemoteDataSource = RouteRemoteDataSourceImpl(dio: _dioClient.dio);
+    _savedRouteRemoteDataSource = SavedRouteRemoteDataSource(_dioClient.dio);
+    _userPreferencesRemoteDataSource = UserPreferencesRemoteDataSource(
+      _dioClient.dio,
+    );
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
     _inviteRemoteDataSource = InviteRemoteDataSourceImpl(dio: _dioClient.dio);
     _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(
@@ -243,6 +262,9 @@ class ServiceLocator {
       placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
       routeRemoteDataSource: _routeRemoteDataSource,
       connectivityService: _connectivityService,
+    );
+    _savedRouteRepository = SavedRouteRepositoryImpl(
+      _savedRouteRemoteDataSource,
     );
     _journeyRepository = JourneyRepositoryImpl(
       remoteDataSource: _journeyRemoteDataSource,
@@ -295,7 +317,22 @@ class ServiceLocator {
     _authProvider = AuthProvider(_authRepository);
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
     _themeProvider = ThemeProvider();
-    _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
+    _mapProvider = MapProvider(
+      _mapRepository,
+      _searchPlacesUseCase,
+      loadFollowLeaderDefault: () async =>
+          _authBox.get(StorageKeys.followLeaderDefaultEnabled) as bool?,
+      saveFollowLeaderDefault: (enabled) async {
+        await _authBox.put(StorageKeys.followLeaderDefaultEnabled, enabled);
+        if (_authProvider.isSignedIn) {
+          await _userPreferencesRemoteDataSource.update(
+            followLeaderByDefault: enabled,
+          );
+        }
+      },
+    );
+    await _mapProvider.initializePreferences();
+    _savedRouteProvider = SavedRouteProvider(_savedRouteRepository);
     _navigationProvider = NavigationProvider(
       journeyLocationService: _journeyLocationService,
       connectivityService: _connectivityService,
@@ -304,8 +341,14 @@ class ServiceLocator {
           (await _authLocalDataSource.getCachedUser())?.id,
       loadVoiceEnabled: () async =>
           _authBox.get(StorageKeys.voiceNavigationEnabled) as bool?,
-      saveVoiceEnabled: (enabled) =>
-          _authBox.put(StorageKeys.voiceNavigationEnabled, enabled),
+      saveVoiceEnabled: (enabled) async {
+        await _authBox.put(StorageKeys.voiceNavigationEnabled, enabled);
+        if (_authProvider.isSignedIn) {
+          await _userPreferencesRemoteDataSource.update(
+            voiceNavigationEnabled: enabled,
+          );
+        }
+      },
     );
     await _navigationProvider.initializePreferences();
     _journeyProvider = JourneyProvider(
@@ -349,6 +392,7 @@ class ServiceLocator {
     );
     _liveJourneyStateListener = () {
       unawaited(_liveJourneyCoordinator.reconcile());
+      unawaited(_syncUserPreferences());
     };
     _authProvider.addListener(_liveJourneyStateListener!);
     _journeyProvider.addListener(_liveJourneyStateListener!);
@@ -371,6 +415,50 @@ class ServiceLocator {
     // listeners, so HomePage's spinner covers the auth check while the rest
     // of the app paints immediately.
     unawaited(_authProvider.initialize());
+  }
+
+  Future<void> _syncUserPreferences() async {
+    if (!_authProvider.isInitialized || !_authProvider.isSignedIn) {
+      if (_authProvider.isInitialized) _preferencesSyncedUserId = null;
+      return;
+    }
+
+    final userId = _authProvider.user?.id;
+    if (userId == null ||
+        userId == _preferencesSyncedUserId ||
+        _preferencesSyncInFlight) {
+      return;
+    }
+
+    _preferencesSyncInFlight = true;
+    try {
+      final preferences = await _userPreferencesRemoteDataSource.get();
+      if (!_authProvider.isSignedIn || _authProvider.user?.id != userId) return;
+
+      _mapProvider.applyFollowLeaderDefault(
+        enabled: preferences.followLeaderByDefault,
+      );
+      _navigationProvider.applyVoiceEnabled(
+        enabled: preferences.voiceNavigationEnabled,
+      );
+      await Future.wait<void>([
+        _authBox.put(
+          StorageKeys.followLeaderDefaultEnabled,
+          preferences.followLeaderByDefault,
+        ),
+        _authBox.put(
+          StorageKeys.voiceNavigationEnabled,
+          preferences.voiceNavigationEnabled,
+        ),
+      ]);
+      _preferencesSyncedUserId = userId;
+    } catch (error) {
+      // Local values remain the offline fallback. A later auth state change or
+      // an explicit switch update can reconnect the preference state.
+      AppLogger.warning('Could not sync user preferences', error);
+    } finally {
+      _preferencesSyncInFlight = false;
+    }
   }
 
   /// Dispose resources when app is closing

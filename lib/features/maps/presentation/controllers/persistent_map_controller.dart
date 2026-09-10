@@ -9,10 +9,10 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 /// do so without instantiating a map of its own.
 ///
 /// Consumers must treat [map] as transient. A native surface can be torn down
-/// and rebuilt (see [recreate]), and each rebuild bumps [generation]. Async work
-/// must capture the generation it started under and discard itself if the value
-/// has moved on, otherwise a late callback will draw onto a surface that no
-/// longer corresponds to what the user is looking at.
+/// and rebuilt (see [recreate]), and each rebuild bumps [generation]. Async
+/// work must capture the generation it started under and discard itself if the
+/// value has moved on, otherwise a late callback will draw onto a surface that
+/// no longer corresponds to what the user is looking at.
 class PersistentMapController extends ChangeNotifier {
   MapboxMap? _map;
   int _generation = 0;
@@ -32,6 +32,7 @@ class PersistentMapController extends ChangeNotifier {
   /// Incremented on every surface rebuild. Used to reject stale async work.
   int get generation => _generation;
 
+  /// Whether a native map surface is attached and ready for commands.
   bool get isReady => _map != null;
 
   /// Increments whenever the user pans the map by hand. Layers that implement
@@ -57,6 +58,12 @@ class PersistentMapController extends ChangeNotifier {
     _generation++;
     notifyListeners();
   }
+
+  /// Replace the native surface after a user selects a different base style.
+  ///
+  /// Keeping this explicit prevents a style change from becoming confused with
+  /// lifecycle recovery, which must probe and retain a healthy surface.
+  void prepareForStyleChange() => recreate();
 
   /// Verify that the retained native surface still answers platform calls.
   ///
