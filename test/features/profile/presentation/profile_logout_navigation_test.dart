@@ -9,6 +9,7 @@ import 'package:tulink_flutter/features/auth/domain/entities/user_entity.dart';
 import 'package:tulink_flutter/features/auth/domain/repositories/auth_repository.dart';
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
+import 'package:tulink_flutter/features/maps/presentation/providers/map_provider.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/navigation_provider.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
 
@@ -20,6 +21,21 @@ import 'package:tulink_flutter/features/profile/presentation/screens/profile_scr
 ])
 import 'profile_logout_navigation_test.mocks.dart';
 
+class _TestMapProvider extends Mock implements MapProvider {
+  bool followLeaderEnabled = true;
+  bool? updatedFollowLeaderValue;
+
+  @override
+  bool get followLeaderDefaultEnabled => followLeaderEnabled;
+
+  @override
+  void setFollowLeaderDefault(bool value) {
+    followLeaderEnabled = value;
+    updatedFollowLeaderValue = value;
+    notifyListeners();
+  }
+}
+
 void main() {
   testWidgets('successful profile sign-out returns to the existing auth root', (
     tester,
@@ -28,6 +44,7 @@ void main() {
     final analytics = MockAnalyticsProvider();
     final convoy = MockConvoyProvider();
     final navigation = MockNavigationProvider();
+    final maps = _TestMapProvider();
     final navigatorKey = GlobalKey<NavigatorState>();
     final user = UserEntity(
       id: 'user-1',
@@ -59,6 +76,7 @@ void main() {
           ChangeNotifierProvider<AnalyticsProvider>.value(value: analytics),
           ChangeNotifierProvider<ConvoyProvider>.value(value: convoy),
           ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<MapProvider>.value(value: maps),
         ],
         child: MaterialApp(
           navigatorKey: navigatorKey,
@@ -90,6 +108,11 @@ void main() {
     await tester.tap(find.byKey(const Key('open-profile')));
     await tester.pumpAndSettle();
     expect(find.byType(ProfileScreen), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Follow the leader'));
+    await tester.tap(find.text('Follow the leader'));
+    await tester.pump();
+    expect(maps.updatedFollowLeaderValue, isFalse);
 
     await tester.ensureVisible(find.text('Sign out'));
     await tester.pumpAndSettle();

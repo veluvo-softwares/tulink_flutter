@@ -660,18 +660,27 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
       // the canonical convoy route. Followers can read it but the backend
       // rejects this mutation for everyone except the journey leader.
       if (route == null && isLeader) {
-        route = await mapProvider.replaceCanonicalRoute(
-          userId: userId,
-          journeyId: journey.id,
-          originLat: mapProvider.preferredRouteOriginLat ?? originLat,
-          originLng: mapProvider.preferredRouteOriginLng ?? originLng,
-          destLat: journey.destination.latitude,
-          destLng: journey.destination.longitude,
-          baseVersion: 0,
-          reason: 'INITIAL',
-          routeIndex: mapProvider.preferredRouteIndex,
-          surfaceGeneration: generation,
-        );
+        route = mapProvider.preferredSavedRouteId != null
+            ? await mapProvider.applyPreferredSavedRoute(
+                userId: userId,
+                journeyId: journey.id,
+                destLat: journey.destination.latitude,
+                destLng: journey.destination.longitude,
+                baseVersion: 0,
+                surfaceGeneration: generation,
+              )
+            : await mapProvider.replaceCanonicalRoute(
+                userId: userId,
+                journeyId: journey.id,
+                originLat: mapProvider.preferredRouteOriginLat ?? originLat,
+                originLng: mapProvider.preferredRouteOriginLng ?? originLng,
+                destLat: journey.destination.latitude,
+                destLng: journey.destination.longitude,
+                baseVersion: 0,
+                reason: 'INITIAL',
+                routeIndex: mapProvider.preferredRouteIndex,
+                surfaceGeneration: generation,
+              );
         if (route != null) mapProvider.clearRoutePreference();
       }
     }

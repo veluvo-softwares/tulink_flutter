@@ -252,14 +252,21 @@ class NavigationProvider with ChangeNotifier {
   }
 
   /// Toggle voice instructions on or off.
-  void setVoiceEnabled(bool enabled) {
+  void setVoiceEnabled(bool enabled) =>
+      _setVoiceEnabled(enabled, persist: true);
+
+  /// Applies a value received from the backend without writing it back.
+  void applyVoiceEnabled({required bool enabled}) =>
+      _setVoiceEnabled(enabled, persist: false);
+
+  void _setVoiceEnabled(bool enabled, {required bool persist}) {
     _voiceService.isEnabled = enabled;
     if (!enabled) {
       _voiceService.stop();
     }
     notifyListeners();
     final saveVoiceEnabled = _saveVoiceEnabled;
-    if (saveVoiceEnabled != null) {
+    if (persist && saveVoiceEnabled != null) {
       unawaited(
         saveVoiceEnabled(enabled).catchError((Object error) {
           debugPrint('Could not save voice navigation preference: $error');

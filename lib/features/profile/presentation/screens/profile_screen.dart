@@ -8,6 +8,7 @@ import 'package:tulink_flutter/features/analytics/presentation/providers/analyti
 import 'package:tulink_flutter/features/auth/presentation/providers/auth_provider.dart';
 import 'package:tulink_flutter/features/convoy/presentation/providers/convoy_provider.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/navigation_provider.dart';
+import 'package:tulink_flutter/features/maps/presentation/providers/map_provider.dart';
 import 'package:tulink_flutter/features/profile/presentation/widgets/profile_avatar.dart';
 import 'package:tulink_flutter/features/profile/presentation/widgets/profile_stats_grid.dart';
 import 'package:tulink_flutter/features/profile/presentation/widgets/settings_menu_item.dart';
@@ -90,6 +91,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 10),
         _SettingsGroup(
           children: [
+            Consumer<MapProvider>(
+              builder: (context, maps, _) => SettingsMenuItem(
+                icon: Icons.follow_the_signs_rounded,
+                title: 'Follow the leader',
+                subtitle: 'Use the leader’s selected route by default',
+                showArrow: false,
+                onTap: () => maps.setFollowLeaderDefault(
+                  !maps.followLeaderDefaultEnabled,
+                ),
+                trailing: Switch.adaptive(
+                  value: maps.followLeaderDefaultEnabled,
+                  onChanged: maps.setFollowLeaderDefault,
+                  activeTrackColor: colors.routeTeal,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
             Consumer<NavigationProvider>(
               builder: (context, navigation, _) => SettingsMenuItem(
                 icon: Icons.record_voice_over_outlined,

@@ -3,6 +3,15 @@ import 'package:tulink_flutter/core/services/journey_location_service.dart';
 import 'package:tulink_flutter/core/services/location_service.dart';
 import 'package:tulink_flutter/features/maps/data/models/route_result_model.dart';
 import 'package:tulink_flutter/features/maps/presentation/providers/navigation_provider.dart';
+import 'package:tulink_flutter/features/maps/presentation/services/voice_instruction_service.dart';
+
+class _TestVoiceInstructionService extends VoiceInstructionService {
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +49,7 @@ void main() {
       journeyLocationService: JourneyLocationService(
         const GeolocatorLocationService(),
       ),
+      voiceService: _TestVoiceInstructionService(),
     );
     addTearDown(provider.dispose);
 
@@ -61,5 +71,22 @@ void main() {
     expect(provider.restoredSegmentIndexForTesting, isNull);
     expect(provider.currentProgress, isNull);
     expect(provider.lastKnownProgress, isNull);
+  });
+
+  test('server voice preference can be applied without writing it back', () {
+    bool? savedValue;
+    final provider = NavigationProvider(
+      journeyLocationService: JourneyLocationService(
+        const GeolocatorLocationService(),
+      ),
+      voiceService: _TestVoiceInstructionService(),
+      saveVoiceEnabled: (enabled) async => savedValue = enabled,
+    );
+    addTearDown(provider.dispose);
+
+    provider.applyVoiceEnabled(enabled: false);
+
+    expect(provider.isVoiceEnabled, isFalse);
+    expect(savedValue, isNull);
   });
 }

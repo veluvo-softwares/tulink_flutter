@@ -385,6 +385,34 @@ void main() {
     expect(provider.followsLeaderRoute('B'), isTrue);
   });
 
+  test('Follow the leader profile default is restored and saved', () async {
+    bool? savedValue;
+    final preferencesProvider = MapProvider(
+      repository,
+      SearchPlacesUseCase(repository: repository),
+      loadFollowLeaderDefault: () async => false,
+      saveFollowLeaderDefault: (enabled) async => savedValue = enabled,
+    );
+
+    await preferencesProvider.initializePreferences();
+    expect(preferencesProvider.followLeaderDefaultEnabled, isFalse);
+    expect(preferencesProvider.followsLeaderRoute('new-journey'), isFalse);
+
+    preferencesProvider
+      ..setFollowsLeaderRoute('active-journey', false)
+      ..setFollowLeaderDefault(true);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(preferencesProvider.followLeaderDefaultEnabled, isTrue);
+    expect(preferencesProvider.followsLeaderRoute('active-journey'), isTrue);
+    expect(savedValue, isTrue);
+
+    savedValue = null;
+    preferencesProvider.applyFollowLeaderDefault(enabled: false);
+    await Future<void>.delayed(Duration.zero);
+    expect(savedValue, isNull);
+  });
+
   test(
     'a preferred pre-departure route bypasses a fresh network route',
     () async {
@@ -484,6 +512,16 @@ class _FakeMapRepository implements MapRepository {
     lastRouteIndex = routeIndex;
     return replacementFor[journeyId] ?? Future.value(null);
   }
+
+  @override
+  Future<RouteResultModel?> applySavedRoute({
+    required String userId,
+    required String journeyId,
+    required String savedRouteId,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+  }) => replacementFor[journeyId] ?? Future.value(null);
 
   @override
   Future<RaceRoute?> getMarathonRoute() async => null;

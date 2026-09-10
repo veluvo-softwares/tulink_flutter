@@ -11,6 +11,10 @@ abstract class RouteRemoteDataSource {
     required double destLng,
   });
 
+  Future<RouteResultModel?> getRouteThrough(
+    List<({double latitude, double longitude})> waypoints,
+  );
+
   Future<RouteResultModel?> getCanonicalRoute(String journeyId);
 
   Future<RouteResultModel?> replaceCanonicalRoute({
@@ -20,6 +24,12 @@ abstract class RouteRemoteDataSource {
     required int baseVersion,
     required String reason,
     int routeIndex = 0,
+  });
+
+  Future<RouteResultModel?> applySavedRoute({
+    required String journeyId,
+    required String savedRouteId,
+    required int baseVersion,
   });
 }
 
@@ -80,6 +90,33 @@ class RouteRemoteDataSourceImpl implements RouteRemoteDataSource {
   }
 
   @override
+  Future<RouteResultModel?> getRouteThrough(
+    List<({double latitude, double longitude})> waypoints,
+  ) async {
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '/maps/route/through',
+        data: {
+          'waypoints': waypoints
+              .map(
+                (point) => {
+                  'latitude': point.latitude,
+                  'longitude': point.longitude,
+                },
+              )
+              .toList(growable: false),
+        },
+      );
+      final data = response.data?['data'];
+      if (response.statusCode != 200 || data is! Map) return null;
+      return RouteResultModel.fromJson(data.cast<String, dynamic>());
+    } catch (error) {
+      print('⚠️ Multi-waypoint route fetch failed: $error');
+      return null;
+    }
+  }
+
+  @override
   Future<RouteResultModel?> getCanonicalRoute(String journeyId) async {
     try {
       final response = await dio.get<Map<String, dynamic>>(
@@ -129,6 +166,29 @@ class RouteRemoteDataSourceImpl implements RouteRemoteDataSource {
         return getCanonicalRoute(journeyId);
       }
       print('⚠️ Canonical route update failed: $error');
+      return null;
+    }
+  }
+
+  @override
+  Future<RouteResultModel?> applySavedRoute({
+    required String journeyId,
+    required String savedRouteId,
+    required int baseVersion,
+  }) async {
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '/journeys/$journeyId/route/saved/$savedRouteId',
+        data: {'baseVersion': baseVersion, 'requestId': _uuidV4()},
+      );
+      final data = response.data?['data'];
+      if (response.statusCode != 200 || data is! Map) return null;
+      return RouteResultModel.fromJson(data.cast<String, dynamic>());
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 409) {
+        return getCanonicalRoute(journeyId);
+      }
+      print('⚠️ Applying saved route failed: $error');
       return null;
     }
   }

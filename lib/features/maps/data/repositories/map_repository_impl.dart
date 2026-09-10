@@ -186,6 +186,35 @@ class MapRepositoryImpl implements MapRepository {
   }
 
   @override
+  Future<RouteResultModel?> applySavedRoute({
+    required String userId,
+    required String journeyId,
+    required String savedRouteId,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+  }) async {
+    if (!connectivityService.isOnline.value) return null;
+    final route = await routeRemoteDataSource.applySavedRoute(
+      journeyId: journeyId,
+      savedRouteId: savedRouteId,
+      baseVersion: baseVersion,
+    );
+    if (route == null || route.coordinates.isEmpty) return null;
+    final origin = route.coordinates.first;
+    await localDataSource.saveRoute(
+      userId: userId,
+      journeyId: journeyId,
+      originLat: origin[1],
+      originLng: origin[0],
+      destinationLat: destinationLat,
+      destinationLng: destinationLng,
+      route: route,
+    );
+    return route;
+  }
+
+  @override
   Future<RaceRoute?> getMarathonRoute() async {
     return await localDataSource.loadMarathonRoute();
   }

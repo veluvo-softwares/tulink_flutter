@@ -30,7 +30,7 @@ class ApiRoutes {
   // User Management Routes
   static const String users = '/users';
   static const String userSearch = '/users/search';
-  static const String userPreferences = '/users/preferences';
+  static const String userPreferences = '/users/me/preferences';
 
   // Dynamic User Routes
   static String userById(String id) => '/users/$id';

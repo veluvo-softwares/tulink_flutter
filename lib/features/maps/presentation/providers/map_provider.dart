@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
@@ -14,8 +16,16 @@ import '../../data/models/route_result_model.dart';
 class MapProvider with ChangeNotifier {
   final MapRepository _repository;
   final SearchPlacesUseCase _searchPlacesUseCase;
+  final Future<bool?> Function()? _loadFollowLeaderDefault;
+  final Future<void> Function(bool enabled)? _saveFollowLeaderDefault;
 
-  MapProvider(this._repository, this._searchPlacesUseCase);
+  MapProvider(
+    this._repository,
+    this._searchPlacesUseCase, {
+    Future<bool?> Function()? loadFollowLeaderDefault,
+    Future<void> Function(bool enabled)? saveFollowLeaderDefault,
+  }) : _loadFollowLeaderDefault = loadFollowLeaderDefault,
+       _saveFollowLeaderDefault = saveFollowLeaderDefault;
 
   RouteResultModel? _currentRoute;
 
@@ -29,14 +39,54 @@ class MapProvider with ChangeNotifier {
   double? _preferredRouteOriginLat;
   double? _preferredRouteOriginLng;
   int _preferredRouteIndex = 0;
+  String? _preferredSavedRouteId;
 
   /// Follower choice is local to this device and journey. It defaults to true
   /// without requiring a stored value, so every newly joined convoy follows
   /// the leader unless the member deliberately opts out.
   final Map<String, bool> _followLeaderByJourney = <String, bool>{};
+  bool _followLeaderDefaultEnabled = true;
 
   bool followsLeaderRoute(String journeyId) =>
-      _followLeaderByJourney[journeyId] ?? true;
+      _followLeaderByJourney[journeyId] ?? _followLeaderDefaultEnabled;
+
+  bool get followLeaderDefaultEnabled => _followLeaderDefaultEnabled;
+
+  Future<void> initializePreferences() async {
+    final load = _loadFollowLeaderDefault;
+    if (load == null) return;
+    try {
+      _followLeaderDefaultEnabled = await load() ?? true;
+    } catch (error) {
+      debugPrint('Could not restore Follow the leader preference: $error');
+    }
+  }
+
+  void setFollowLeaderDefault(bool value) =>
+      _setFollowLeaderDefault(value, persist: true);
+
+  /// Applies a value received from the backend without writing it back.
+  void applyFollowLeaderDefault({required bool enabled}) =>
+      _setFollowLeaderDefault(enabled, persist: false);
+
+  void _setFollowLeaderDefault(bool value, {required bool persist}) {
+    if (_followLeaderDefaultEnabled == value &&
+        _followLeaderByJourney.isEmpty) {
+      return;
+    }
+    _followLeaderDefaultEnabled = value;
+    _followLeaderByJourney.clear();
+    invalidateRouteRequests();
+    notifyListeners();
+    final save = _saveFollowLeaderDefault;
+    if (persist && save != null) {
+      unawaited(
+        save(value).catchError((Object error) {
+          debugPrint('Could not save Follow the leader preference: $error');
+        }),
+      );
+    }
+  }
 
   void setFollowsLeaderRoute(String journeyId, bool value) {
     if (followsLeaderRoute(journeyId) == value &&
@@ -51,6 +101,7 @@ class MapProvider with ChangeNotifier {
   double? get preferredRouteOriginLat => _preferredRouteOriginLat;
   double? get preferredRouteOriginLng => _preferredRouteOriginLng;
   int get preferredRouteIndex => _preferredRouteIndex;
+  String? get preferredSavedRouteId => _preferredSavedRouteId;
 
   /// The surface generation the held route was resolved under. A rebuilt
   /// surface has none of the drawn geometry, so work captured against the old
@@ -176,6 +227,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = null;
     _preferredRouteOriginLng = null;
     _preferredRouteIndex = 0;
+    _preferredSavedRouteId = null;
     notifyListeners();
   }
 
@@ -333,6 +385,33 @@ class MapProvider with ChangeNotifier {
     ),
   );
 
+  Future<RouteResultModel?> applyPreferredSavedRoute({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    required int baseVersion,
+    int? surfaceGeneration,
+  }) {
+    final savedRouteId = _preferredSavedRouteId;
+    if (savedRouteId == null) return Future.value();
+    return _runCanonicalRequest(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+      surfaceGeneration: surfaceGeneration,
+      request: () => _repository.applySavedRoute(
+        userId: userId,
+        journeyId: journeyId,
+        savedRouteId: savedRouteId,
+        destinationLat: destLat,
+        destinationLng: destLng,
+        baseVersion: baseVersion,
+      ),
+    );
+  }
+
   Future<RouteResultModel?> _runCanonicalRequest({
     required String userId,
     required String journeyId,
@@ -393,6 +472,7 @@ class MapProvider with ChangeNotifier {
     double? originLng,
     int routeIndex = 0,
     int? surfaceGeneration,
+    String? savedRouteId,
   }) {
     final key = _routeKey(
       userId: userId,
@@ -404,6 +484,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = originLat;
     _preferredRouteOriginLng = originLng;
     _preferredRouteIndex = routeIndex;
+    _preferredSavedRouteId = savedRouteId;
     _install(route, key, surfaceGeneration ?? _surfaceGeneration);
     notifyListeners();
   }
@@ -415,6 +496,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = null;
     _preferredRouteOriginLng = null;
     _preferredRouteIndex = 0;
+    _preferredSavedRouteId = null;
   }
 
   /// Show the stored route for this request, if one is held and nothing is
