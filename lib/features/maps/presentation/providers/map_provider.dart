@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import '../../../../core/common/result.dart';
@@ -14,8 +16,16 @@ import '../../data/models/route_result_model.dart';
 class MapProvider with ChangeNotifier {
   final MapRepository _repository;
   final SearchPlacesUseCase _searchPlacesUseCase;
+  final Future<bool?> Function()? _loadFollowLeaderDefault;
+  final Future<void> Function(bool enabled)? _saveFollowLeaderDefault;
 
-  MapProvider(this._repository, this._searchPlacesUseCase);
+  MapProvider(
+    this._repository,
+    this._searchPlacesUseCase, {
+    Future<bool?> Function()? loadFollowLeaderDefault,
+    Future<void> Function(bool enabled)? saveFollowLeaderDefault,
+  }) : _loadFollowLeaderDefault = loadFollowLeaderDefault,
+       _saveFollowLeaderDefault = saveFollowLeaderDefault;
 
   RouteResultModel? _currentRoute;
 
@@ -35,9 +45,41 @@ class MapProvider with ChangeNotifier {
   /// without requiring a stored value, so every newly joined convoy follows
   /// the leader unless the member deliberately opts out.
   final Map<String, bool> _followLeaderByJourney = <String, bool>{};
+  bool _followLeaderDefaultEnabled = true;
 
   bool followsLeaderRoute(String journeyId) =>
-      _followLeaderByJourney[journeyId] ?? true;
+      _followLeaderByJourney[journeyId] ?? _followLeaderDefaultEnabled;
+
+  bool get followLeaderDefaultEnabled => _followLeaderDefaultEnabled;
+
+  Future<void> initializePreferences() async {
+    final load = _loadFollowLeaderDefault;
+    if (load == null) return;
+    try {
+      _followLeaderDefaultEnabled = await load() ?? true;
+    } catch (error) {
+      debugPrint('Could not restore Follow the leader preference: $error');
+    }
+  }
+
+  void setFollowLeaderDefault(bool value) {
+    if (_followLeaderDefaultEnabled == value &&
+        _followLeaderByJourney.isEmpty) {
+      return;
+    }
+    _followLeaderDefaultEnabled = value;
+    _followLeaderByJourney.clear();
+    invalidateRouteRequests();
+    notifyListeners();
+    final save = _saveFollowLeaderDefault;
+    if (save != null) {
+      unawaited(
+        save(value).catchError((Object error) {
+          debugPrint('Could not save Follow the leader preference: $error');
+        }),
+      );
+    }
+  }
 
   void setFollowsLeaderRoute(String journeyId, bool value) {
     if (followsLeaderRoute(journeyId) == value &&

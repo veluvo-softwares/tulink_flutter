@@ -309,7 +309,15 @@ class ServiceLocator {
     _authProvider = AuthProvider(_authRepository);
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
     _themeProvider = ThemeProvider();
-    _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
+    _mapProvider = MapProvider(
+      _mapRepository,
+      _searchPlacesUseCase,
+      loadFollowLeaderDefault: () async =>
+          _authBox.get(StorageKeys.followLeaderDefaultEnabled) as bool?,
+      saveFollowLeaderDefault: (enabled) =>
+          _authBox.put(StorageKeys.followLeaderDefaultEnabled, enabled),
+    );
+    await _mapProvider.initializePreferences();
     _savedRouteProvider = SavedRouteProvider(_savedRouteRepository);
     _navigationProvider = NavigationProvider(
       journeyLocationService: _journeyLocationService,
