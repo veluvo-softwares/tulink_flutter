@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart' as geo;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/services/car_toast_service.dart';
+import 'package:tulink_flutter/core/di/service_locator.dart';
 import 'package:tulink_flutter/core/layout/tulink_breakpoints.dart';
 import 'package:tulink_flutter/core/services/push_notification_service.dart';
 import 'package:tulink_flutter/core/theme/tulink_colors.dart';
@@ -43,6 +44,8 @@ import 'package:tulink_flutter/features/maps/presentation/providers/map_provider
 import 'package:tulink_flutter/features/maps/presentation/widgets/persistent_tulink_map.dart';
 import 'package:tulink_flutter/features/maps/presentation/widgets/route_alternatives_picker.dart';
 import 'package:tulink_flutter/features/profile/presentation/screens/profile_screen.dart';
+import 'package:tulink_flutter/features/saved_routes/domain/entities/saved_route.dart';
+import 'package:tulink_flutter/features/saved_routes/presentation/widgets/saved_route_sheets.dart';
 
 /// Tulink's map-first home. Creating a journey is intentionally reduced to
 /// destination -> people -> start, while the existing providers continue to
@@ -100,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedDraftRouteIndex = 0;
   String? _draftRoutePlaceId;
   LatLng? _draftRouteOrigin;
+  String? _selectedSavedRouteId;
   bool _isStarting = false;
   bool _isEnteringLiveJourney = false;
 
@@ -1164,8 +1168,148 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = selectedPlace.placeId;
       _draftRouteOrigin = null;
+      _selectedSavedRouteId = null;
     });
     await _showDestinationOnMap(selectedPlace);
+  }
+
+  Future<PlaceSearchResult?> _searchSavedRoutePlace() async {
+    final usesLandscapePanel = TulinkBreakpoints.isWideLandscape(context);
+    if (usesLandscapePanel) {
+      return showDialog<PlaceSearchResult>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: .46),
+        builder: (_) => Dialog(
+          alignment: Alignment.bottomLeft,
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: const _DestinationSearchSheet(isLandscapePanel: true),
+        ),
+      );
+    }
+    return showModalBottomSheet<PlaceSearchResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _DestinationSearchSheet(),
+    );
+  }
+
+  Future<T?> _showSavedRouteSurface<T>(Widget child) {
+    if (TulinkBreakpoints.isWideLandscape(context)) {
+      return showDialog<T>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: .46),
+        builder: (_) => Dialog(
+          alignment: Alignment.bottomLeft,
+          clipBehavior: Clip.antiAlias,
+          insetPadding: const EdgeInsets.fromLTRB(112, 32, 32, 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: child,
+        ),
+      );
+    }
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => child,
+    );
+  }
+
+  Future<void> _openSavedRoutes() async {
+    final isLandscape = TulinkBreakpoints.isWideLandscape(context);
+    final result = await _showSavedRouteSurface<SavedRouteLibraryResult>(
+      SavedRouteLibrarySheet(isLandscapePanel: isLandscape),
+    );
+    if (!mounted || result == null) return;
+    if (result.route != null) {
+      await _useSavedRoute(result.route!);
+      return;
+    }
+    final existing = result.editRoute;
+    final command = existing == null
+        ? result.command
+        : existing.source == SavedRouteSource.computed
+        ? SavedRouteLibraryCommand.plan
+        : SavedRouteLibraryCommand.record;
+    if (command == null) return;
+    final saved = await _showSavedRouteSurface<SavedRoute>(
+      SavedRouteComposerSheet(
+        mode: command,
+        routeDataSource: ServiceLocator().routeRemoteDataSource,
+        locationService: ServiceLocator().locationService,
+        searchPlace: _searchSavedRoutePlace,
+        preview: (route) async {
+          if (route.coordinates.length < 2) return;
+          await _drawPreviewRoutes([route], selectedIndex: 0);
+          if (mounted) await _fitPreviewCamera(route.coordinates);
+        },
+        initialRoute: existing,
+        isLandscapePanel: isLandscape,
+      ),
+    );
+    if (saved != null && mounted) await _useSavedRoute(saved);
+  }
+
+  Future<void> _useSavedRoute(SavedRoute saved) async {
+    if (saved.geometry.length < 2 || saved.waypoints.length < 2) return;
+    final destination = saved.destination;
+    final route = RouteResultModel(
+      coordinates: saved.geometry,
+      distanceMetres: saved.distanceMetres,
+      durationSeconds: saved.durationSeconds ?? 0,
+      steps: saved.steps
+          .map(
+            (step) => RouteStepModel(
+              instruction: step.instruction,
+              distanceMetres: step.distanceMetres,
+              maneuver: step.maneuver,
+            ),
+          )
+          .toList(growable: false),
+    );
+    final place = PlaceSearchResult(
+      placeId: 'saved-route-${saved.id}',
+      displayName: saved.name,
+      address: destination.name ?? 'Saved route destination',
+      lat: destination.latitude,
+      lng: destination.longitude,
+      types: const ['saved_route'],
+    );
+    final origin = saved.waypoints.first;
+    final userId = context.read<AuthProvider>().user?.id ?? 'map-preview';
+    context.read<MapProvider>().preferRoute(
+      route: route,
+      userId: userId,
+      journeyId: 'draft-${place.placeId}',
+      destLat: place.lat,
+      destLng: place.lng,
+      originLat: origin.latitude,
+      originLng: origin.longitude,
+      savedRouteId: saved.id,
+      surfaceGeneration: _mapController.generation,
+    );
+    setState(() {
+      _destination = place;
+      _companions = const [];
+      _draftRouteOptions = [route];
+      _selectedDraftRouteIndex = 0;
+      _draftRoutePlaceId = place.placeId;
+      _draftRouteOrigin = LatLng(
+        latitude: origin.latitude,
+        longitude: origin.longitude,
+      );
+      _selectedSavedRouteId = saved.id;
+    });
+    widget.onTabSelected?.call(0);
+    await _drawPreviewRoutes([route], selectedIndex: 0);
+    if (mounted) await _fitPreviewCamera(route.coordinates);
   }
 
   Future<void> _repeatJourney(Journey journey) async {
@@ -1199,6 +1343,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = place.placeId;
       _draftRouteOrigin = null;
+      _selectedSavedRouteId = null;
     });
     await _showDestinationOnMap(place);
   }
@@ -1250,6 +1395,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       originLat: _draftRouteOrigin?.latitude,
       originLng: _draftRouteOrigin?.longitude,
       routeIndex: _selectedDraftRouteIndex,
+      savedRouteId: _selectedSavedRouteId,
       surfaceGeneration: _mapController.generation,
     );
   }
@@ -1453,6 +1599,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _selectedDraftRouteIndex = 0;
           _draftRoutePlaceId = null;
           _draftRouteOrigin = null;
+          _selectedSavedRouteId = null;
         });
       }
       await _enterPendingJourney(
@@ -1961,6 +2108,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _selectedDraftRouteIndex = 0;
       _draftRoutePlaceId = null;
       _draftRouteOrigin = null;
+      _selectedSavedRouteId = null;
     });
     unawaited(_recenter());
   }
@@ -2121,6 +2269,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onLogoTap: _clearDraft,
                         onSearchTap: _chooseDestination,
                         onJoinTap: _joinJourneyByCode,
+                        onRoutesTap: _openSavedRoutes,
                         onProfileTap: _openProfile,
                       ),
                     ),
@@ -2303,6 +2452,7 @@ class _MapSearchBar extends StatelessWidget {
     required this.onLogoTap,
     required this.onSearchTap,
     required this.onJoinTap,
+    required this.onRoutesTap,
     required this.onProfileTap,
   });
 
@@ -2312,6 +2462,7 @@ class _MapSearchBar extends StatelessWidget {
   final VoidCallback onLogoTap;
   final VoidCallback onSearchTap;
   final VoidCallback onJoinTap;
+  final VoidCallback onRoutesTap;
   final VoidCallback onProfileTap;
 
   @override
@@ -2359,6 +2510,12 @@ class _MapSearchBar extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+            IconButton(
+              tooltip: 'Saved routes',
+              onPressed: onRoutesTap,
+              color: colors.deepTeal,
+              icon: const Icon(Icons.alt_route_rounded, size: 21),
             ),
             IconButton(
               tooltip: 'Join with a code',

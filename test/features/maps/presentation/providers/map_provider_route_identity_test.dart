@@ -486,6 +486,16 @@ class _FakeMapRepository implements MapRepository {
   }
 
   @override
+  Future<RouteResultModel?> applySavedRoute({
+    required String userId,
+    required String journeyId,
+    required String savedRouteId,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+  }) => replacementFor[journeyId] ?? Future.value(null);
+
+  @override
   Future<RaceRoute?> getMarathonRoute() async => null;
 
   @override

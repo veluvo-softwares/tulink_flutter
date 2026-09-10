@@ -46,6 +46,10 @@ import '../../features/maps/domain/repositories/map_repository.dart';
 import '../../features/maps/domain/usecases/search_places_usecase.dart';
 import '../../features/maps/presentation/providers/map_provider.dart';
 import '../../features/maps/presentation/providers/navigation_provider.dart';
+import '../../features/saved_routes/data/datasources/saved_route_remote_data_source.dart';
+import '../../features/saved_routes/data/repositories/saved_route_repository_impl.dart';
+import '../../features/saved_routes/domain/repositories/saved_route_repository.dart';
+import '../../features/saved_routes/presentation/providers/saved_route_provider.dart';
 import '../constants/app_constants.dart';
 import '../constants/storage_keys.dart';
 import '../network/dio_client.dart';
@@ -87,6 +91,11 @@ class ServiceLocator {
   late SearchPlacesUseCase _searchPlacesUseCase;
   late MapProvider _mapProvider;
   late NavigationProvider _navigationProvider;
+
+  // Saved routes
+  late SavedRouteRemoteDataSource _savedRouteRemoteDataSource;
+  late SavedRouteRepository _savedRouteRepository;
+  late SavedRouteProvider _savedRouteProvider;
 
   // Journey Feature
   late JourneyRemoteDataSource _journeyRemoteDataSource;
@@ -150,6 +159,7 @@ class ServiceLocator {
   MapProvider get mapProvider => _mapProvider;
   NavigationProvider get navigationProvider => _navigationProvider;
   RouteRemoteDataSource get routeRemoteDataSource => _routeRemoteDataSource;
+  SavedRouteProvider get savedRouteProvider => _savedRouteProvider;
 
   // Journey Feature Getters
   JourneyProvider get journeyProvider => _journeyProvider;
@@ -216,6 +226,7 @@ class ServiceLocator {
       dio: _dioClient.dio,
     );
     _routeRemoteDataSource = RouteRemoteDataSourceImpl(dio: _dioClient.dio);
+    _savedRouteRemoteDataSource = SavedRouteRemoteDataSource(_dioClient.dio);
     _journeyRemoteDataSource = JourneyRemoteDataSourceImpl(dio: _dioClient.dio);
     _inviteRemoteDataSource = InviteRemoteDataSourceImpl(dio: _dioClient.dio);
     _analyticsRemoteDataSource = AnalyticsRemoteDataSourceImpl(
@@ -243,6 +254,9 @@ class ServiceLocator {
       placeSearchRemoteDataSource: _placeSearchRemoteDataSource,
       routeRemoteDataSource: _routeRemoteDataSource,
       connectivityService: _connectivityService,
+    );
+    _savedRouteRepository = SavedRouteRepositoryImpl(
+      _savedRouteRemoteDataSource,
     );
     _journeyRepository = JourneyRepositoryImpl(
       remoteDataSource: _journeyRemoteDataSource,
@@ -296,6 +310,7 @@ class ServiceLocator {
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
     _themeProvider = ThemeProvider();
     _mapProvider = MapProvider(_mapRepository, _searchPlacesUseCase);
+    _savedRouteProvider = SavedRouteProvider(_savedRouteRepository);
     _navigationProvider = NavigationProvider(
       journeyLocationService: _journeyLocationService,
       connectivityService: _connectivityService,

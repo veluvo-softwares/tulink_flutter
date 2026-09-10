@@ -42,6 +42,15 @@ abstract class MapRepository {
     int routeIndex = 0,
   });
 
+  Future<RouteResultModel?> applySavedRoute({
+    required String userId,
+    required String journeyId,
+    required String savedRouteId,
+    required double destinationLat,
+    required double destinationLng,
+    required int baseVersion,
+  });
+
   /// The route already stored for this journey, if one matches the
   /// destination.
   ///

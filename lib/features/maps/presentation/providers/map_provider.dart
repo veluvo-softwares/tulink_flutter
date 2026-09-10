@@ -29,6 +29,7 @@ class MapProvider with ChangeNotifier {
   double? _preferredRouteOriginLat;
   double? _preferredRouteOriginLng;
   int _preferredRouteIndex = 0;
+  String? _preferredSavedRouteId;
 
   /// Follower choice is local to this device and journey. It defaults to true
   /// without requiring a stored value, so every newly joined convoy follows
@@ -51,6 +52,7 @@ class MapProvider with ChangeNotifier {
   double? get preferredRouteOriginLat => _preferredRouteOriginLat;
   double? get preferredRouteOriginLng => _preferredRouteOriginLng;
   int get preferredRouteIndex => _preferredRouteIndex;
+  String? get preferredSavedRouteId => _preferredSavedRouteId;
 
   /// The surface generation the held route was resolved under. A rebuilt
   /// surface has none of the drawn geometry, so work captured against the old
@@ -176,6 +178,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = null;
     _preferredRouteOriginLng = null;
     _preferredRouteIndex = 0;
+    _preferredSavedRouteId = null;
     notifyListeners();
   }
 
@@ -333,6 +336,33 @@ class MapProvider with ChangeNotifier {
     ),
   );
 
+  Future<RouteResultModel?> applyPreferredSavedRoute({
+    required String userId,
+    required String journeyId,
+    required double destLat,
+    required double destLng,
+    required int baseVersion,
+    int? surfaceGeneration,
+  }) {
+    final savedRouteId = _preferredSavedRouteId;
+    if (savedRouteId == null) return Future.value();
+    return _runCanonicalRequest(
+      userId: userId,
+      journeyId: journeyId,
+      destLat: destLat,
+      destLng: destLng,
+      surfaceGeneration: surfaceGeneration,
+      request: () => _repository.applySavedRoute(
+        userId: userId,
+        journeyId: journeyId,
+        savedRouteId: savedRouteId,
+        destinationLat: destLat,
+        destinationLng: destLng,
+        baseVersion: baseVersion,
+      ),
+    );
+  }
+
   Future<RouteResultModel?> _runCanonicalRequest({
     required String userId,
     required String journeyId,
@@ -393,6 +423,7 @@ class MapProvider with ChangeNotifier {
     double? originLng,
     int routeIndex = 0,
     int? surfaceGeneration,
+    String? savedRouteId,
   }) {
     final key = _routeKey(
       userId: userId,
@@ -404,6 +435,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = originLat;
     _preferredRouteOriginLng = originLng;
     _preferredRouteIndex = routeIndex;
+    _preferredSavedRouteId = savedRouteId;
     _install(route, key, surfaceGeneration ?? _surfaceGeneration);
     notifyListeners();
   }
@@ -415,6 +447,7 @@ class MapProvider with ChangeNotifier {
     _preferredRouteOriginLat = null;
     _preferredRouteOriginLng = null;
     _preferredRouteIndex = 0;
+    _preferredSavedRouteId = null;
   }
 
   /// Show the stored route for this request, if one is held and nothing is

@@ -184,6 +184,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<NavigationProvider>.value(
           value: serviceLocator.navigationProvider,
         ),
+        ChangeNotifierProvider.value(value: serviceLocator.savedRouteProvider),
         // Journey Provider
         ChangeNotifierProvider<JourneyProvider>.value(
           value: serviceLocator.journeyProvider,
