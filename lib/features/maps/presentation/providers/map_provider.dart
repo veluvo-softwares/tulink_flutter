@@ -62,7 +62,14 @@ class MapProvider with ChangeNotifier {
     }
   }
 
-  void setFollowLeaderDefault(bool value) {
+  void setFollowLeaderDefault(bool value) =>
+      _setFollowLeaderDefault(value, persist: true);
+
+  /// Applies a value received from the backend without writing it back.
+  void applyFollowLeaderDefault({required bool enabled}) =>
+      _setFollowLeaderDefault(enabled, persist: false);
+
+  void _setFollowLeaderDefault(bool value, {required bool persist}) {
     if (_followLeaderDefaultEnabled == value &&
         _followLeaderByJourney.isEmpty) {
       return;
@@ -72,7 +79,7 @@ class MapProvider with ChangeNotifier {
     invalidateRouteRequests();
     notifyListeners();
     final save = _saveFollowLeaderDefault;
-    if (save != null) {
+    if (persist && save != null) {
       unawaited(
         save(value).catchError((Object error) {
           debugPrint('Could not save Follow the leader preference: $error');

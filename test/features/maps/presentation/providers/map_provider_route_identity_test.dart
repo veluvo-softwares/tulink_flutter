@@ -406,6 +406,11 @@ void main() {
     expect(preferencesProvider.followLeaderDefaultEnabled, isTrue);
     expect(preferencesProvider.followsLeaderRoute('active-journey'), isTrue);
     expect(savedValue, isTrue);
+
+    savedValue = null;
+    preferencesProvider.applyFollowLeaderDefault(enabled: false);
+    await Future<void>.delayed(Duration.zero);
+    expect(savedValue, isNull);
   });
 
   test(
