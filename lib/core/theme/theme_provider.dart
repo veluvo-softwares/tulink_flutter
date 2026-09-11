@@ -1,50 +1,71 @@
 import 'package:flutter/material.dart';
 
-/// Provider for managing theme state throughout the application
-/// Tu-Link is dark mode only, following motorsports design principles
+/// Manages local appearance independently from account preferences.
 class ThemeProvider extends ChangeNotifier {
-  /// Constructor - Tu-Link is dark mode only
-  ThemeProvider();
+  /// Optional storage callbacks keep the preference testable without Hive.
+  ThemeProvider({
+    Future<Object?> Function()? loadPreference,
+    Future<void> Function(String)? savePreference,
+  }) : _loadPreference = loadPreference,
+       _savePreference = savePreference;
 
-  // Tu-Link is always dark mode
-  static const ThemeMode _themeMode = ThemeMode.dark;
+  final Future<Object?> Function()? _loadPreference;
+  final Future<void> Function(String)? _savePreference;
+  ThemeMode _themeMode = ThemeMode.light;
+  Future<void> _pendingSave = Future<void>.value();
+  int _revision = 0;
 
-  /// Get the current theme mode (always dark for Tu-Link)
+  /// The explicit mode; Flutter resolves system mode using platform brightness.
   ThemeMode get themeMode => _themeMode;
 
-  /// Tu-Link is always dark mode
-  bool get isDarkMode => true;
+  /// Whether dark mode was explicitly selected.
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
 
-  /// Tu-Link is dark mode only - these methods are kept for compatibility
-  /// but have no effect since the app is always in dark mode
-
-  /// No-op: Tu-Link is dark mode only
-  Future<void> setThemeMode(ThemeMode mode) async {
-    // Tu-Link is dark mode only - ignore theme changes
-    debugPrint('Tu-Link is dark mode only. Theme change ignored.');
+  /// Restores only recognized values, preserving light for new installations.
+  Future<void> initializePreferences() async {
+    final revision = _revision;
+    try {
+      final stored = await _loadPreference?.call();
+      if (revision != _revision) return;
+      final restored = switch (stored) {
+        'dark' => ThemeMode.dark,
+        'system' => ThemeMode.system,
+        _ => ThemeMode.light,
+      };
+      if (restored == _themeMode) return;
+      _themeMode = restored;
+      notifyListeners();
+    } on Object catch (_) {
+      // Local storage failure must not block startup.
+    }
   }
 
-  /// No-op: Tu-Link is dark mode only
-  Future<void> toggleTheme() async {
-    // Tu-Link is dark mode only - no toggling available
-    debugPrint('Tu-Link is dark mode only. Theme toggle ignored.');
+  /// Applies immediately and serializes saves so the latest selection wins.
+  Future<void> setThemeMode(ThemeMode mode) {
+    if (mode == _themeMode) return _pendingSave;
+    _revision++;
+    _themeMode = mode;
+    notifyListeners();
+    _pendingSave = _pendingSave.then((_) async {
+      try {
+        await _savePreference?.call(mode.name);
+      } on Object catch (_) {
+        // Continue using the in-memory preference if local storage is unavailable.
+      }
+    });
+    return _pendingSave;
   }
 
-  /// No-op: Tu-Link is dark mode only
-  Future<void> setSystemTheme() async {
-    // Tu-Link is dark mode only
-    debugPrint('Tu-Link is dark mode only. System theme ignored.');
-  }
+  /// Toggles between explicit light and dark appearances.
+  Future<void> toggleTheme() =>
+      setThemeMode(isDarkMode ? ThemeMode.light : ThemeMode.dark);
 
-  /// No-op: Tu-Link is dark mode only
-  Future<void> setLightTheme() async {
-    // Tu-Link is dark mode only
-    debugPrint('Tu-Link is dark mode only. Light theme not supported.');
-  }
+  /// Follows the device appearance.
+  Future<void> setSystemTheme() => setThemeMode(ThemeMode.system);
 
-  /// No-op: Tu-Link is dark mode only (already the default)
-  Future<void> setDarkTheme() async {
-    // Already dark mode - no action needed
-    debugPrint('Tu-Link is already in dark mode.');
-  }
+  /// Selects the existing light appearance.
+  Future<void> setLightTheme() => setThemeMode(ThemeMode.light);
+
+  /// Selects teal dark mode.
+  Future<void> setDarkTheme() => setThemeMode(ThemeMode.dark);
 }
