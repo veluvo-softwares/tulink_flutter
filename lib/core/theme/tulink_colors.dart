@@ -18,6 +18,9 @@ class TulinkColors extends ThemeExtension<TulinkColors> {
   final bool isDark;
 
   final Color deepTeal;
+
+  /// Brand-colored text and icons with sufficient contrast on theme surfaces.
+  Color get foregroundAccent => isDark ? routeTeal : deepTeal;
   final Color routeTeal;
   final Color sunsetOrange;
   final Color warmSand;

@@ -395,7 +395,7 @@ class _ConvoyStatusBarState extends State<ConvoyStatusBar>
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: colors.deepTeal,
+                        color: colors.foregroundAccent,
                         decoration: TextDecoration.underline,
                       ),
                     ),
@@ -524,7 +524,7 @@ class _ReconnectAction extends StatelessWidget {
           // concurrent reconnect.
           onPressed: isReconnecting ? null : onPressed,
           style: TextButton.styleFrom(
-            foregroundColor: colors.deepTeal,
+            foregroundColor: colors.foregroundAccent,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             minimumSize: const Size(0, 44),
             tapTargetSize: MaterialTapTargetSize.padded,
@@ -535,7 +535,9 @@ class _ReconnectAction extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(colors.deepTeal),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colors.foregroundAccent,
+                    ),
                   ),
                 )
               : const Icon(Icons.refresh_rounded, size: 16),

@@ -51,7 +51,7 @@ class SettingsMenuItem extends StatelessWidget {
                   ),
                   child: Icon(
                     icon,
-                    color: iconColor ?? colors.deepTeal,
+                    color: iconColor ?? colors.foregroundAccent,
                     size: 20,
                   ),
                 ),

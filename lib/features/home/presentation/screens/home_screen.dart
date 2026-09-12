@@ -2565,13 +2565,13 @@ class _MapSearchBar extends StatelessWidget {
             IconButton(
               tooltip: 'Saved routes',
               onPressed: onRoutesTap,
-              color: colors.deepTeal,
+              color: colors.foregroundAccent,
               icon: const Icon(Icons.alt_route_rounded, size: 21),
             ),
             IconButton(
               tooltip: 'Join with a code',
               onPressed: onJoinTap,
-              color: colors.deepTeal,
+              color: colors.foregroundAccent,
               icon: const Icon(Icons.dialpad_rounded, size: 21),
             ),
             Padding(
@@ -2824,7 +2824,7 @@ class _DestinationSearchSheetState extends State<_DestinationSearchSheet> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                   leading: CircleAvatar(
                     backgroundColor: colors.routeTeal.withValues(alpha: .12),
-                    foregroundColor: colors.deepTeal,
+                    foregroundColor: colors.foregroundAccent,
                     child: const Icon(Icons.place_outlined),
                   ),
                   title: Text(
@@ -3158,7 +3158,7 @@ class _HomeJourneySheet extends StatelessWidget {
             Text(
               'LAST JOURNEY',
               style: TextStyle(
-                color: colors.deepTeal,
+                color: colors.foregroundAccent,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.1,
@@ -3611,9 +3611,16 @@ class _JourneyOverlayRow extends StatelessWidget {
                 onPressed: onRepeat,
                 style: FilledButton.styleFrom(
                   backgroundColor: isPrimary
-                      ? colors.deepTeal
+                      ? Theme.of(context).colorScheme.primary
                       : colors.warmSand,
-                  foregroundColor: isPrimary ? Colors.white : colors.deepTeal,
+                  foregroundColor: isPrimary
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Theme.of(context).colorScheme.tertiary,
+                  side: !isPrimary && colors.isDark
+                      ? BorderSide(
+                          color: Theme.of(context).colorScheme.tertiary,
+                        )
+                      : null,
                   minimumSize: const ui.Size(0, 44),
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                 ),
@@ -3751,7 +3758,6 @@ class _InvitationOverlayRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).tulinkColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: isPrimary
@@ -3798,8 +3804,8 @@ class _InvitationOverlayRow extends StatelessWidget {
                   child: FilledButton(
                     onPressed: isBusy ? null : onAccept,
                     style: FilledButton.styleFrom(
-                      backgroundColor: colors.deepTeal,
-                      foregroundColor: Colors.white,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       minimumSize: const ui.Size.fromHeight(52),
                     ),
                     child: Text(isBusy ? 'Working…' : 'Accept'),
@@ -3891,7 +3897,7 @@ class _MapSheetHeader extends StatelessWidget {
                   child: Text(
                     '$count',
                     style: TextStyle(
-                      color: colors.deepTeal,
+                      color: colors.foregroundAccent,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

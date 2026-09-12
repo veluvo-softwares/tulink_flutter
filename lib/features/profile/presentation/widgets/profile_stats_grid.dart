@@ -68,7 +68,7 @@ class _Stat extends StatelessWidget {
           '$value${suffix ?? ''}',
           maxLines: 1,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: colors.deepTeal,
+            color: colors.foregroundAccent,
             fontWeight: FontWeight.w800,
           ),
         ),

@@ -82,17 +82,17 @@ class MapStyleSelector extends StatelessWidget {
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  color: colors.deepTeal,
+                  color: colors.foregroundAccent,
                 ),
               )
-            : Icon(Icons.layers_outlined, color: colors.deepTeal),
+            : Icon(Icons.layers_outlined, color: colors.foregroundAccent),
         itemBuilder: (context) => [
           for (final style in TulinkMapStyle.values)
             PopupMenuItem<TulinkMapStyle>(
               value: style,
               child: Row(
                 children: [
-                  Icon(style.icon, color: colors.deepTeal, size: 21),
+                  Icon(style.icon, color: colors.foregroundAccent, size: 21),
                   const SizedBox(width: 12),
                   Expanded(child: Text(style.label)),
                   if (style == selectedStyle)

@@ -55,55 +55,57 @@ class AppTheme {
     );
 
     return base.copyWith(
-      textTheme: base.textTheme.copyWith(
-        displaySmall: TextStyle(
-          fontSize: 34,
-          height: 1.12,
-          fontWeight: FontWeight.w800,
-          color: colors.ink,
-        ),
-        headlineMedium: TextStyle(
-          fontSize: 22,
-          height: 1.18,
-          fontWeight: FontWeight.w800,
-          color: colors.ink,
-        ),
-        headlineSmall: TextStyle(
-          fontSize: 22,
-          height: 1.25,
-          fontWeight: FontWeight.w700,
-          color: colors.ink,
-        ),
-        titleLarge: TextStyle(
-          fontSize: 20,
-          height: 1.25,
-          fontWeight: FontWeight.w700,
-          color: colors.ink,
-        ),
-        titleMedium: TextStyle(
-          fontSize: 16,
-          height: 1.35,
-          fontWeight: FontWeight.w700,
-          color: colors.ink,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 16,
-          height: 1.5,
-          fontWeight: FontWeight.w400,
-          color: colors.ink,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 14,
-          height: 1.45,
-          fontWeight: FontWeight.w400,
-          color: colors.muted,
-        ),
-        labelLarge: const TextStyle(
-          fontSize: 16,
-          height: 1.25,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      textTheme: base.textTheme
+          .copyWith(
+            displaySmall: TextStyle(
+              fontSize: 34,
+              height: 1.12,
+              fontWeight: FontWeight.w800,
+              color: colors.ink,
+            ),
+            headlineMedium: TextStyle(
+              fontSize: 22,
+              height: 1.18,
+              fontWeight: FontWeight.w800,
+              color: colors.ink,
+            ),
+            headlineSmall: TextStyle(
+              fontSize: 22,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+            titleLarge: TextStyle(
+              fontSize: 20,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+            titleMedium: TextStyle(
+              fontSize: 16,
+              height: 1.35,
+              fontWeight: FontWeight.w700,
+              color: colors.ink,
+            ),
+            bodyLarge: TextStyle(
+              fontSize: 16,
+              height: 1.5,
+              fontWeight: FontWeight.w400,
+              color: colors.ink,
+            ),
+            bodyMedium: TextStyle(
+              fontSize: 14,
+              height: 1.45,
+              fontWeight: FontWeight.w400,
+              color: colors.muted,
+            ),
+            labelLarge: const TextStyle(
+              fontSize: 16,
+              height: 1.25,
+              fontWeight: FontWeight.w700,
+            ),
+          )
+          .apply(fontFamily: 'Manrope'),
       appBarTheme: AppBarTheme(
         elevation: 0,
         centerTitle: false,

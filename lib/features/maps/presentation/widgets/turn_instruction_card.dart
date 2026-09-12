@@ -88,7 +88,7 @@ class TurnInstructionCard extends StatelessWidget {
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w700,
-            color: colors.deepTeal,
+            color: colors.foregroundAccent,
             height: 1.0,
             letterSpacing: 0.5,
           ),
@@ -121,7 +121,7 @@ class TurnInstructionCard extends StatelessWidget {
         ),
         child: Icon(
           isVoiceEnabled ? Icons.volume_up : Icons.volume_off,
-          color: isVoiceEnabled ? colors.deepTeal : colors.muted,
+          color: isVoiceEnabled ? colors.foregroundAccent : colors.muted,
           size: 20,
         ),
       ),

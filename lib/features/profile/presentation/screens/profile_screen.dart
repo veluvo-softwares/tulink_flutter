@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tulink_flutter/features/profile/presentation/widgets/appearance_setting.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:tulink_flutter/core/layout/tulink_breakpoints.dart';
@@ -91,6 +92,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 10),
         _SettingsGroup(
           children: [
+            const AppearanceSetting(),
+            const Divider(height: 1),
             Consumer<MapProvider>(
               builder: (context, maps, _) => SettingsMenuItem(
                 icon: Icons.follow_the_signs_rounded,
@@ -283,13 +286,13 @@ class _ProfileHero extends StatelessWidget {
                 Icon(
                   isVerified ? Icons.verified_rounded : Icons.person_rounded,
                   size: 16,
-                  color: colors.deepTeal,
+                  color: colors.foregroundAccent,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   isVerified ? 'Verified traveller' : 'Tulink traveller',
                   style: TextStyle(
-                    color: colors.deepTeal,
+                    color: colors.foregroundAccent,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
