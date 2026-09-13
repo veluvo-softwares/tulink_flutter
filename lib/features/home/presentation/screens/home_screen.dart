@@ -2320,9 +2320,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               if (isWideLandscape)
                 Positioned(
-                  left: 112,
+                  left: 112 + MediaQuery.paddingOf(context).left,
                   bottom: 0,
-                  width: 500,
+                  width:
+                      (MediaQuery.sizeOf(context).width -
+                              MediaQuery.paddingOf(context).horizontal -
+                              128)
+                          .clamp(0.0, 500.0),
                   child: bottomOverlay,
                 )
               else
