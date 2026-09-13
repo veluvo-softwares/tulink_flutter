@@ -44,7 +44,7 @@ class SettingsMenuItem extends StatelessWidget {
                   height: 38,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: (iconColor ?? colors.routeTeal).withValues(
+                    color: (iconColor ?? colors.interactiveAccent).withValues(
                       alpha: .1,
                     ),
                     borderRadius: BorderRadius.circular(12),

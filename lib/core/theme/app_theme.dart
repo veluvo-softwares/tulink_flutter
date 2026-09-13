@@ -161,7 +161,7 @@ class AppTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
+          (states) => isDark && states.contains(WidgetState.disabled)
               ? colors.muted
               : states.contains(WidgetState.selected)
               ? scheme.onPrimary
@@ -170,7 +170,7 @@ class AppTheme {
               : null,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
+          (states) => isDark && states.contains(WidgetState.disabled)
               ? colors.divider
               : states.contains(WidgetState.selected)
               ? scheme.primary

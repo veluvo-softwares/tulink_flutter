@@ -106,7 +106,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: Switch.adaptive(
                   value: maps.followLeaderDefaultEnabled,
                   onChanged: maps.setFollowLeaderDefault,
-                  activeTrackColor: colors.routeTeal,
+                  activeTrackColor: colors.isDark
+                      ? colors.sunsetOrange
+                      : colors.routeTeal,
                 ),
               ),
             ),
@@ -122,7 +124,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: Switch.adaptive(
                   value: navigation.isVoiceEnabled,
                   onChanged: navigation.setVoiceEnabled,
-                  activeTrackColor: colors.routeTeal,
+                  activeTrackColor: colors.isDark
+                      ? colors.sunsetOrange
+                      : colors.routeTeal,
                 ),
               ),
             ),
@@ -332,7 +336,12 @@ class _TravelSummaryCard extends StatelessWidget {
                   color: Colors.white.withValues(alpha: .14),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: const Icon(Icons.route_rounded, color: Colors.white),
+                child: Icon(
+                  Icons.route_rounded,
+                  color: colors.isDark
+                      ? colors.interactiveAccent
+                      : Colors.white,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -362,7 +371,10 @@ class _TravelSummaryCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: colors.isDark ? colors.interactiveAccent : Colors.white,
+              ),
             ],
           ),
         ),

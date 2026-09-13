@@ -567,17 +567,29 @@ class _CreateJourneyScreenState extends State<CreateJourneyScreen> {
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: TextStyle(color: colors.silver.withValues(alpha: 0.5)),
+        hintStyle: TextStyle(
+          color: colors.isDark
+              ? colors.muted
+              : colors.silver.withValues(alpha: 0.5),
+        ),
         filled: true,
         fillColor: colors.cardDark,
         suffixIcon: suffixIcon,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.brushedSteel),
+          borderSide: BorderSide(
+            color: colors.isDark
+                ? colors.interactiveAccent
+                : colors.brushedSteel,
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colors.brushedSteel),
+          borderSide: BorderSide(
+            color: colors.isDark
+                ? colors.interactiveAccent
+                : colors.brushedSteel,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

@@ -3120,7 +3120,12 @@ class _HomeJourneySheet extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      const Icon(Icons.route_rounded, color: Colors.white),
+                      Icon(
+                        Icons.route_rounded,
+                        color: colors.isDark
+                            ? colors.interactiveAccent
+                            : Colors.white,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -3144,9 +3149,11 @@ class _HomeJourneySheet extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.arrow_forward_rounded,
-                        color: Colors.white,
+                        color: colors.isDark
+                            ? colors.interactiveAccent
+                            : Colors.white,
                       ),
                     ],
                   ),
