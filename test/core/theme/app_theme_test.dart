@@ -30,6 +30,46 @@ void main() {
     final scheme = theme.colorScheme;
     expect(scheme.primary, const Color(0xFFF35D32));
     expect(
+      theme.switchTheme.trackColor!.resolve({WidgetState.selected}),
+      scheme.primary,
+    );
+    expect(
+      theme.switchTheme.trackColor!.resolve({
+        WidgetState.selected,
+        WidgetState.disabled,
+      }),
+      isNot(scheme.primary),
+    );
+    expect(
+      theme.checkboxTheme.fillColor!.resolve({WidgetState.selected}),
+      scheme.primary,
+    );
+    expect(theme.radioTheme.fillColor!.resolve({}), scheme.tertiary);
+    expect(
+      theme.iconButtonTheme.style!.foregroundColor!.resolve({}),
+      scheme.tertiary,
+    );
+    expect(
+      theme.segmentedButtonTheme.style!.backgroundColor!.resolve({
+        WidgetState.selected,
+      }),
+      scheme.primary,
+    );
+    expect(
+      theme.inputDecorationTheme.enabledBorder!.borderSide.color,
+      scheme.tertiary,
+    );
+    expect(
+      theme.inputDecorationTheme.focusedBorder!.borderSide.color,
+      scheme.primary,
+    );
+    expect(
+      theme.inputDecorationTheme.disabledBorder!.borderSide.color,
+      isNot(scheme.tertiary),
+    );
+    expect(theme.textSelectionTheme.cursorColor, scheme.tertiary);
+    expect(TulinkColors.dark.foregroundAccent, scheme.tertiary);
+    expect(
       theme.filledButtonTheme.style!.backgroundColor!.resolve({}),
       scheme.primary,
     );

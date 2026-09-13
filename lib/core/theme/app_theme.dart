@@ -19,7 +19,7 @@ class AppTheme {
             onPrimary: const Color(0xFF1A1A19),
             secondary: colors.routeTeal,
             onSecondary: const Color(0xFF063C46),
-            tertiary: const Color(0xFFFFAB91),
+            tertiary: colors.interactiveAccent,
             onTertiary: const Color(0xFF1A1A19),
             error: const Color(0xFFFFB4AB),
             onError: const Color(0xFF690005),
@@ -161,14 +161,113 @@ class AppTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.selected) ? scheme.onPrimary : null,
+          (states) => states.contains(WidgetState.disabled)
+              ? colors.muted
+              : states.contains(WidgetState.selected)
+              ? scheme.onPrimary
+              : isDark
+              ? scheme.tertiary
+              : null,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.selected) ? scheme.primary : null,
+          (states) => states.contains(WidgetState.disabled)
+              ? colors.divider
+              : states.contains(WidgetState.selected)
+              ? scheme.primary
+              : null,
         ),
       ),
+      checkboxTheme: isDark
+          ? CheckboxThemeData(
+              fillColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? colors.divider
+                    : states.contains(WidgetState.error)
+                    ? scheme.error
+                    : states.contains(WidgetState.selected)
+                    ? scheme.primary
+                    : Colors.transparent,
+              ),
+              checkColor: WidgetStatePropertyAll(scheme.onPrimary),
+              side: WidgetStateBorderSide.resolveWith(
+                (states) => BorderSide(
+                  color: states.contains(WidgetState.disabled)
+                      ? colors.divider
+                      : states.contains(WidgetState.error)
+                      ? scheme.error
+                      : scheme.tertiary,
+                ),
+              ),
+            )
+          : base.checkboxTheme,
+      radioTheme: isDark
+          ? RadioThemeData(
+              fillColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? colors.divider
+                    : scheme.tertiary,
+              ),
+            )
+          : base.radioTheme,
+      iconButtonTheme: isDark
+          ? IconButtonThemeData(
+              style: IconButton.styleFrom(
+                foregroundColor: scheme.tertiary,
+                disabledForegroundColor: colors.muted,
+              ),
+            )
+          : base.iconButtonTheme,
+      floatingActionButtonTheme: isDark
+          ? FloatingActionButtonThemeData(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+            )
+          : base.floatingActionButtonTheme,
+      segmentedButtonTheme: isDark
+          ? SegmentedButtonThemeData(
+              style: ButtonStyle(
+                foregroundColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.disabled)
+                      ? colors.muted
+                      : states.contains(WidgetState.selected)
+                      ? scheme.onPrimary
+                      : scheme.tertiary,
+                ),
+                backgroundColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.disabled)
+                      ? colors.divider
+                      : states.contains(WidgetState.selected)
+                      ? scheme.primary
+                      : Colors.transparent,
+                ),
+                side: WidgetStateProperty.resolveWith(
+                  (states) => BorderSide(
+                    color: states.contains(WidgetState.disabled)
+                        ? colors.divider
+                        : scheme.tertiary,
+                  ),
+                ),
+              ),
+            )
+          : base.segmentedButtonTheme,
+      toggleButtonsTheme: isDark
+          ? ToggleButtonsThemeData(
+              color: scheme.tertiary,
+              selectedColor: scheme.onPrimary,
+              fillColor: scheme.primary,
+              borderColor: scheme.tertiary,
+              selectedBorderColor: scheme.primary,
+              disabledColor: colors.muted,
+              disabledBorderColor: colors.divider,
+            )
+          : base.toggleButtonsTheme,
+      textSelectionTheme: isDark
+          ? TextSelectionThemeData(
+              cursorColor: scheme.tertiary,
+              selectionColor: scheme.primary.withValues(alpha: .3),
+              selectionHandleColor: scheme.tertiary,
+            )
+          : base.textSelectionTheme,
       outlinedButtonTheme: OutlinedButtonThemeData(
         style:
             OutlinedButton.styleFrom(
@@ -202,6 +301,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: isDark ? scheme.tertiary : colors.deepTeal,
+          disabledForegroundColor: isDark ? colors.muted : null,
           textStyle: const TextStyle(
             fontFamily: 'Manrope',
             fontSize: 14,
@@ -210,6 +310,41 @@ class AppTheme {
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
+        labelStyle: isDark
+            ? WidgetStateTextStyle.resolveWith(
+                (states) => TextStyle(
+                  color: states.contains(WidgetState.disabled)
+                      ? colors.muted
+                      : states.contains(WidgetState.error)
+                      ? scheme.error
+                      : scheme.tertiary,
+                ),
+              )
+            : null,
+        prefixIconColor: isDark
+            ? WidgetStateColor.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? colors.muted
+                    : states.contains(WidgetState.error)
+                    ? scheme.error
+                    : scheme.tertiary,
+              )
+            : null,
+        suffixIconColor: isDark
+            ? WidgetStateColor.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? colors.muted
+                    : states.contains(WidgetState.error)
+                    ? scheme.error
+                    : scheme.tertiary,
+              )
+            : null,
+        disabledBorder: isDark
+            ? OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: colors.divider),
+              )
+            : null,
         filled: true,
         fillColor: colors.surface,
         contentPadding: const EdgeInsets.symmetric(
@@ -221,11 +356,15 @@ class AppTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colors.divider),
+          borderSide: BorderSide(
+            color: isDark ? scheme.tertiary : colors.divider,
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colors.divider),
+          borderSide: BorderSide(
+            color: isDark ? scheme.tertiary : colors.divider,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
