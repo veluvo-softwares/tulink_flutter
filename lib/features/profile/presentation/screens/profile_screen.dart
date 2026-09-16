@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tulink_flutter/features/profile/presentation/widgets/appearance_setting.dart';
 import 'package:provider/provider.dart';
 import 'package:tulink_flutter/core/navigation/navigation_helper.dart';
 import 'package:tulink_flutter/core/layout/tulink_breakpoints.dart';
@@ -91,6 +92,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 10),
         _SettingsGroup(
           children: [
+            const AppearanceSetting(),
+            const Divider(height: 1),
             Consumer<MapProvider>(
               builder: (context, maps, _) => SettingsMenuItem(
                 icon: Icons.follow_the_signs_rounded,
@@ -103,7 +106,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: Switch.adaptive(
                   value: maps.followLeaderDefaultEnabled,
                   onChanged: maps.setFollowLeaderDefault,
-                  activeTrackColor: colors.routeTeal,
+                  activeTrackColor: colors.isDark
+                      ? colors.sunsetOrange
+                      : colors.routeTeal,
                 ),
               ),
             ),
@@ -119,7 +124,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: Switch.adaptive(
                   value: navigation.isVoiceEnabled,
                   onChanged: navigation.setVoiceEnabled,
-                  activeTrackColor: colors.routeTeal,
+                  activeTrackColor: colors.isDark
+                      ? colors.sunsetOrange
+                      : colors.routeTeal,
                 ),
               ),
             ),
@@ -283,15 +290,17 @@ class _ProfileHero extends StatelessWidget {
                 Icon(
                   isVerified ? Icons.verified_rounded : Icons.person_rounded,
                   size: 16,
-                  color: colors.deepTeal,
+                  color: colors.foregroundAccent,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  isVerified ? 'Verified traveller' : 'Tulink traveller',
-                  style: TextStyle(
-                    color: colors.deepTeal,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                Flexible(
+                  child: Text(
+                    isVerified ? 'Verified traveller' : 'Tulink traveller',
+                    style: TextStyle(
+                      color: colors.foregroundAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
@@ -329,7 +338,12 @@ class _TravelSummaryCard extends StatelessWidget {
                   color: Colors.white.withValues(alpha: .14),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: const Icon(Icons.route_rounded, color: Colors.white),
+                child: Icon(
+                  Icons.route_rounded,
+                  color: colors.isDark
+                      ? colors.interactiveAccent
+                      : Colors.white,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -359,7 +373,10 @@ class _TravelSummaryCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: colors.isDark ? colors.interactiveAccent : Colors.white,
+              ),
             ],
           ),
         ),

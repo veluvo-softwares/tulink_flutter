@@ -145,7 +145,7 @@ class _ConvoyMetricsBottomSheetState extends State<ConvoyMetricsBottomSheet>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.group, size: 14, color: colors.deepTeal),
+                Icon(Icons.group, size: 14, color: colors.foregroundAccent),
                 const SizedBox(width: 4),
                 Text(
                   '${widget.snapshot.totalMembers + 1} riders', // +1 for current user

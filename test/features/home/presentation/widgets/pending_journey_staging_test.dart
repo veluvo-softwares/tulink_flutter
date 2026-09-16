@@ -29,12 +29,22 @@ void main() {
   /// No backoff, so the bounded automatic retries resolve inside the test.
   Duration noBackoff(int attempt) => Duration.zero;
 
-  Future<void> pump(WidgetTester tester, Widget child) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.tulinkTheme,
-      home: Scaffold(body: Stack(children: [child])),
-    ),
-  );
+  Future<void> pump(
+    WidgetTester tester,
+    Widget child, {
+    Size size = const Size(600, 900),
+  }) async {
+    // These tests exercise the portrait draggable sheet, not the landscape panel.
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.tulinkTheme,
+        home: Scaffold(body: Stack(children: [child])),
+      ),
+    );
+  }
 
   Future<void> expandSheet(WidgetTester tester) async {
     await tester.drag(

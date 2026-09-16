@@ -89,7 +89,7 @@ class ProfileAvatar extends StatelessWidget {
         child: Text(
           initials,
           style: TextStyle(
-            color: Colors.white,
+            color: colors.isDark ? colors.interactiveAccent : Colors.white,
             fontSize: size * 0.35,
             fontWeight: FontWeight.w800,
             letterSpacing: 2,

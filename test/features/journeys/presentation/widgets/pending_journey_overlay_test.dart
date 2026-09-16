@@ -37,19 +37,29 @@ void main() {
         displayName: name,
       );
 
-  Future<void> pump(WidgetTester tester, Widget overlay) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.tulinkTheme,
-      home: Scaffold(
-        body: Stack(
-          children: [
-            const Positioned.fill(child: ColoredBox(color: Colors.black12)),
-            overlay,
-          ],
+  Future<void> pump(
+    WidgetTester tester,
+    Widget overlay, {
+    Size size = const Size(600, 900),
+  }) async {
+    // These tests exercise the portrait draggable sheet, not the landscape panel.
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.tulinkTheme,
+        home: Scaffold(
+          body: Stack(
+            children: [
+              const Positioned.fill(child: ColoredBox(color: Colors.black12)),
+              overlay,
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Future<void> expandSheet(WidgetTester tester) async {
     await tester.drag(
@@ -296,6 +306,7 @@ void main() {
         onStart: () {},
         onCancelJourney: () {},
       ),
+      size: const Size(1366, 1024),
     );
 
     expect(find.byType(DraggableScrollableSheet), findsNothing);

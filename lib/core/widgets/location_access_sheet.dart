@@ -251,7 +251,7 @@ class _LocationSheet extends StatelessWidget {
                 child: Text(
                   secondaryLabel,
                   style: TextStyle(
-                    color: colors.deepTeal,
+                    color: colors.foregroundAccent,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),

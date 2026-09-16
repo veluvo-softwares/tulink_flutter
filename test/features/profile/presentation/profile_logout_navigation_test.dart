@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tulink_flutter/core/theme/theme_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
@@ -72,6 +73,7 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider(create: (_) => ThemeProvider()),
           ChangeNotifierProvider<AuthProvider>.value(value: auth),
           ChangeNotifierProvider<AnalyticsProvider>.value(value: analytics),
           ChangeNotifierProvider<ConvoyProvider>.value(value: convoy),
@@ -108,6 +110,12 @@ void main() {
     await tester.tap(find.byKey(const Key('open-profile')));
     await tester.pumpAndSettle();
     expect(find.byType(ProfileScreen), findsOneWidget);
+    await tester.ensureVisible(find.text('Appearance'));
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Match your device appearance'), findsOneWidget);
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.text('Follow the leader'));
     await tester.tap(find.text('Follow the leader'));
