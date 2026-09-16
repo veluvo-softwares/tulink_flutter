@@ -293,12 +293,14 @@ class _ProfileHero extends StatelessWidget {
                   color: colors.foregroundAccent,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  isVerified ? 'Verified traveller' : 'Tulink traveller',
-                  style: TextStyle(
-                    color: colors.foregroundAccent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                Flexible(
+                  child: Text(
+                    isVerified ? 'Verified traveller' : 'Tulink traveller',
+                    style: TextStyle(
+                      color: colors.foregroundAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
