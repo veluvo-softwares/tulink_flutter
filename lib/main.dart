@@ -127,9 +127,9 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.tulinkTheme,
-      darkTheme: AppTheme.tulinkTheme,
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.light,
       home: _StartupFallback(error: _bootError),
     );
   }
@@ -215,9 +215,9 @@ class MyApp extends StatelessWidget {
               debugShowCheckedModeBanner: false,
 
               // Theme configuration - Tu-Link dark theme only
-              theme: AppTheme.tulinkTheme,
-              darkTheme: AppTheme.tulinkTheme,
-              themeMode: ThemeMode.dark, // Tu-Link is dark mode only
+              theme: AppTheme.lightTheme,
+              darkTheme: AppTheme.darkTheme,
+              themeMode: themeProvider.themeMode,
               // Centralized routing with onGenerateRoute
               onGenerateRoute: AppRouter.generateRoute,
 

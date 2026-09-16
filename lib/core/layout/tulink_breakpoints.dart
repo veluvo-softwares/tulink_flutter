@@ -12,7 +12,8 @@ abstract final class TulinkBreakpoints {
 
   static bool isWideLandscape(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    return size.width >= wide && size.width > size.height;
+    // Use the same landscape composition on phones and tablets.
+    return size.width > size.height;
   }
 
   static double readableContentWidth(BuildContext context) {

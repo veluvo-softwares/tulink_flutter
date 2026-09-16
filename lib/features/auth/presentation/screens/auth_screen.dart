@@ -218,8 +218,9 @@ class _AuthScreenState extends State<AuthScreen> {
         const SizedBox(height: 22),
         const SocialAuthButtons(),
         const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text('New to Tulink?', style: TextStyle(color: colors.muted)),
             TextButton(

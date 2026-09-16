@@ -25,12 +25,20 @@ void main() {
     expect(result, isTrue);
   });
 
-  testWidgets('keeps the phone layout below the wide breakpoint', (
+  testWidgets('uses the tablet landscape layout on phones below 900 pixels', (
     tester,
   ) async {
     bool? result;
     await tester.pumpWidget(
       probe(const Size(844, 390), (value) => result = value),
+    );
+    expect(result, isTrue);
+    await tester.pumpWidget(
+      probe(const Size(667, 375), (value) => result = value),
+    );
+    expect(result, isTrue);
+    await tester.pumpWidget(
+      probe(const Size(390, 844), (value) => result = value),
     );
     expect(result, isFalse);
   });

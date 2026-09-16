@@ -316,7 +316,11 @@ class ServiceLocator {
     );
     _authProvider = AuthProvider(_authRepository);
     _emailVerificationProvider = EmailVerificationProvider(_authProvider);
-    _themeProvider = ThemeProvider();
+    _themeProvider = ThemeProvider(
+      loadPreference: () async => _authBox.get(StorageKeys.appearanceMode),
+      savePreference: (mode) => _authBox.put(StorageKeys.appearanceMode, mode),
+    );
+    await _themeProvider.initializePreferences();
     _mapProvider = MapProvider(
       _mapRepository,
       _searchPlacesUseCase,

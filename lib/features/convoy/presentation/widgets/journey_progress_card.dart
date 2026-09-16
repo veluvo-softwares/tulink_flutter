@@ -218,7 +218,9 @@ class JourneyProgressCard extends StatelessWidget {
             Switch.adaptive(
               key: const ValueKey('follow-leader-route-switch'),
               value: followsLeaderRoute,
-              activeTrackColor: colors.routeTeal,
+              activeTrackColor: colors.isDark
+                  ? colors.sunsetOrange
+                  : colors.routeTeal,
               onChanged: onFollowsLeaderRouteChanged,
             ),
           ],
@@ -561,18 +563,20 @@ class JourneyProgressCard extends StatelessWidget {
             ? null
             : (isLeader ? onEndJourney : onLeaveJourney),
         style: ElevatedButton.styleFrom(
-          backgroundColor: isLeader ? colors.sunsetOrange : colors.deepTeal,
+          backgroundColor: colors.isDark || isLeader
+              ? colors.sunsetOrange
+              : colors.deepTeal,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
         child: isActionInProgress
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  color: Colors.white,
+                  color: colors.isDark ? const Color(0xFF1A1A19) : Colors.white,
                 ),
               )
             : Text(
@@ -580,7 +584,7 @@ class JourneyProgressCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: colors.isDark ? const Color(0xFF1A1A19) : Colors.white,
                   letterSpacing: 1.0,
                 ),
               ),

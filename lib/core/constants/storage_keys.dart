@@ -23,6 +23,7 @@ class StorageKeys {
   static const String offlineStorageCipherKey = 'offline_storage_cipher_key_v1';
 
   // SharedPreferences Keys (for user preferences)
+  static const String appearanceMode = 'appearance_mode_v1';
   static const String themeMode = 'theme_mode';
   static const String languageCode = 'language_code';
   static const String onboardingCompleted = 'onboarding_completed';

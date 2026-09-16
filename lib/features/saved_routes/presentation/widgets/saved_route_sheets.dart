@@ -210,8 +210,10 @@ class _SavedRouteCard extends StatelessWidget {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: colors.routeTeal.withValues(alpha: .14),
-                foregroundColor: colors.routeTeal,
+                backgroundColor: colors.interactiveAccent.withValues(
+                  alpha: .14,
+                ),
+                foregroundColor: colors.interactiveAccent,
                 child: Icon(
                   route.source == SavedRouteSource.recorded
                       ? Icons.gps_fixed_rounded
