@@ -223,7 +223,13 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
   bool? _appliedPuckEnabled;
   PuckBearing _desiredPuckBearing = PuckBearing.HEADING;
   PuckBearing? _appliedPuckBearing;
-  bool _legacyCustomPucksCleared = false;
+  double? _latestValidDeviceHeading;
+  bool _snappedPuckLayerReady = false;
+  bool _rawPuckModeApplied = false;
+  bool _legacyRawPuckCleared = false;
+  RouteProgress? _desiredPuckProgress;
+  bool _puckRenderRequested = false;
+  Future<void>? _puckRenderFuture;
 
   @override
   void initState() {
@@ -271,7 +277,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     _puckEnabled = null;
     _appliedPuckEnabled = null;
     _appliedPuckBearing = null;
-    _legacyCustomPucksCleared = false;
+    _snappedPuckLayerReady = false;
+    _rawPuckModeApplied = false;
+    _legacyRawPuckCleared = false;
     _lastTrimAt = null;
     unawaited(
       _attachToMap(map).catchError((Object e) {
@@ -950,26 +958,25 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     // A stale displayed coordinate must never pin the camera while fresh GNSS
     // fixes continue to arrive.
     final progress = _navigationProvider?.currentProgress;
-    if (progress == null) {
-      unawaited(_drawRawPuck(position));
-    }
     final now = DateTime.now();
     final displayedFresh =
         _displayedNavigationAt != null &&
         now.difference(_displayedNavigationAt!) <= const Duration(seconds: 2);
     final progressFresh =
+        progress != null &&
         _lastNavigationProgressAt != null &&
         now.difference(_lastNavigationProgressAt!) <=
             const Duration(seconds: 3);
+    if (!progressFresh) unawaited(_drawRawPuck(position));
     final centerLat = displayedFresh
         ? _displayedNavigationLatitude!
         : progressFresh
-        ? progress!.snappedLatitude
+        ? progress.snappedLatitude
         : position.latitude;
     final centerLng = displayedFresh
         ? _displayedNavigationLongitude!
         : progressFresh
-        ? progress!.snappedLongitude
+        ? progress.snappedLongitude
         : position.longitude;
 
     if (_navigationProvider?.isNavigating == true && !progressFresh) {
@@ -1200,45 +1207,149 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
     }
   }
 
-  /// Keep the native directional location puck active during navigation.
-  Future<void> _drawSnappedPuck(RouteProgress? _) async {
-    if (!_canUseMap) return;
-    await _useDirectionalLocationPuck();
+  /// Draw navigation progress at its route-snapped coordinate.
+  Future<void> _drawSnappedPuck(RouteProgress? progress) async {
+    _desiredPuckProgress = progress;
+    _puckRenderRequested = true;
+    final existing = _puckRenderFuture;
+    if (existing != null) return existing;
+
+    final future = _drainPuckRendering();
+    _puckRenderFuture = future;
+    return future.whenComplete(() {
+      if (identical(_puckRenderFuture, future)) _puckRenderFuture = null;
+    });
   }
 
-  /// Use the same native puck while acquiring a route and while navigating.
-  Future<void> _drawRawPuck(geo.Position _) async {
-    if (!_canUseMap) return;
-    await _useDirectionalLocationPuck();
+  Future<void> _drainPuckRendering() async {
+    while (_puckRenderRequested) {
+      _puckRenderRequested = false;
+      await _renderPuck(_desiredPuckProgress);
+    }
   }
 
-  Future<void> _useDirectionalLocationPuck() async {
+  Future<void> _renderPuck(RouteProgress? progress) async {
     if (!_canUseMap) return;
-    if (!_legacyCustomPucksCleared) {
-      for (final layer in const [
-        'snapped-puck-dot',
-        'snapped-puck-ring',
-        'raw-puck-dot',
-        'raw-puck-ring',
-      ]) {
+    await _removeLegacyRawPuckArtifacts();
+    if (progress == null) {
+      await _useRawLocationPuck();
+      return;
+    }
+
+    const sourceId = 'snapped-puck-source';
+    const layerId = 'snapped-puck-dot';
+    final geoJson = jsonEncode(
+      buildSnappedPuckGeoJson(
+        longitude: progress.snappedLongitude,
+        latitude: progress.snappedLatitude,
+        heading: _latestValidDeviceHeading ?? 0,
+      ),
+    );
+
+    try {
+      if (_snappedPuckLayerReady) {
+        await _mapboxMap!.style.setStyleSourceProperty(
+          sourceId,
+          'data',
+          geoJson,
+        );
+      } else {
+        // Remove legacy circle artifacts before adopting the existing dot id
+        // as the directional symbol layer.
+        for (final legacyLayerId in const ['snapped-puck-ring', layerId]) {
+          try {
+            await _mapboxMap!.style.removeStyleLayer(legacyLayerId);
+          } catch (_) {}
+        }
         try {
-          await _mapboxMap!.style.removeStyleLayer(layer);
+          await _mapboxMap!.style.removeStyleSource(sourceId);
         } catch (_) {}
+
+        await _mapboxMap!.style.addSource(
+          GeoJsonSource(id: sourceId, data: geoJson),
+        );
+        await _mapboxMap!.style.addLayer(
+          SymbolLayer(
+            id: layerId,
+            sourceId: sourceId,
+            iconImage: 'triangle-stroked-15',
+            iconSize: 1.8,
+            iconRotateExpression: const ['get', 'heading'],
+            iconRotationAlignment: IconRotationAlignment.MAP,
+            iconAllowOverlap: true,
+            iconIgnorePlacement: true,
+          ),
+        );
+        _snappedPuckLayerReady = true;
       }
-      for (final source in const ['snapped-puck-source', 'raw-puck-source']) {
-        try {
-          await _mapboxMap!.style.removeStyleSource(source);
-        } catch (_) {}
+      await _setBuiltInPuckEnabled(false);
+      if (_appliedPuckEnabled ?? true) {
+        await _removeSnappedPuckArtifacts();
+        await _setBuiltInPuckEnabled(true);
+        _rawPuckModeApplied = true;
+        return;
       }
-      _legacyCustomPucksCleared = true;
+      _rawPuckModeApplied = false;
+    } catch (e) {
+      AppLogger.warning('Failed to draw snapped navigation puck: $e');
+      await _removeSnappedPuckArtifacts();
+      await _setBuiltInPuckEnabled(true);
+      _rawPuckModeApplied = true;
+    }
+  }
+
+  /// Use Mapbox's native puck while acquiring navigation progress.
+  Future<void> _drawRawPuck(geo.Position position) async {
+    if (!_canUseMap) return;
+    _recordDeviceHeading(position);
+    await _drawSnappedPuck(null);
+  }
+
+  Future<void> _useRawLocationPuck() async {
+    if (!_canUseMap) return;
+    if (!_rawPuckModeApplied) {
+      await _removeSnappedPuckArtifacts();
     }
     await _setBuiltInPuckEnabled(true);
+    _rawPuckModeApplied = true;
+  }
+
+  Future<void> _removeSnappedPuckArtifacts() async {
+    for (final layerId in const ['snapped-puck-ring', 'snapped-puck-dot']) {
+      try {
+        await _mapboxMap!.style.removeStyleLayer(layerId);
+      } catch (_) {}
+    }
+    try {
+      await _mapboxMap!.style.removeStyleSource('snapped-puck-source');
+    } catch (_) {}
+    _snappedPuckLayerReady = false;
+  }
+
+  Future<void> _removeLegacyRawPuckArtifacts() async {
+    if (_legacyRawPuckCleared) return;
+    for (final layerId in const ['raw-puck-ring', 'raw-puck-dot']) {
+      try {
+        await _mapboxMap!.style.removeStyleLayer(layerId);
+      } catch (_) {}
+    }
+    try {
+      await _mapboxMap!.style.removeStyleSource('raw-puck-source');
+    } catch (_) {}
+    _legacyRawPuckCleared = true;
+  }
+
+  void _recordDeviceHeading(geo.Position position) {
+    if (position.heading.isFinite && position.heading >= 0) {
+      _latestValidDeviceHeading = position.heading;
+    }
   }
 
   /// Use device heading while stationary/slow so physical phone rotation is
   /// visible, then switch to GPS course once the vehicle is reliably moving.
   /// Different enter/exit thresholds prevent rapid mode flapping in traffic.
   void _updatePuckBearingFor(geo.Position position) {
+    _recordDeviceHeading(position);
     final next = switch (_desiredPuckBearing) {
       PuckBearing.HEADING when position.speed >= 2.5 => PuckBearing.COURSE,
       PuckBearing.COURSE when position.speed <= 1.0 => PuckBearing.HEADING,
