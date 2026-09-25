@@ -14,6 +14,7 @@ class LiveJourneyCoordinator {
     required Journey? Function() currentJourney,
     required String? Function() coordinatingJourneyId,
     required bool Function() isSubscribed,
+    required bool Function() isPublishing,
     required Future<void> Function(String journeyId) startCoordination,
     required Future<void> Function() stopCoordination,
     required Future<void> Function() refreshActiveJourneys,
@@ -22,6 +23,7 @@ class LiveJourneyCoordinator {
        _currentJourney = currentJourney,
        _coordinatingJourneyId = coordinatingJourneyId,
        _isSubscribed = isSubscribed,
+       _isPublishing = isPublishing,
        _startCoordination = startCoordination,
        _stopCoordination = stopCoordination,
        _refreshActiveJourneys = refreshActiveJourneys,
@@ -31,6 +33,7 @@ class LiveJourneyCoordinator {
   final Journey? Function() _currentJourney;
   final String? Function() _coordinatingJourneyId;
   final bool Function() _isSubscribed;
+  final bool Function() _isPublishing;
   final Future<void> Function(String journeyId) _startCoordination;
   final Future<void> Function() _stopCoordination;
   final Future<void> Function() _refreshActiveJourneys;
@@ -70,9 +73,11 @@ class LiveJourneyCoordinator {
         continue;
       }
 
-      // A joined room is healthy ownership even when GPS permission or a fix
-      // is unavailable. Do not repeatedly reopen the native permission flow.
-      if (ownedJourneyId != desiredJourneyId || !_isSubscribed()) {
+      final isFullyCoordinating =
+          ownedJourneyId == desiredJourneyId &&
+          _isSubscribed() &&
+          _isPublishing();
+      if (!isFullyCoordinating) {
         await _startCoordination(desiredJourneyId);
       }
     }

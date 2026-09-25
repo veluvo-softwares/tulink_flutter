@@ -2,6 +2,45 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tulink_flutter/features/maps/presentation/utils/route_rendering.dart';
 
 void main() {
+  group('buildSnappedPuckGeoJson', () {
+    test('uses GeoJSON longitude-latitude coordinate order', () {
+      final feature = buildSnappedPuckGeoJson(
+        longitude: 36.8219,
+        latitude: -1.2921,
+        heading: 42,
+      );
+
+      final geometry = feature['geometry']! as Map<String, dynamic>;
+      expect(geometry['coordinates'], <double>[36.8219, -1.2921]);
+    });
+
+    test('normalizes heading to a clockwise rotation below 360 degrees', () {
+      final wrapped = buildSnappedPuckGeoJson(
+        longitude: 0,
+        latitude: 0,
+        heading: 725,
+      );
+      final negative = buildSnappedPuckGeoJson(
+        longitude: 0,
+        latitude: 0,
+        heading: -15,
+      );
+
+      expect((wrapped['properties']! as Map<String, dynamic>)['heading'], 5);
+      expect((negative['properties']! as Map<String, dynamic>)['heading'], 345);
+    });
+
+    test('falls back to zero for a non-finite heading', () {
+      final feature = buildSnappedPuckGeoJson(
+        longitude: 0,
+        latitude: 0,
+        heading: double.nan,
+      );
+
+      expect((feature['properties']! as Map<String, dynamic>)['heading'], 0);
+    });
+  });
+
   group('buildRemainingRouteCoordinates', () {
     const route = <List<double>>[
       <double>[36.80, -1.28],
