@@ -329,8 +329,8 @@ void main() {
     });
   });
 
-  group('native directional location puck', () {
-    test('live journeys use hybrid heading/course puck bearing', () {
+  group('route-snapped navigation puck', () {
+    test('active navigation uses snapped progress and device heading', () {
       final live = File(
         'lib/features/maps/presentation/live_journey_experience.dart',
       ).readAsStringSync();
@@ -347,19 +347,29 @@ void main() {
         isTrue,
       );
       expect(
-        live.contains('await _setBuiltInPuckEnabled(true);'),
+        live.contains('longitude: progress.snappedLongitude'),
         isTrue,
-        reason: 'the native Mapbox location component must remain enabled',
+        reason: 'the active puck position must come from RouteProgress',
       );
       expect(
-        live.contains('Future<void> _drawLegacySnappedPuck'),
-        isFalse,
-        reason: 'the retired circle puck must not become a second renderer',
+        live.contains("iconImage: 'triangle-stroked-15'"),
+        isTrue,
+        reason: 'the snapped puck must remain directional',
       );
       expect(
-        live.contains('Future<void> _renderRawPuck'),
-        isFalse,
-        reason: 'raw GPS must use the same native puck as active navigation',
+        live.contains('heading: _latestValidDeviceHeading ?? 0'),
+        isTrue,
+        reason: 'direction must use the latest valid device heading',
+      );
+      expect(
+        live.contains('await _setBuiltInPuckEnabled(false);'),
+        isTrue,
+        reason: 'the raw native puck must not overlap snapped navigation',
+      );
+      expect(
+        live.contains('await _useRawLocationPuck();'),
+        isTrue,
+        reason: 'raw acquisition must retain the native Mapbox puck fallback',
       );
     });
   });

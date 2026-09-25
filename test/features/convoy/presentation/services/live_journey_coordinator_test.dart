@@ -19,6 +19,7 @@ void main() {
   late Journey? selected;
   late String? ownedJourneyId;
   late bool subscribed;
+  late bool publishing;
   late List<String> operations;
   late LiveJourneyCoordinator coordinator;
 
@@ -27,21 +28,25 @@ void main() {
     selected = null;
     ownedJourneyId = null;
     subscribed = false;
+    publishing = false;
     operations = [];
     coordinator = LiveJourneyCoordinator(
       canCoordinate: () => eligible,
       currentJourney: () => selected,
       coordinatingJourneyId: () => ownedJourneyId,
       isSubscribed: () => subscribed,
+      isPublishing: () => publishing,
       startCoordination: (journeyId) async {
         operations.add('start:$journeyId');
         ownedJourneyId = journeyId;
         subscribed = true;
+        publishing = true;
       },
       stopCoordination: () async {
         operations.add('stop');
         ownedJourneyId = null;
         subscribed = false;
+        publishing = false;
       },
       refreshActiveJourneys: () async => operations.add('refresh'),
       recoverAfterResume: () async => operations.add('recover'),
@@ -56,10 +61,27 @@ void main() {
     expect(operations, ['start:A']);
   });
 
-  test('a joined room is not restarted when GPS is unavailable', () async {
+  test(
+    'pending listener-only room upgrades when journey becomes active',
+    () async {
+      selected = journey('A', JourneyStatus.PENDING);
+      ownedJourneyId = 'A';
+      subscribed = true;
+      publishing = false;
+
+      selected = journey('A', JourneyStatus.ACTIVE);
+      await coordinator.reconcile();
+
+      expect(operations, ['start:A']);
+      expect(publishing, isTrue);
+    },
+  );
+
+  test('fully coordinated active journey is not restarted', () async {
     selected = journey('A', JourneyStatus.ACTIVE);
     ownedJourneyId = 'A';
     subscribed = true;
+    publishing = true;
 
     await coordinator.reconcile();
     await coordinator.reconcile();
@@ -90,16 +112,19 @@ void main() {
         currentJourney: () => selected,
         coordinatingJourneyId: () => ownedJourneyId,
         isSubscribed: () => subscribed,
+        isPublishing: () => publishing,
         startCoordination: (journeyId) async {
           operations.add('start:$journeyId');
           if (journeyId == 'A') await firstStart.future;
           ownedJourneyId = journeyId;
           subscribed = true;
+          publishing = true;
         },
         stopCoordination: () async {
           operations.add('stop');
           ownedJourneyId = null;
           subscribed = false;
+          publishing = false;
         },
         refreshActiveJourneys: () async {},
         recoverAfterResume: () async {},
@@ -138,9 +163,11 @@ void main() {
       currentJourney: () => selected,
       coordinatingJourneyId: () => ownedJourneyId,
       isSubscribed: () => subscribed,
+      isPublishing: () => publishing,
       startCoordination: (journeyId) async {
         ownedJourneyId = journeyId;
         subscribed = true;
+        publishing = true;
       },
       stopCoordination: () async {},
       refreshActiveJourneys: () async {

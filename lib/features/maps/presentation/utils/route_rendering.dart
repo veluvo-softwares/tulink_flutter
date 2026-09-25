@@ -1,5 +1,27 @@
 import 'dart:math' as math;
 
+/// Builds the point feature used by the route-snapped navigation puck.
+///
+/// GeoJSON coordinates are always longitude-first. Heading is normalized so
+/// the symbol layer receives a stable clockwise rotation in `[0, 360)`.
+Map<String, dynamic> buildSnappedPuckGeoJson({
+  required double longitude,
+  required double latitude,
+  required double heading,
+}) {
+  final normalizedHeading = heading.isFinite
+      ? ((heading % 360) + 360) % 360
+      : 0.0;
+  return <String, dynamic>{
+    'type': 'Feature',
+    'properties': <String, dynamic>{'heading': normalizedHeading},
+    'geometry': <String, dynamic>{
+      'type': 'Point',
+      'coordinates': <double>[longitude, latitude],
+    },
+  };
+}
+
 /// Builds the visible, untravelled portion of a navigation route.
 ///
 /// [segmentIndex] identifies the segment containing the snapped position. The

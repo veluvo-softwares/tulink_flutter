@@ -389,6 +389,7 @@ class ServiceLocator {
       currentJourney: () => _journeyProvider.currentJourney,
       coordinatingJourneyId: () => _convoyProvider.currentJourneyId,
       isSubscribed: () => _convoyProvider.isSubscribed,
+      isPublishing: () => _convoyProvider.isPublishing,
       startCoordination: _convoyProvider.startCoordination,
       stopCoordination: _convoyProvider.stopCoordination,
       refreshActiveJourneys: _journeyProvider.fetchActiveJourneys,
