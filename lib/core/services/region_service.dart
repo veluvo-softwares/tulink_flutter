@@ -39,7 +39,12 @@ class RegionService {
     // 1. Physical location → reverse-geocoded country (most accurate).
     if (lat != null && lng != null) {
       try {
-        final placemarks = await placemarkFromCoordinates(lat, lng);
+        // Bounded: the platform geocoder can stall on a poor connection, and
+        // every place search waits on this before it is sent.
+        final placemarks = await placemarkFromCoordinates(
+          lat,
+          lng,
+        ).timeout(const Duration(seconds: 2));
         final code = placemarks.isEmpty
             ? null
             : normalizeRegionCode(placemarks.first.isoCountryCode);
@@ -106,7 +111,8 @@ class RegionService {
     const earthRadiusKm = 6371.0;
     final dLat = (lat2 - lat1) * math.pi / 180.0;
     final dLng = (lng2 - lng1) * math.pi / 180.0;
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(lat1 * math.pi / 180.0) *
             math.cos(lat2 * math.pi / 180.0) *
             math.sin(dLng / 2) *
