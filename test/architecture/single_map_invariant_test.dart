@@ -449,6 +449,55 @@ void main() {
     });
   });
 
+  group('preview to live handoff', () {
+    test('an in-flight preview draw cannot redraw under the live route', () {
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+      final draw = home.substring(
+        home.indexOf('Future<void> _drawPreviewRoutes('),
+        home.indexOf('Future<void> _clearDestinationAnnotations'),
+      );
+
+      expect(
+        draw.contains('final epoch = ++_previewRouteEpoch;'),
+        isTrue,
+        reason: 'each preview draw must own an epoch',
+      );
+      expect(
+        draw.contains('!_liveLayerOwnsMap') &&
+            draw.contains('epoch == _previewRouteEpoch'),
+        isTrue,
+        reason:
+            'preview writes must stop once live owns the map or the '
+            'draw is superseded',
+      );
+      expect(
+        RegExp(r'if \(!isCurrent\(\)\) return;').allMatches(draw).length,
+        greaterThanOrEqualTo(3),
+        reason:
+            'the epoch must be checked before every style write, not '
+            'only before the draw starts',
+      );
+      expect(
+        draw.contains(
+          'Future<void> _clearPreviewRoute() async {\n'
+          '    _previewRouteEpoch++;',
+        ),
+        isTrue,
+        reason: 'a clear must cancel preview draws still in flight',
+      );
+
+      final handoff = home.substring(home.indexOf('if (liveOwnsMap) {'));
+      expect(
+        handoff.indexOf('_destinationDrawSeq++;') <
+            handoff.indexOf('_clearPreviewRoute()'),
+        isTrue,
+        reason: 'destination draws must be invalidated before the clear',
+      );
+    });
+  });
+
   group('terminal route draw barrier', () {
     test('confirmed end invalidates any route response still in flight', () {
       final live = File(
