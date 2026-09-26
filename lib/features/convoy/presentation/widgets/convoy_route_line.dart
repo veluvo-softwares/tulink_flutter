@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../../domain/entities/convoy_snapshot.dart';
 import '../../domain/entities/member_position.dart';
+import '../../../maps/presentation/utils/map_style_images.dart';
 import '../utils/convoy_member_presentation.dart';
 
 class ConvoyRouteLine {
@@ -161,16 +162,19 @@ class ConvoyRouteLine {
   static Future<void> _addMemberMarkersLayer(MapboxMap mapboxMap) async {
     // ── Heading arrow layer ──────────────────────────────────────────
     //
-    // Rendered as a Mapbox built-in arrow icon, rotated by `heading`,
-    // sitting just below the dot so its base is occluded and only the
-    // tip pokes out as a directional indicator.
+    // Tulink's own arrow image (style sprites don't reliably ship one),
+    // rotated by `heading`, sitting just below the dot so its base is
+    // occluded and only the tip pokes out as a directional indicator.
     try {
+      if (!await ensureMapStyleImage(mapboxMap, headingArrowImageId)) {
+        throw StateError('heading arrow image unavailable');
+      }
       await mapboxMap.style.addLayer(
         SymbolLayer(
           id: 'convoy-members-heading-layer',
           sourceId: _membersSourceId,
-          iconImage: 'triangle-stroked-15',
-          iconSize: 1.4,
+          iconImage: headingArrowImageId,
+          iconSize: 1.0,
           iconRotateExpression: ['get', 'heading'],
           iconRotationAlignment: IconRotationAlignment.MAP,
           iconAllowOverlap: true,

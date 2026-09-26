@@ -583,6 +583,13 @@ class MapProvider with ChangeNotifier {
   double? _searchBiasLat;
   double? _searchBiasLng;
 
+  // Bias only needs neighbourhood accuracy (the backend rounds it to ~1 km),
+  // so one resolved fix serves every keystroke for a short while instead of
+  // each search waiting up to three seconds for GPS.
+  static const _searchBiasTtl = Duration(minutes: 2);
+  MapCoordinate? _cachedSearchBias;
+  DateTime? _cachedSearchBiasAt;
+
   /// Latitude of the bias point used for the most recent search, or null if
   /// no search has run yet.
   double? get searchBiasLat => _searchBiasLat;
@@ -621,6 +628,7 @@ class MapProvider with ChangeNotifier {
     // live fix → last-known position → Nairobi default. Logged by source only
     // (never coordinates) to preserve privacy.
     final bias = await _resolveSearchBias();
+    if (requestId != _searchRequestId) return;
     _searchBiasLat = bias.latitude;
     _searchBiasLng = bias.longitude;
 
@@ -631,6 +639,10 @@ class MapProvider with ChangeNotifier {
       lat: bias.latitude,
       lng: bias.longitude,
     );
+
+    // Superseded while resolving bias/region: skip the network call entirely
+    // rather than sending a request whose response would be discarded.
+    if (requestId != _searchRequestId) return;
 
     final result = await _searchPlacesUseCase(
       trimmedQuery,
@@ -669,6 +681,23 @@ class MapProvider with ChangeNotifier {
   /// [kDefaultMapCenter]. Always returns a coordinate so a search is never
   /// sent unbiased. Logs only which source was used, never the coordinates.
   Future<MapCoordinate> _resolveSearchBias() async {
+    final cached = _cachedSearchBias;
+    final cachedAt = _cachedSearchBiasAt;
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _searchBiasTtl) {
+      return cached;
+    }
+    final resolved = await _resolveFreshSearchBias();
+    // The default centre is a fallback, not a fix; retry GPS next search.
+    if (!identical(resolved, kDefaultMapCenter)) {
+      _cachedSearchBias = resolved;
+      _cachedSearchBiasAt = DateTime.now();
+    }
+    return resolved;
+  }
+
+  Future<MapCoordinate> _resolveFreshSearchBias() async {
     // 1. Live fix — low accuracy is fine for biasing; short timeout so a cold
     //    GPS doesn't stall the search.
     try {

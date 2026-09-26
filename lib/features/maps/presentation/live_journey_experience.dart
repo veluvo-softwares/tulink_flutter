@@ -35,6 +35,7 @@ import '../../home/presentation/state/journey_ended_event_scope.dart';
 import 'widgets/turn_instruction_card.dart';
 import 'providers/navigation_provider.dart';
 import '../domain/entities/route_progress.dart';
+import 'utils/map_style_images.dart';
 import 'utils/route_rendering.dart';
 import 'controllers/persistent_map_controller.dart';
 
@@ -1238,6 +1239,9 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
 
     const sourceId = 'snapped-puck-source';
     const layerId = 'snapped-puck-dot';
+    // Image-free disc under the arrow: the puck stays visible even if the
+    // arrow image cannot be registered on the current style.
+    const fallbackLayerId = 'snapped-puck-ring';
     final geoJson = jsonEncode(
       buildSnappedPuckGeoJson(
         longitude: progress.snappedLongitude,
@@ -1254,9 +1258,8 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           geoJson,
         );
       } else {
-        // Remove legacy circle artifacts before adopting the existing dot id
-        // as the directional symbol layer.
-        for (final legacyLayerId in const ['snapped-puck-ring', layerId]) {
+        // Clear any partial puck from an earlier attempt or older build.
+        for (final legacyLayerId in const [fallbackLayerId, layerId]) {
           try {
             await _mapboxMap!.style.removeStyleLayer(legacyLayerId);
           } catch (_) {}
@@ -1269,17 +1272,43 @@ class _LiveJourneyExperienceState extends State<LiveJourneyExperience>
           GeoJsonSource(id: sourceId, data: geoJson),
         );
         await _mapboxMap!.style.addLayer(
-          SymbolLayer(
-            id: layerId,
+          CircleLayer(
+            id: fallbackLayerId,
             sourceId: sourceId,
-            iconImage: 'triangle-stroked-15',
-            iconSize: 1.8,
-            iconRotateExpression: const ['get', 'heading'],
-            iconRotationAlignment: IconRotationAlignment.MAP,
-            iconAllowOverlap: true,
-            iconIgnorePlacement: true,
+            circleRadius: 9.0,
+            circleColor: 0xFF1E6FFF,
+            circleStrokeColor: 0xFFFFFFFF,
+            circleStrokeWidth: 3.0,
+            circlePitchAlignment: CirclePitchAlignment.MAP,
           ),
         );
+        final arrowReady = await ensureMapStyleImage(
+          _mapboxMap!,
+          navigationPuckImageId,
+        );
+        if (arrowReady) {
+          await _mapboxMap!.style.addLayer(
+            SymbolLayer(
+              id: layerId,
+              sourceId: sourceId,
+              iconImage: navigationPuckImageId,
+              iconRotateExpression: const ['get', 'heading'],
+              iconRotationAlignment: IconRotationAlignment.MAP,
+              iconPitchAlignment: IconPitchAlignment.MAP,
+              iconAllowOverlap: true,
+              iconIgnorePlacement: true,
+            ),
+          );
+        } else {
+          AppLogger.warning(
+            'Navigation arrow image unavailable; showing the disc puck only',
+          );
+        }
+        // Only hand over from the native puck once our puck is really on the
+        // style; otherwise the user would be left with no puck at all.
+        if (!await _mapboxMap!.style.styleLayerExists(fallbackLayerId)) {
+          throw StateError('snapped puck layer missing from style');
+        }
         _snappedPuckLayerReady = true;
       }
       await _setBuiltInPuckEnabled(false);

@@ -330,6 +330,21 @@ void main() {
   });
 
   group('route-snapped navigation puck', () {
+    test('map symbols never depend on style sprite icons', () {
+      // Sprite contents vary by style: `triangle-stroked-15` is absent from
+      // the v12 sprites and left the navigation puck invisible.
+      for (final path in const [
+        'lib/features/maps/presentation/live_journey_experience.dart',
+        'lib/features/convoy/presentation/widgets/convoy_route_line.dart',
+      ]) {
+        expect(
+          File(path).readAsStringSync().contains('triangle-stroked'),
+          isFalse,
+          reason: '$path must use images registered by map_style_images.dart',
+        );
+      }
+    });
+
     test('active navigation uses snapped progress and device heading', () {
       final live = File(
         'lib/features/maps/presentation/live_journey_experience.dart',
@@ -352,9 +367,17 @@ void main() {
         reason: 'the active puck position must come from RouteProgress',
       );
       expect(
-        live.contains("iconImage: 'triangle-stroked-15'"),
+        live.contains('iconImage: navigationPuckImageId'),
         isTrue,
         reason: 'the snapped puck must remain directional',
+      );
+      expect(
+        live.contains('ensureMapStyleImage(') &&
+            live.contains('CircleLayer(\n            id: fallbackLayerId'),
+        isTrue,
+        reason:
+            'the arrow image must be registered on the style, with an '
+            'image-free disc so the puck is visible if registration fails',
       );
       expect(
         live.contains('heading: _latestValidDeviceHeading ?? 0'),
@@ -423,6 +446,55 @@ void main() {
       expect(routeSetup.contains('fetchCanonicalRoute'), isTrue);
       expect(routeSetup.contains('replaceCanonicalRoute'), isTrue);
       expect(routeSetup.contains('followsLeaderRoute'), isTrue);
+    });
+  });
+
+  group('preview to live handoff', () {
+    test('an in-flight preview draw cannot redraw under the live route', () {
+      final home = File(
+        'lib/features/home/presentation/screens/home_screen.dart',
+      ).readAsStringSync();
+      final draw = home.substring(
+        home.indexOf('Future<void> _drawPreviewRoutes('),
+        home.indexOf('Future<void> _clearDestinationAnnotations'),
+      );
+
+      expect(
+        draw.contains('final epoch = ++_previewRouteEpoch;'),
+        isTrue,
+        reason: 'each preview draw must own an epoch',
+      );
+      expect(
+        draw.contains('!_liveLayerOwnsMap') &&
+            draw.contains('epoch == _previewRouteEpoch'),
+        isTrue,
+        reason:
+            'preview writes must stop once live owns the map or the '
+            'draw is superseded',
+      );
+      expect(
+        RegExp(r'if \(!isCurrent\(\)\) return;').allMatches(draw).length,
+        greaterThanOrEqualTo(3),
+        reason:
+            'the epoch must be checked before every style write, not '
+            'only before the draw starts',
+      );
+      expect(
+        draw.contains(
+          'Future<void> _clearPreviewRoute() async {\n'
+          '    _previewRouteEpoch++;',
+        ),
+        isTrue,
+        reason: 'a clear must cancel preview draws still in flight',
+      );
+
+      final handoff = home.substring(home.indexOf('if (liveOwnsMap) {'));
+      expect(
+        handoff.indexOf('_destinationDrawSeq++;') <
+            handoff.indexOf('_clearPreviewRoute()'),
+        isTrue,
+        reason: 'destination draws must be invalidated before the clear',
+      );
     });
   });
 

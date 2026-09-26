@@ -147,6 +147,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// or move the camera after a newer destination has been chosen.
   int _destinationDrawSeq = 0;
 
+  /// Bumped by every preview draw and every preview clear. A draw only adds
+  /// layers while its epoch is current, so a slow draw cannot re-add routes
+  /// after a clear, a newer draw, or the live layer taking over the map.
+  int _previewRouteEpoch = 0;
+
   /// The user/session the map's geometry belongs to. A change (logout, account
   /// switch) invalidates every route held or in flight — a route is scoped to
   /// the session that requested it.
@@ -859,6 +864,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final generation = _mapController.generation;
     bool isCurrentDraw() =>
         mounted &&
+        !_liveLayerOwnsMap &&
         _destinationDrawSeq == drawToken &&
         _mapController.generation == generation;
 
@@ -977,8 +983,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int selectedIndex,
   }) async {
     final map = _map;
-    if (map == null || routes.isEmpty) return;
-    await _clearPreviewRoute();
+    if (map == null || routes.isEmpty || _liveLayerOwnsMap) return;
+    final epoch = ++_previewRouteEpoch;
+    bool isCurrent() =>
+        mounted &&
+        !_liveLayerOwnsMap &&
+        epoch == _previewRouteEpoch &&
+        identical(_map, map);
+    await _removePreviewRouteLayers(map);
     try {
       var alternateSlot = 0;
       for (var index = 0; index < routes.length; index++) {
@@ -991,6 +1003,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await _addPreviewRoute(
           map,
           route.coordinates,
+          isCurrent: isCurrent,
           sourceId: '$_previewSourceId-alt-$alternateSlot',
           lineId: '$_previewLineId-alt-$alternateSlot',
           color: const Color(0xFF758486),
@@ -1005,6 +1018,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await _addPreviewRoute(
         map,
         selected.coordinates,
+        isCurrent: isCurrent,
         sourceId: _previewSourceId,
         lineId: _previewLineId,
         shadowId: _previewShadowId,
@@ -1020,6 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _addPreviewRoute(
     MapboxMap map,
     List<List<double>> coordinates, {
+    required bool Function() isCurrent,
     required String sourceId,
     required String lineId,
     required Color color,
@@ -1032,7 +1047,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'properties': <String, dynamic>{},
       'geometry': {'type': 'LineString', 'coordinates': coordinates},
     });
+    // Checked before every style write: whoever made this draw stale bumped
+    // the epoch before issuing its removals, so anything written up to here
+    // is removed after it, and nothing is written from here on.
+    if (!isCurrent()) return;
     await map.style.addSource(GeoJsonSource(id: sourceId, data: geoJson));
+    if (!isCurrent()) return;
     if (shadowId != null) {
       await map.style.addLayer(
         LineLayer(
@@ -1045,6 +1065,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           lineOpacity: .9,
         ),
       );
+      if (!isCurrent()) return;
     }
     await map.style.addLayer(
       LineLayer(
@@ -1059,9 +1080,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Remove the preview routes and cancel any preview draw still in flight.
   Future<void> _clearPreviewRoute() async {
+    _previewRouteEpoch++;
     final map = _map;
     if (map == null) return;
+    await _removePreviewRouteLayers(map);
+  }
+
+  Future<void> _removePreviewRouteLayers(MapboxMap map) async {
     try {
       await map.style.removeStyleLayer(_previewLineId);
     } catch (_) {}
@@ -2201,6 +2228,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (liveOwnsMap) {
         // Hand the geometry over cleanly — two route polylines on one map is
         // exactly the divergence the single-map work exists to remove.
+        // Invalidate in-flight destination draws first so a slow route
+        // response cannot redraw the preview (and its alternatives) or pin
+        // after this clear; _clearPreviewRoute also cancels partial draws.
+        _destinationDrawSeq++;
         unawaited(_clearPreviewRoute());
         unawaited(_clearDestinationAnnotations());
       }
