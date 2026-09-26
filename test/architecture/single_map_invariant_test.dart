@@ -330,6 +330,21 @@ void main() {
   });
 
   group('route-snapped navigation puck', () {
+    test('map symbols never depend on style sprite icons', () {
+      // Sprite contents vary by style: `triangle-stroked-15` is absent from
+      // the v12 sprites and left the navigation puck invisible.
+      for (final path in const [
+        'lib/features/maps/presentation/live_journey_experience.dart',
+        'lib/features/convoy/presentation/widgets/convoy_route_line.dart',
+      ]) {
+        expect(
+          File(path).readAsStringSync().contains('triangle-stroked'),
+          isFalse,
+          reason: '$path must use images registered by map_style_images.dart',
+        );
+      }
+    });
+
     test('active navigation uses snapped progress and device heading', () {
       final live = File(
         'lib/features/maps/presentation/live_journey_experience.dart',
@@ -352,9 +367,17 @@ void main() {
         reason: 'the active puck position must come from RouteProgress',
       );
       expect(
-        live.contains("iconImage: 'triangle-stroked-15'"),
+        live.contains('iconImage: navigationPuckImageId'),
         isTrue,
         reason: 'the snapped puck must remain directional',
+      );
+      expect(
+        live.contains('ensureMapStyleImage(') &&
+            live.contains('CircleLayer(\n            id: fallbackLayerId'),
+        isTrue,
+        reason:
+            'the arrow image must be registered on the style, with an '
+            'image-free disc so the puck is visible if registration fails',
       );
       expect(
         live.contains('heading: _latestValidDeviceHeading ?? 0'),
